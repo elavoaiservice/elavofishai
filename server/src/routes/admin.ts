@@ -194,13 +194,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/admin/admins', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
-    const b = (req.body || {}) as { username?: string; password?: string; email?: string };
-    const username = String(b.username || '').trim();
-    if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return reply.code(400).send({ error: 'Username: 3-24 letters, numbers, . _ -' });
+    const b = (req.body || {}) as { password?: string; email?: string };
+    const email = String(b.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'Enter a valid email address.' });
     if (String(b.password || '').length < 8) return reply.code(400).send({ error: 'Password needs at least 8 characters.' });
-    if (await prisma.adminUser.findUnique({ where: { username } })) return reply.code(409).send({ error: 'That username is taken.' });
-    const a = await createAdminUser(username, String(b.password), String(b.email || '').trim() || 'admin@elavofishai.local');
-    await audit(admin.username, 'admin.create', a.id, { username });
+    if (await prisma.adminUser.findUnique({ where: { username: email } })) return reply.code(409).send({ error: 'An admin with that email already exists.' });
+    const a = await createAdminUser(email, String(b.password));
+    await audit(admin.username, 'admin.create', a.id, { email });
     return reply.send({ ok: true });
   });
 

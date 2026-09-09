@@ -3,7 +3,7 @@
    then refreshes the cache in the background. Live data (weather, lake
    level, map tiles) goes network-only; the app already degrades honestly
    when those are unreachable. */
-const CACHE = 'elavofishai-v6';
+const CACHE = 'elavofishai-v7';
 const SHELL = ['/app', '/index.html', '/landing.html', '/', '/apple-touch-icon.png',
                '/icon-192.png', '/icon-512.png', '/favicon.png', '/manifest.webmanifest'];
 

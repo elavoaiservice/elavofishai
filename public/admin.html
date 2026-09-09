@@ -75,7 +75,7 @@ pre{background:#0B1B33;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
     <div class="brand" style="justify-content:center;margin-bottom:6px"><img src="/icon-512.png" alt="">Command Center</div>
     <p class="snap" style="text-align:center;margin:0 0 18px">ElavoFishAI admin — restricted access.</p>
     <div id="step1">
-      <div style="margin-bottom:12px"><label for="au">Username</label><input id="au" autocomplete="username"></div>
+      <div style="margin-bottom:12px"><label for="au">Email</label><input id="au" type="email" autocomplete="username" placeholder="you@email.com"></div>
       <div style="margin-bottom:16px"><label for="ap">Password</label><input id="ap" type="password" autocomplete="current-password"></div>
       <button class="btn btn-primary" id="loginBtn" style="width:100%">Continue</button>
     </div>
@@ -204,11 +204,12 @@ async function tAnalytics(){ const m=await (await api('/api/admin/metrics')).jso
 }
 async function tAdmins(){ const d=await (await api('/api/admin/admins')).json();
   $('content').innerHTML='<div class="card" style="margin-bottom:16px"><h2>Add an admin</h2><div class="row">'+
-   '<div style="flex:1;min-width:140px"><label>Username</label><input id="aaU"></div><div style="flex:1;min-width:150px"><label>Email</label><input id="aaE" type="email"></div>'+
-   '<div style="flex:1;min-width:140px"><label>Password</label><input id="aaP" type="password"></div><button class="btn btn-primary" id="aaAdd">Create admin</button><span class="msg" id="aaMsg"></span></div></div>'+
-   '<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Username</th><th>Email</th><th>Created</th><th>Last login</th><th></th></tr></thead><tbody>'+
-   (d.admins||[]).map(a=>'<tr><td><b>'+esc(a.username)+'</b>'+(a.username===d.me?' <span class="snap">(you)</span>':'')+'</td><td class="snap">'+esc(a.email)+'</td><td>'+dt(a.createdAt)+'</td><td>'+ago(a.lastLoginAt)+'</td><td>'+(a.username===d.me?'':'<button class="btn btn-danger btn-sm ad" data-id="'+a.id+'" data-n="'+esc(a.username)+'">Delete</button>')+'</td></tr>').join('')+'</tbody></table></div>';
-  $('aaAdd').onclick=async()=>{ const r=await api('/api/admin/admins',{method:'POST',body:JSON.stringify({username:$('aaU').value.trim(),password:$('aaP').value,email:$('aaE').value.trim()})}); const j=await r.json(); $('aaMsg').className='msg '+(r.ok?'ok':'err'); $('aaMsg').textContent=r.ok?'Created ✓':(j.error||'Failed'); if(r.ok)tAdmins(); };
+   '<p class="snap" style="margin:-6px 0 12px">Admins sign in with their email address — a 6-digit code is sent there at login.</p><div class="row">'+
+   '<div style="flex:1;min-width:180px"><label>Email</label><input id="aaE" type="email" placeholder="admin@email.com"></div>'+
+   '<div style="flex:1;min-width:140px"><label>Password</label><input id="aaP" type="password" placeholder="min 8 characters"></div><button class="btn btn-primary" id="aaAdd">Create admin</button><span class="msg" id="aaMsg"></span></div></div>'+
+   '<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Email</th><th>Created</th><th>Last login</th><th></th></tr></thead><tbody>'+
+   (d.admins||[]).map(a=>'<tr><td><b>'+esc(a.email)+'</b>'+(a.username===d.me?' <span class="snap">(you)</span>':'')+'</td><td>'+dt(a.createdAt)+'</td><td>'+ago(a.lastLoginAt)+'</td><td>'+(a.username===d.me?'':'<button class="btn btn-danger btn-sm ad" data-id="'+a.id+'" data-n="'+esc(a.email)+'">Delete</button>')+'</td></tr>').join('')+'</tbody></table></div>';
+  $('aaAdd').onclick=async()=>{ const r=await api('/api/admin/admins',{method:'POST',body:JSON.stringify({email:$('aaE').value.trim(),password:$('aaP').value})}); const j=await r.json(); $('aaMsg').className='msg '+(r.ok?'ok':'err'); $('aaMsg').textContent=r.ok?'Created ✓':(j.error||'Failed'); if(r.ok)tAdmins(); };
   $('content').addEventListener('click',async e=>{ const b=e.target.closest('.ad'); if(!b)return; if(!confirm('Delete admin '+b.dataset.n+'?'))return; const r=await api('/api/admin/admins/'+b.dataset.id,{method:'DELETE'}); if(!r.ok){const j=await r.json();alert(j.error||'Failed');} tAdmins(); });
 }
 async function tAudit(){ const d=await (await api('/api/admin/audit')).json();

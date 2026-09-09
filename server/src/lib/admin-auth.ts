@@ -29,31 +29,36 @@ export function verifyPassword(pw: string, stored: string): Promise<boolean> {
   });
 }
 
-// Create a new admin account (used by the admin Security tab).
-export async function createAdminUser(username: string, password: string, email: string) {
+// Admins log in with their EMAIL address — it's the login id (stored in the
+// `username` column so sessions/audit keep working) and where MFA is sent.
+export async function createAdminUser(email: string, password: string) {
+  const login = email.trim().toLowerCase();
   const passwordHash = await hashPassword(password);
-  return prisma.adminUser.create({ data: { username, passwordHash, email } });
+  return prisma.adminUser.create({ data: { username: login, passwordHash, email: login } });
 }
 
-// Seed/refresh the admin account from env (ADMIN_USERNAME/PASSWORD/EMAIL).
+// Seed/refresh the seed admin from env (ADMIN_EMAIL + ADMIN_PASSWORD).
+// ADMIN_USERNAME is legacy-only: it lets us migrate a pre-email-login row in place.
 export async function bootstrapAdmin(): Promise<void> {
-  const username = process.env.ADMIN_USERNAME;
   const password = process.env.ADMIN_PASSWORD;
-  const email = process.env.ADMIN_EMAIL || 'admin@elavofishai.local';
-  if (!username || !password) return;
-  const existing = await prisma.adminUser.findUnique({ where: { username } });
+  const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const legacyUsername = process.env.ADMIN_USERNAME;
+  if (!password || !email) return;
   const passwordHash = await hashPassword(password);
+  const existing = await prisma.adminUser.findFirst({
+    where: { OR: [{ username: email }, { email }, ...(legacyUsername ? [{ username: legacyUsername }] : [])] },
+  });
   if (existing) {
-    await prisma.adminUser.update({ where: { id: existing.id }, data: { passwordHash, email } });
+    await prisma.adminUser.update({ where: { id: existing.id }, data: { username: email, email, passwordHash } });
   } else {
-    await prisma.adminUser.create({ data: { username, passwordHash, email } });
+    await prisma.adminUser.create({ data: { username: email, passwordHash, email } });
   }
 }
 
 // Step 1: verify username+password, mint a one-time MFA code (dev-returned until email is wired).
 export interface MfaChallenge { ok: boolean; code?: string; error?: string }
 export async function startAdminLogin(username: string, password: string): Promise<MfaChallenge> {
-  const admin = await prisma.adminUser.findUnique({ where: { username } });
+  const admin = await prisma.adminUser.findUnique({ where: { username: username.trim().toLowerCase() } });
   if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
     return { ok: false, error: 'Wrong username or password.' };
   }
@@ -76,7 +81,7 @@ export async function startAdminLogin(username: string, password: string): Promi
 
 // Step 2: verify the MFA code → start an admin session.
 export async function completeAdminLogin(username: string, code: string, reply: FastifyReply): Promise<boolean> {
-  const admin = await prisma.adminUser.findUnique({ where: { username } });
+  const admin = await prisma.adminUser.findUnique({ where: { username: username.trim().toLowerCase() } });
   if (!admin) return false;
   const rec = await prisma.adminMfaCode.findFirst({
     where: { adminId: admin.id, codeHash: sha256(code), usedAt: null, expiresAt: { gt: new Date() } },
