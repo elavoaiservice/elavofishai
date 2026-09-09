@@ -14,6 +14,14 @@ export interface ConfigItem {
   test?: boolean;
   placeholder?: string;
   help?: string;
+  choices?: string[]; // when set, the admin GUI renders a dropdown
+}
+
+// Who may send a new user a direct message, by default. Admin-configurable.
+export const MESSAGE_PRIVACY_CHOICES = ['everyone', 'friends', 'nobody'];
+export function defaultMessagePrivacy(): string {
+  const v = (process.env.DEFAULT_MESSAGE_PRIVACY || '').toLowerCase();
+  return MESSAGE_PRIVACY_CHOICES.includes(v) ? v : 'friends';
 }
 
 export const CATALOG: ConfigItem[] = [
@@ -22,6 +30,7 @@ export const CATALOG: ConfigItem[] = [
   { key: 'RESEND_API_KEY', label: 'Resend API key', group: 'Email', secret: true, test: true, placeholder: 're_...', help: 'Sends magic-link + admin MFA emails (replaces dev/console mode).' },
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
   { key: 'PUBLIC_BASE_URL', label: 'Public base URL', group: 'App', test: true, placeholder: 'https://elavofishai.elavoai.com' },
+  { key: 'DEFAULT_MESSAGE_PRIVACY', label: 'Default message privacy', group: 'Social', choices: MESSAGE_PRIVACY_CHOICES, placeholder: 'friends', help: 'Who can DM a NEW user by default: everyone, friends (recommended), or nobody. Each user can change their own setting in the app.' },
 ];
 
 const ENC_PREFIX = 'enc:';
@@ -59,7 +68,11 @@ export async function loadOverlay(): Promise<void> {
 }
 
 export async function setValue(key: string, value: string): Promise<void> {
-  if (!CATALOG.find((c) => c.key === key)) throw new Error('unknown setting');
+  const item = CATALOG.find((c) => c.key === key);
+  if (!item) throw new Error('unknown setting');
+  if (item.choices && value && !item.choices.includes(value)) {
+    throw new Error(`must be one of: ${item.choices.join(', ')}`);
+  }
   const secret = isSecret(key);
   const stored = secret ? encrypt(value) : value;
   await prisma.appConfig.upsert({

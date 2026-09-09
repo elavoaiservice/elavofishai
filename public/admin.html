@@ -228,14 +228,20 @@ async function tUpgrade(){ $('content').innerHTML='<div class="card"><div class=
   $('upBtn').onclick=async()=>{ if(!confirm('Pull latest code, rebuild and restart? Brief downtime.'))return; const d=await (await api('/api/admin/upgrade',{method:'POST'})).json(); $('upMsg').className='msg '+(d.ok?'ok':'err'); $('upMsg').textContent=d.ok?'Upgrade started — watch the log.':(d.error||'Could not start.'); };
   load(); clearInterval(window.__upT); window.__upT=setInterval(()=>{ if($('upLog'))load(); },3000);
 }
+function cfgField(i){
+  if(i.choices&&i.choices.length){
+    return '<select class="cfgfield" data-k="'+i.key+'">'+i.choices.map(o=>'<option value="'+esc(o)+'"'+(i.value===o?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+  }
+  return '<input class="cfgfield" data-k="'+i.key+'" '+(i.secret?'type="password"':'')+' placeholder="'+esc(i.placeholder||'')+'" value="'+esc(i.value||'')+'">';
+}
 async function tEnv(){ const d=await (await api('/api/admin/config')).json();
   $('content').innerHTML='<div class="card"><div id="settings"></div><div class="row" style="margin-top:8px"><button class="btn btn-ghost btn-sm" id="reloadCfg">Reload all</button><span class="msg" id="cfgMsg"></span></div></div>';
   $('settings').innerHTML=d.groups.map(g=>{ const items=d.items.filter(i=>i.group===g);
-    return '<div class="grp2"><h3>'+esc(g)+'</h3>'+items.map(i=>'<div class="set"><div><label>'+esc(i.label)+(i.set?' <span class="snap" style="color:var(--bull)">· set</span>':'')+'</label><input data-k="'+i.key+'" '+(i.secret?'type="password"':'')+' placeholder="'+esc(i.placeholder||'')+'" value="'+esc(i.value||'')+'">'+(i.help?'<div class="snap" style="margin-top:4px">'+esc(i.help)+'</div>':'')+'</div><button class="btn btn-ghost btn-sm save" data-k="'+i.key+'">Save</button>'+(i.test?'<button class="btn btn-ghost btn-sm test" data-k="'+i.key+'">Test</button>':'<span></span>')+'</div>').join('')+'</div>';
+    return '<div class="grp2"><h3>'+esc(g)+'</h3>'+items.map(i=>'<div class="set"><div><label>'+esc(i.label)+(i.set?' <span class="snap" style="color:var(--bull)">· set</span>':'')+'</label>'+cfgField(i)+(i.help?'<div class="snap" style="margin-top:4px">'+esc(i.help)+'</div>':'')+'</div><button class="btn btn-ghost btn-sm save" data-k="'+i.key+'">Save</button>'+(i.test?'<button class="btn btn-ghost btn-sm test" data-k="'+i.key+'">Test</button>':'<span></span>')+'</div>').join('')+'</div>';
   }).join('');
   $('settings').addEventListener('click',async e=>{ const save=e.target.closest('.save'),test=e.target.closest('.test');
-    if(save){ const k=save.dataset.k,v=$('settings').querySelector('input[data-k="'+k+'"]').value; save.textContent='Saving…'; const r=await api('/api/admin/config',{method:'PUT',body:JSON.stringify({key:k,value:v})}); save.textContent=r.ok?'Saved ✓':'Failed'; setTimeout(()=>save.textContent='Save',1400); }
-    if(test){ const k=test.dataset.k,v=$('settings').querySelector('input[data-k="'+k+'"]').value; test.textContent='Testing…'; const d2=await (await api('/api/admin/config/test',{method:'POST',body:JSON.stringify({key:k,value:v})})).json(); $('cfgMsg').className='msg '+(d2.ok?'ok':'err'); $('cfgMsg').textContent=(d2.ok?'✓ ':'✗ ')+d2.message; test.textContent='Test'; } });
+    if(save){ const k=save.dataset.k,v=$('settings').querySelector('.cfgfield[data-k="'+k+'"]').value; save.textContent='Saving…'; const r=await api('/api/admin/config',{method:'PUT',body:JSON.stringify({key:k,value:v})}); save.textContent=r.ok?'Saved ✓':'Failed'; setTimeout(()=>save.textContent='Save',1400); }
+    if(test){ const k=test.dataset.k,v=$('settings').querySelector('.cfgfield[data-k="'+k+'"]').value; test.textContent='Testing…'; const d2=await (await api('/api/admin/config/test',{method:'POST',body:JSON.stringify({key:k,value:v})})).json(); $('cfgMsg').className='msg '+(d2.ok?'ok':'err'); $('cfgMsg').textContent=(d2.ok?'✓ ':'✗ ')+d2.message; test.textContent='Test'; } });
   $('reloadCfg').onclick=async()=>{ await api('/api/admin/config/reload',{method:'POST'}); $('cfgMsg').className='msg ok'; $('cfgMsg').textContent='Reloaded into the running app.'; };
 }
 boot();

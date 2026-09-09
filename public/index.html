@@ -779,6 +779,8 @@ body.feed-loading .stat-v *{visibility:hidden}
   <button class="tab" role="tab" aria-selected="false" data-v="scope">LiveScope</button>
   <button class="tab" role="tab" aria-selected="false" data-v="log">Log</button>
   <button class="tab" role="tab" aria-selected="false" data-v="friends">🎣 Friends</button>
+  <button class="tab" role="tab" aria-selected="false" data-v="msgs">💬 Messages<span id="msgBadge" class="msg-badge" hidden></span></button>
+  <button class="tab" role="tab" aria-selected="false" data-v="profile">👤 Profile</button>
 </div>
 
 <section class="panel" id="p-best">
@@ -1121,6 +1123,92 @@ body.feed-loading .stat-v *{visibility:hidden}
 
     <h3 style="margin-top:24px">Friends' activity on <span id="frLake2"></span></h3>
     <div id="frFeed" class="lede">Loading…</div>
+  </div>
+</section>
+
+<!-- ============ Messages ============ -->
+<section class="panel" id="p-msgs" hidden>
+  <style>
+    .msg-badge{display:inline-block;min-width:8px;padding:0 6px;margin-left:6px;font-size:11px;font-weight:700;line-height:17px;color:#fff;background:#e5484d;border-radius:999px;vertical-align:middle}
+    #p-msgs .mg-wrap{display:grid;grid-template-columns:280px 1fr;gap:0;border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:440px;background:var(--surface)}
+    #p-msgs .mg-list{border-right:1px solid var(--border);overflow-y:auto;max-height:560px}
+    #p-msgs .mg-thread-row{display:flex;gap:10px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer}
+    #p-msgs .mg-thread-row:hover{background:var(--bg)}
+    #p-msgs .mg-thread-row.on{background:var(--bg)}
+    #p-msgs .mg-av{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--bg);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary);border:1px solid var(--border)}
+    #p-msgs .mg-tmeta{min-width:0;flex:1}
+    #p-msgs .mg-tname{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:6px}
+    #p-msgs .mg-tlast{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #p-msgs .mg-unread{min-width:8px;padding:0 6px;font-size:11px;font-weight:700;color:#fff;background:#e5484d;border-radius:999px;line-height:17px}
+    #p-msgs .mg-pane{display:flex;flex-direction:column;min-height:440px;max-height:560px}
+    #p-msgs .mg-head{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;display:flex;align-items:center;gap:10px}
+    #p-msgs .mg-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+    #p-msgs .mg-b{max-width:75%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.35;word-wrap:break-word}
+    #p-msgs .mg-b.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+    #p-msgs .mg-b.them{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-bottom-left-radius:4px}
+    #p-msgs .mg-time{font-size:10px;opacity:.65;margin-top:3px;display:block}
+    #p-msgs .mg-compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+    #p-msgs .mg-compose textarea{flex:1;resize:none;height:40px;max-height:120px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+    #p-msgs .mg-empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);text-align:center;padding:24px}
+    @media(max-width:680px){#p-msgs .mg-wrap{grid-template-columns:1fr}#p-msgs .mg-wrap.on-thread .mg-list{display:none}#p-msgs .mg-wrap:not(.on-thread) .mg-pane{display:none}}
+  </style>
+  <div id="msgsAuth" class="lede">Sign in (top-left) to message other anglers.</div>
+  <div id="msgsMain" hidden>
+    <p class="lede" style="margin-top:0">Private messages with other anglers. <span id="msgsPolicyNote" class="snap"></span></p>
+    <div class="mg-wrap" id="mgWrap">
+      <div class="mg-list" id="mgList"></div>
+      <div class="mg-pane" id="mgPane">
+        <div class="mg-empty" id="mgEmpty">Pick a conversation, or message a friend from the <b style="margin:0 4px">🎣 Friends</b> tab.</div>
+        <div id="mgActive" hidden style="display:flex;flex-direction:column;height:100%">
+          <div class="mg-head"><button class="btn ghost btn-sm" id="mgBack" style="display:none">←</button><span class="mg-av" id="mgHeadAv"></span><span id="mgHeadName"></span></div>
+          <div class="mg-scroll" id="mgScroll"></div>
+          <div id="mgBlocked" class="snap" hidden style="padding:12px 14px;color:var(--muted);border-top:1px solid var(--border)"></div>
+          <div class="mg-compose" id="mgCompose"><textarea id="mgInput" placeholder="Write a message…" maxlength="4000"></textarea><button class="btn" id="mgSend">Send</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Profile ============ -->
+<section class="panel" id="p-profile" hidden>
+  <style>
+    #p-profile .pf-in{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);font-family:Inter,sans-serif;font-size:14px;margin-bottom:12px}
+    #p-profile textarea.pf-in{resize:vertical;min-height:74px}
+    #p-profile label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+    #p-profile .pf-grid{display:grid;gap:0 18px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+    #p-profile .pf-av{width:96px;height:96px;border-radius:50%;object-fit:cover;border:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:var(--primary)}
+    #p-profile .pf-avrow{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  </style>
+  <div id="profileAuth" class="lede">Sign in (top-left) to build your angler profile.</div>
+  <div id="profileMain" hidden style="max-width:640px">
+    <h3 style="margin-top:0">Your angler profile</h3>
+    <div class="pf-avrow">
+      <span class="pf-av" id="pfAvatar"></span>
+      <div>
+        <button class="btn ghost btn-sm" id="pfAvBtn">Upload photo</button>
+        <button class="btn ghost btn-sm" id="pfAvClear" hidden>Remove</button>
+        <input type="file" id="pfAvFile" accept="image/*" hidden>
+        <div class="snap" style="color:var(--muted);margin-top:6px">A square photo works best.</div>
+      </div>
+    </div>
+    <label for="pfName">Display name</label>
+    <input id="pfName" class="pf-in" maxlength="60" placeholder="How other anglers see you">
+    <div class="pf-grid">
+      <div><label for="pfLocation">Location</label><input id="pfLocation" class="pf-in" maxlength="120" placeholder="e.g. Granbury, TX"></div>
+      <div><label for="pfSpecies">Favorite species</label><input id="pfSpecies" class="pf-in" maxlength="60" placeholder="e.g. Largemouth Bass"></div>
+    </div>
+    <label for="pfLake">Favorite lake</label>
+    <select id="pfLake" class="pf-in"><option value="">— none —</option></select>
+    <label for="pfBio">About you</label>
+    <textarea id="pfBio" class="pf-in" maxlength="600" placeholder="Tell other anglers about how you fish…"></textarea>
+    <label for="pfPrivacy">Who can message you</label>
+    <select id="pfPrivacy" class="pf-in">
+      <option value="everyone">Everyone</option>
+      <option value="friends">Friends only</option>
+      <option value="nobody">No one</option>
+    </select>
+    <div class="formfoot"><button class="btn" id="pfSave">Save profile</button><span class="snap" id="pfMsg" style="color:var(--muted)"></span></div>
   </div>
 </section>
 
@@ -2539,6 +2627,7 @@ function drawAuth(){
   $('auSignedOut').hidden=!!AUTH.user;
   $('auSignedIn').hidden=!AUTH.user;
   if(AUTH.user)$('auWho').textContent='Signed in as '+AUTH.user+' \u2014 your log follows you to any device.';
+  if(typeof refreshUnread==='function')refreshUnread();
 }
 async function requestLink(){
   const email=$('auEmail').value.trim();
@@ -2706,7 +2795,7 @@ async function loadFriends(){
 async function refreshFriends(){
   try{ const r=await apiFetch('/api/friends'); const d=await r.json(); FRIENDS=d.friends||[];
     $('frRequests').innerHTML=(d.incoming||[]).map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">wants to be friends</span></span><span><button class="btn btn-sm" data-acc="'+f.friendshipId+'">Accept</button> <button class="btn ghost btn-sm" data-dec="'+f.friendshipId+'">Decline</button></span></div>').join('');
-    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
+    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
   }catch(e){}
 }
 async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)return; $('frMsg').textContent='Sending…';
@@ -2763,7 +2852,8 @@ function wireFriends(){
   $('spVis').onchange=()=>{$('spGroup').hidden=$('spVis').value!=='group';};
   $('caVis').onchange=()=>{$('caGroup').hidden=$('caVis').value!=='group';};
   p.addEventListener('click',e=>{
-    const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]');
+    const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]'),msg=e.target.closest('[data-msg]');
+    if(msg){ goToMessages(msg.dataset.msg,msg.dataset.msgname); return; }
     if(acc)apiFetch('/api/friends/'+acc.dataset.acc+'/accept',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
     else if(dec)apiFetch('/api/friends/'+dec.dataset.dec+'/decline',{method:'POST'}).then(refreshFriends);
     else if(rem)apiFetch('/api/friends/'+rem.dataset.rem+'/decline',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
@@ -2772,6 +2862,152 @@ function wireFriends(){
   });
   p.addEventListener('change',e=>{ const a=e.target.closest('[data-addto]'); if(a&&a.value){ apiFetch('/api/groups/'+a.dataset.addto+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:a.value})}).then(refreshGroups); } });
 }
+/* ---- Profile ---- */
+let PF_PENDING_AVATAR=undefined; // undefined = unchanged, null = cleared, string = new data URL
+function avInitials(name){ return (String(name||'?').trim()[0]||'?').toUpperCase(); }
+function paintAvatar(el,url,name){
+  if(url){ el.innerHTML=''; el.style.backgroundImage='url("'+url+'")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
+  else { el.style.backgroundImage=''; el.textContent=avInitials(name); }
+}
+async function loadProfile(){
+  if(!AUTH.user){ $('profileAuth').hidden=false; $('profileMain').hidden=true; return; }
+  $('profileAuth').hidden=true; $('profileMain').hidden=false;
+  PF_PENDING_AVATAR=undefined;
+  try{
+    const [pr,lk]=await Promise.all([apiFetch('/api/me/profile'),apiFetch('/api/me/lakes')]);
+    const p=(await pr.json()).profile||{};
+    const lakes=((await lk.json()).lakes)||[];
+    $('pfName').value=p.displayName||''; $('pfLocation').value=p.location||'';
+    $('pfSpecies').value=p.favoriteSpecies||''; $('pfBio').value=p.bio||'';
+    $('pfPrivacy').value=p.messagePrivacy||'friends';
+    $('pfLake').innerHTML='<option value="">— none —</option>'+lakes.map(l=>'<option value="'+l.id+'"'+(p.favoriteLakeId===l.id?' selected':'')+'>'+escHtml(l.name)+(l.region?' ('+escHtml(l.region)+')':'')+'</option>').join('');
+    paintAvatar($('pfAvatar'),p.avatarUrl,p.displayName);
+    $('pfAvClear').hidden=!p.avatarUrl;
+    $('pfMsg').textContent='';
+  }catch(e){ $('pfMsg').textContent='Could not load your profile.'; }
+}
+function resizeImage(file,cb){
+  const rd=new FileReader();
+  rd.onload=function(){ const img=new Image(); img.onload=function(){
+    const S=256, c=document.createElement('canvas'); c.width=S; c.height=S;
+    const ctx=c.getContext('2d'); const m=Math.min(img.width,img.height);
+    ctx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
+    cb(c.toDataURL('image/jpeg',0.82));
+  }; img.onerror=function(){cb(null)}; img.src=rd.result; };
+  rd.onerror=function(){cb(null)}; rd.readAsDataURL(file);
+}
+async function saveProfile(){
+  $('pfMsg').textContent='Saving…';
+  const body={ displayName:$('pfName').value.trim(), location:$('pfLocation').value.trim(),
+    favoriteSpecies:$('pfSpecies').value.trim(), bio:$('pfBio').value.trim(),
+    favoriteLakeId:$('pfLake').value||null, messagePrivacy:$('pfPrivacy').value };
+  if(PF_PENDING_AVATAR!==undefined) body.avatarUrl=PF_PENDING_AVATAR;
+  try{
+    const r=await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){ $('pfMsg').textContent=d.error||'Could not save.'; return; }
+    $('pfMsg').textContent='Saved ✓'; PF_PENDING_AVATAR=undefined;
+    // Reflect a new display name in the header button.
+    if(body.displayName){ AUTH.user=body.displayName; drawAuth(); }
+  }catch(e){ $('pfMsg').textContent='Server not reachable.'; }
+}
+function wireProfile(){
+  if(!$('p-profile'))return;
+  $('pfSave').onclick=saveProfile;
+  $('pfAvBtn').onclick=()=>$('pfAvFile').click();
+  $('pfAvFile').onchange=function(){ const f=this.files&&this.files[0]; if(!f)return;
+    if(f.size>8*1024*1024){ $('pfMsg').textContent='That photo is very large — pick one under 8MB.'; return; }
+    resizeImage(f,function(url){ if(!url){$('pfMsg').textContent='Could not read that image.';return;}
+      PF_PENDING_AVATAR=url; paintAvatar($('pfAvatar'),url,$('pfName').value); $('pfAvClear').hidden=false; $('pfMsg').textContent='Photo ready — hit Save.'; });
+    this.value='';
+  };
+  $('pfAvClear').onclick=function(){ PF_PENDING_AVATAR=null; paintAvatar($('pfAvatar'),null,$('pfName').value); this.hidden=true; $('pfMsg').textContent='Photo removed — hit Save.'; };
+}
+
+/* ---- Messages ---- */
+let MG_OPEN=null;            // userId of the open thread
+let MG_POLL=null;            // thread poll timer
+let MG_PENDING=null;         // {id,name} to open when the tab loads
+function mgTime(d){ const t=new Date(d); const now=new Date();
+  if(t.toDateString()===now.toDateString()) return t.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  return t.toLocaleDateString([], {month:'short',day:'numeric'}); }
+async function openMessages(){
+  if(!AUTH.user){ $('msgsAuth').hidden=false; $('msgsMain').hidden=true; return; }
+  $('msgsAuth').hidden=true; $('msgsMain').hidden=false;
+  await loadThreads();
+  if(MG_PENDING){ const p=MG_PENDING; MG_PENDING=null; openThread(p.id,p.name,null); }
+}
+async function loadThreads(){
+  try{
+    const r=await apiFetch('/api/messages/threads'); const d=await r.json();
+    const th=d.threads||[];
+    $('mgList').innerHTML=th.length?th.map(t=>'<div class="mg-thread-row'+(t.userId===MG_OPEN?' on':'')+'" data-thread="'+t.userId+'" data-tname="'+escHtml(t.displayName)+'">'
+      +'<span class="mg-av"'+(t.avatarUrl?' style="background-image:url(\''+t.avatarUrl.replace(/'/g,"%27")+'\');background-size:cover;background-position:center"':'')+'>'+(t.avatarUrl?'':avInitials(t.displayName))+'</span>'
+      +'<span class="mg-tmeta"><span class="mg-tname">'+escHtml(t.displayName)+(t.unread?' <span class="mg-unread">'+t.unread+'</span>':'')+'</span>'
+      +'<span class="mg-tlast">'+(t.lastMine?'You: ':'')+escHtml(t.last)+'</span></span></div>').join('')
+      :'<p class="snap" style="padding:16px">No conversations yet. Message a friend from the 🎣 Friends tab.</p>';
+  }catch(e){}
+}
+async function openThread(userId,name,avatar){
+  MG_OPEN=userId;
+  $('mgEmpty').hidden=true; $('mgActive').hidden=false;
+  $('mgWrap').classList.add('on-thread');
+  $('mgHeadName').textContent=name||'Angler';
+  paintAvatar($('mgHeadAv'),avatar,name);
+  document.querySelectorAll('#mgList .mg-thread-row').forEach(el=>el.classList.toggle('on',el.dataset.thread===userId));
+  await refreshThread(true);
+  startThreadPoll();
+  refreshUnread();
+}
+async function refreshThread(scroll){
+  if(!MG_OPEN)return;
+  try{
+    const r=await apiFetch('/api/messages/'+MG_OPEN); const d=await r.json();
+    if(!r.ok)return;
+    $('mgHeadName').textContent=(d.other&&d.other.displayName)||$('mgHeadName').textContent;
+    if(d.other)paintAvatar($('mgHeadAv'),d.other.avatarUrl,d.other.displayName);
+    const msgs=d.messages||[];
+    $('mgScroll').innerHTML=msgs.length?msgs.map(m=>'<div class="mg-b '+(m.mine?'me':'them')+'">'+escHtml(m.body).replace(/\n/g,'<br>')+'<span class="mg-time">'+mgTime(m.createdAt)+'</span></div>').join(''):'<div class="mg-empty">No messages yet — say hello.</div>';
+    if(d.canSend){ $('mgCompose').style.display=''; $('mgBlocked').hidden=true; }
+    else { $('mgCompose').style.display='none'; $('mgBlocked').hidden=false; $('mgBlocked').textContent=d.cannotReason||'You cannot message this angler.'; }
+    if(scroll){ const s=$('mgScroll'); s.scrollTop=s.scrollHeight; }
+  }catch(e){}
+}
+function startThreadPoll(){ stopThreadPoll(); MG_POLL=setInterval(()=>{ if(MG_OPEN&&!$('p-msgs').hidden) refreshThread(false); },4000); }
+function stopThreadPoll(){ if(MG_POLL){ clearInterval(MG_POLL); MG_POLL=null; } }
+async function sendMsg(){
+  const body=$('mgInput').value.trim(); if(!body||!MG_OPEN)return;
+  $('mgInput').value='';
+  try{
+    const r=await apiFetch('/api/messages/'+MG_OPEN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+    const d=await r.json();
+    if(!r.ok){ $('mgInput').value=body; $('mgBlocked').hidden=false; $('mgBlocked').textContent=d.error||'Could not send.'; return; }
+    await refreshThread(true); loadThreads();
+  }catch(e){ $('mgInput').value=body; }
+}
+function goToMessages(userId,name){
+  MG_PENDING={id:userId,name:name};
+  const tab=document.querySelector('.tab[data-v="msgs"]'); if(tab)tab.click();
+}
+async function refreshUnread(){
+  if(!AUTH.user){ $('msgBadge').hidden=true; return; }
+  try{
+    const r=await apiFetch('/api/messages/unread-count'); if(!r.ok)return;
+    const n=(await r.json()).count||0;
+    const b=$('msgBadge'); if(n>0){ b.textContent=n>99?'99+':n; b.hidden=false; } else b.hidden=true;
+  }catch(e){}
+}
+function wireMessages(){
+  if(!$('p-msgs'))return;
+  $('mgList').addEventListener('click',e=>{ const row=e.target.closest('[data-thread]'); if(row)openThread(row.dataset.thread,row.dataset.tname,null); });
+  $('mgSend').onclick=sendMsg;
+  $('mgBack').onclick=()=>{ $('mgWrap').classList.remove('on-thread'); MG_OPEN=null; stopThreadPoll(); };
+  $('mgInput').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMsg(); } });
+  // show the mobile back button only when narrow
+  const setBack=()=>{ $('mgBack').style.display=(window.innerWidth<=680)?'':'none'; };
+  setBack(); window.addEventListener('resize',setBack);
+}
+
 async function migrateLocalUp(){
   // one-time seed: push local data for keys the server doesn't have yet
   try{
@@ -3241,7 +3477,7 @@ function setMode(m){
 }
 $('mEater').onclick=function(){setMode('eater')};
 $('mTrophy').onclick=function(){setMode('trophy')};
-const VIEWS=['best','plan','weeks','water','spots','season','species','rigs','scope','log','friends'];
+const VIEWS=['best','plan','weeks','water','spots','season','species','rigs','scope','log','friends','msgs','profile'];
 document.querySelectorAll('.tab').forEach(function(t){
   t.onclick=function(){
     document.querySelectorAll('.tab').forEach(function(x){x.setAttribute('aria-selected',x===t)});
@@ -3251,6 +3487,8 @@ document.querySelectorAll('.tab').forEach(function(t){
     if(t.dataset.v==='log'){ initMap(); setTimeout(function(){ if(map)map.invalidateSize(); },80); }
     if(t.dataset.v==='plan'){ drawBrief(); }
     if(t.dataset.v==='friends'){ loadFriends(); }
+    if(t.dataset.v==='msgs'){ openMessages(); } else { stopThreadPoll(); }
+    if(t.dataset.v==='profile'){ loadProfile(); }
   };
 });
 
@@ -3570,6 +3808,10 @@ drawTrips();
   const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
   drawLakeGuide();
   wireFriends();
+  wireProfile();
+  wireMessages();
+  refreshUnread();
+  setInterval(refreshUnread,20000);
   if(!isNaN(ACTIVE.lat)){ $('spLat').value=ACTIVE.lat.toFixed(5); $('spLon').value=ACTIVE.lon.toFixed(5); }
   const tp=await stGet(LK('theme'));
   if(tp==='dark'||tp==='light'||tp==='auto')themePref=tp;

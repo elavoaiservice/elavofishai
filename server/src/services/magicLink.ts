@@ -2,6 +2,7 @@ import { prisma } from '../db';
 import { env } from '../env';
 import { randomToken, sha256 } from '../lib/crypto';
 import { emailConfigured, magicLinkEmail, sendEmail } from './email';
+import { defaultMessagePrivacy } from '../config-store';
 
 export interface IssuedLink {
   url: string;
@@ -73,6 +74,7 @@ export async function consumeMagicLink(rawToken: string, ip: string): Promise<Co
       data: {
         email: rec.email,
         displayName: rec.displayName || rec.email.split('@')[0],
+        messagePrivacy: defaultMessagePrivacy(),
       },
     });
   }

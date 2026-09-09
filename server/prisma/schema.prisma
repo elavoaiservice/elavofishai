@@ -75,12 +75,24 @@ model User {
   email       String    @unique
   displayName String
   username    String?   @unique
-  avatarUrl   String?
+  avatarUrl   String?   @db.Text // data URL (client-resized square) or external URL
   role        Role      @default(user)
   status      String    @default("active") // active | suspended
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   lastLoginAt DateTime?
+
+  // ---- profile ----
+  location        String? // e.g. "Granbury, TX"
+  bio             String? @db.Text
+  favoriteSpecies String? // e.g. "Largemouth Bass"
+  favoriteLakeId  String?
+  favoriteLake    Lake?   @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
+
+  // ---- messaging ----
+  messagePrivacy   String    @default("friends") // everyone | friends | nobody
+  sentMessages     Message[] @relation("MsgSender")
+  receivedMessages Message[] @relation("MsgRecipient")
 
   sessions              Session[]
   userLakes             UserLake[]
@@ -163,8 +175,25 @@ model Lake {
   waypoints     Waypoint[]
   dayPlans      DayPlan[]
   contributions ProfileContribution[]
+  favoritedBy   User[]                @relation("UserFavoriteLake")
 
   @@index([name])
+}
+
+// ---- Direct messages (friends-only by default; per-user privacy setting gates delivery) ----
+model Message {
+  id          String    @id @default(cuid())
+  senderId    String
+  sender      User      @relation("MsgSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User      @relation("MsgRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  body        String    @db.Text
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+
+  @@index([recipientId, readAt]) // unread counts
+  @@index([senderId, recipientId, createdAt]) // thread load
+  @@index([recipientId, senderId, createdAt])
 }
 
 // Cached AI day plans, keyed per (lake, date, species). Shared across users
