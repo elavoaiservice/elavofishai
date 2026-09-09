@@ -11,6 +11,9 @@
 #
 # Restore:  gunzip -c backups/elavofish-<stamp>.sql.gz | \
 #             docker compose exec -T postgres psql -U elavofish elavofish
+#
+# Verify a dump without touching the live database (recommended after any
+# change to this script):  ./scripts/verify-backup.sh backups/<file>.sql.gz
 set -e
 
 DEST="${1:-$(dirname "$0")/../backups}"

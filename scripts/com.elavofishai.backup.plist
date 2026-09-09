@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly ElavoFishAI database backup (launchd, macOS).
+
+  Edit the paths below for your checkout, then:
+
+    cp scripts/com.elavofishai.backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.elavofishai.backup.plist
+    launchctl start com.elavofishai.backup     # run once now to prove it works
+
+  Runs scripts/backup.sh at 03:15 daily. Backups land in backups/ (gitignored)
+  and anything older than KEEP_DAYS is pruned. Restore instructions are in the
+  README under "Data and backups".
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.elavofishai.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/CHANGEME/elavofishai/scripts/backup.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/CHANGEME/elavofishai</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Docker Desktop's CLI is not on launchd's default PATH. -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>KEEP_DAYS</key>
+    <string>14</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CHANGEME/elavofishai/backups/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/CHANGEME/elavofishai/backups/backup.log</string>
+</dict>
+</plist>
