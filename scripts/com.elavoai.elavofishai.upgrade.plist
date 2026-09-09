@@ -21,6 +21,7 @@
   <array>
     <string>/bin/sh</string>
     <string>/Users/CHANGEME/elavofishai/scripts/upgrade-agent.sh</string>
+    <string>--once</string>
   </array>
 
   <key>WorkingDirectory</key>
@@ -35,14 +36,16 @@
     <string>main</string>
   </dict>
 
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
+  <!-- Fire the instant the API drops a trigger file — no polling loop to keep
+       alive. Adjust the path if DEPLOY_DIR points somewhere else. -->
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/CHANGEME/efa-deploy/trigger</string>
+  </array>
 
   <key>StandardOutPath</key>
-  <string>/Users/CHANGEME/elavofishai/deploy/agent.log</string>
+  <string>/Users/CHANGEME/efa-deploy/agent.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/CHANGEME/elavofishai/deploy/agent.log</string>
+  <string>/Users/CHANGEME/efa-deploy/agent.log</string>
 </dict>
 </plist>

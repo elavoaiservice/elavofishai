@@ -6,16 +6,24 @@
 # on the host, watches for that file, and does the actual pull + rebuild +
 # restart, streaming progress to deploy/status.log — which the admin panel tails.
 #
-#   ./scripts/upgrade-agent.sh          # watch forever (INTERVAL=10s)
-#   ./scripts/upgrade-agent.sh --once   # run one upgrade now, then exit
+#   ./scripts/upgrade-agent.sh --once   # act on a pending trigger, then exit
+#   ./scripts/upgrade-agent.sh          # poll for triggers (INTERVAL=10s)
 #
-# Install it on the Mini with the launchd plist beside this script, or run it
-# under tmux/systemd. It must run as a user who can push/pull the repo and talk
-# to Docker.
+# --once is the mode to install: the launchd plist beside this script uses
+# WatchPaths, so macOS runs it the moment the trigger file appears — no polling
+# loop to keep alive. The watch loop is the fallback for systemd/tmux hosts.
+# It must run as a user who can pull the repo and talk to Docker.
+#
+# DEPLOY_DIR overrides where the trigger/lock/log live (must match the host path
+# compose mounts at /deploy); it is read from the repo's .env when set there.
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DEPLOY_DIR="$REPO_DIR/deploy"
+# Keep in step with docker-compose.yml, which mounts ${DEPLOY_DIR:-./deploy}.
+if [ -z "$DEPLOY_DIR" ] && [ -f "$REPO_DIR/.env" ]; then
+  DEPLOY_DIR="$(sed -n 's/^DEPLOY_DIR=//p' "$REPO_DIR/.env" | tail -1)"
+fi
+DEPLOY_DIR="${DEPLOY_DIR:-$REPO_DIR/deploy}"
 TRIGGER="$DEPLOY_DIR/trigger"
 LOCK="$DEPLOY_DIR/upgrade.lock"
 LOG="$DEPLOY_DIR/status.log"
@@ -63,6 +71,14 @@ run_upgrade() {
     git --no-pager log --oneline "$before..$after" >>"$LOG" 2>&1 || true
   fi
 
+  # compose interpolates these from .env when run from the project directory;
+  # exporting PG_PASSWORD too keeps a launchd environment (no shell profile)
+  # from silently building with the default password.
+  if [ -f "$REPO_DIR/.env" ]; then
+    PG_PASSWORD="$(sed -n 's/^PG_PASSWORD=//p' "$REPO_DIR/.env" | tail -1)"
+    export PG_PASSWORD
+  fi
+
   log "building images..."
   if ! docker compose build >>"$LOG" 2>&1; then
     log "FAILED: docker compose build"
@@ -74,6 +90,9 @@ run_upgrade() {
     log "FAILED: docker compose up"
     return 1
   fi
+
+  # Rebuilds leave the previous image dangling; on a Mini that adds up.
+  docker image prune -f >/dev/null 2>&1 || true
 
   log "waiting for the app to come back..."
   i=0
@@ -90,6 +109,9 @@ run_upgrade() {
 }
 
 if [ "$1" = "--once" ]; then
+  # Nothing pending (launchd also fires on trigger deletion) — not an error.
+  [ -f "$TRIGGER" ] || { echo "[upgrade-agent] no trigger pending"; exit 0; }
+  [ -f "$LOCK" ] && { echo "[upgrade-agent] an upgrade is already running"; exit 0; }
   run_upgrade
   exit $?
 fi

@@ -27,7 +27,8 @@ Stack: TypeScript + Fastify + Prisma + Postgres (Node 22), serving the PWA and
       tools/             bake-changelog.js (history baked into the image)
       test/              node:test suites (auth, sharing/visibility, unit)
       Dockerfile, docker-start.sh
-    scripts/             test.sh, backup.sh, upgrade-agent.sh + launchd plist
+    scripts/             test.sh, backup.sh, verify-backup.sh, upgrade-agent.sh
+                         + launchd plists (backup, upgrade)
     docker-compose.yml   postgres + app
     docs/ELAVOFISHAI-PLAN.md   the build plan and phase status
 
@@ -132,10 +133,15 @@ the admin panel tails live. Run the agent as the user that owns the checkout:
     ./scripts/upgrade-agent.sh          # watch for trigger files
     ./scripts/upgrade-agent.sh --once   # do one upgrade now
 
-On the Mini, install it with `scripts/com.elavoai.elavofishai.upgrade.plist`
-(edit the paths, copy to `~/Library/LaunchAgents`, `launchctl load`). Without a
-running agent the button writes a trigger nothing acts on; without the `/deploy`
-mount the tab reports "not configured". The version display compares the commit
+On the Mini it runs as a launchd job
+(`scripts/com.elavoai.elavofishai.upgrade.plist`): `WatchPaths` fires
+`upgrade-agent.sh --once` the moment the trigger file appears, so there's no
+polling loop to keep alive. Edit the paths, copy to `~/Library/LaunchAgents`,
+`launchctl load`. Set `DEPLOY_DIR` in `.env` when the shared directory lives
+outside the checkout (the Mini uses `~/efa-deploy`) — compose mounts that same
+path at `/deploy`, so agent and app always agree. Without a running agent the
+button writes a trigger nothing acts on; without the mount the tab reports "not
+configured". The version display compares the commit
 baked into the image at build time against the latest commit on the tracked
 branch of `elavoaiservice/elavofishai`.
 

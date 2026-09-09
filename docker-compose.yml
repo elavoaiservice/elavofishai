@@ -47,7 +47,7 @@ services:
       # "Upgrade from Git" button writes a trigger file here and tails
       # status.log; the container never runs git or docker itself. Without this
       # mount the Upgrade tab reports "not configured".
-      - ./deploy:/deploy
+      - ${DEPLOY_DIR:-./deploy}:/deploy
     ports:
       - '3100:3100'
     depends_on:
