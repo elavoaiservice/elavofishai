@@ -167,6 +167,24 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
 
+## App layout
+
+The angler-facing app follows ElavoAI's dashboard shape: a sticky sidebar card
+on desktop with flat primary items over collapsible groups (Lake guide,
+Settings), a four-item bottom nav plus drawer on mobile, and a page
+title/subtitle above each view. Every view has a hash route.
+
+**My water** is one view with three sub-tabs — map & waypoints, spots, trips —
+rather than the separate Spots and Log tabs it grew from; they were the same
+data seen twice.
+
+Colors come from ElavoAI's dashboard, not an approximation of it: `#29ABE2`
+primary, `#1F96C8` hover, `#1882AE` deep accent, `#10233F` ink, `#DCE7F5`
+border, and the soft-fill family it uses around accented elements — `#F0F9FF`
+hover/active fill, `#E0F4FC` soft accent, `#C8E6F7` ring. Dark mode maps the
+same roles onto translucent accents so the night palette still protects night
+vision on the water.
+
 ## Chartplotter import / export
 
 Waypoints move both ways as GPX 1.1. Import accepts an export from any unit:

@@ -28,7 +28,12 @@
   --violet:#5B4BC4; --violet-soft:#F0EEFB;
   --r1:#EAF3FB; --r2:#C3E2F4; --r3:#86CBEC; --r4:#45B2E6; --r5:#1882AE;
   --t1:#F0EEFB; --t2:#D7D1F2; --t3:#AFA5E4; --t4:#8577D6; --t5:#5B4BC4;
-  --accent:var(--primary); --accent-soft:#E8F5FC; --accent-dark:var(--primary-dark);
+  /* Accent family lifted from ElavoAI's dashboard so both apps read as one
+     product: #F0F9FF is its hover/active fill, #E0F4FC its soft accent block,
+     #C8E6F7 the ring it draws around accented elements. */
+  --accent:var(--primary); --accent-soft:#F0F9FF; --accent-mid:#E0F4FC; --accent-ring:#C8E6F7;
+  --accent-dark:var(--primary-dark);
+  --ok:#10B981; --caution:#F59E0B;
   --lift:0 12px 28px rgba(16,35,63,.08);
   --shadow:0 1px 2px rgba(16,35,63,.04),0 6px 18px rgba(16,35,63,.05);
   --rc:18px; --ri:10px; --rh:22px;
@@ -545,6 +550,7 @@ table.reg tbody tr:hover td{background:var(--surface-alt)}
   --bg:#0B1622; --surface:#12233A; --surface-alt:#0E1D30; --border:#22395A;
   --ink:#E9F2FB; --muted:#93A9C2; --primary-dark:#5FC3EE;
   --accent-soft:rgba(41,171,226,.14); --violet-soft:rgba(91,75,196,.18);
+  --accent-mid:rgba(41,171,226,.10); --accent-ring:rgba(41,171,226,.30);
   --r1:#16283F; --t1:#1B2440;
   --shadow-1:0 1px 2px rgba(0,0,0,.4),0 10px 26px -8px rgba(0,0,0,.5);
   --shadow-2:0 2px 4px rgba(0,0,0,.45),0 20px 44px -12px rgba(0,0,0,.6);
@@ -555,6 +561,7 @@ table.reg tbody tr:hover td{background:var(--surface-alt)}
     --bg:#0B1622; --surface:#12233A; --surface-alt:#0E1D30; --border:#22395A;
     --ink:#E9F2FB; --muted:#93A9C2; --primary-dark:#5FC3EE;
     --accent-soft:rgba(41,171,226,.14); --violet-soft:rgba(91,75,196,.18);
+  --accent-mid:rgba(41,171,226,.10); --accent-ring:rgba(41,171,226,.30);
     --r1:#16283F; --t1:#1B2440;
     --shadow-1:0 1px 2px rgba(0,0,0,.4),0 10px 26px -8px rgba(0,0,0,.5);
     --shadow-2:0 2px 4px rgba(0,0,0,.45),0 20px 44px -12px rgba(0,0,0,.6);
@@ -703,8 +710,9 @@ body.feed-loading .stat-v *{visibility:hidden}
 .nav-i{display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
   padding:9px 12px;border-radius:12px;border:none;background:none;font:inherit;font-size:14px;
   font-weight:500;color:var(--ink);transition:background .15s var(--ease),color .15s var(--ease)}
-.nav-i:hover{background:var(--accent-soft,#f0f9ff);color:var(--primary-dark)}
-.nav-i.active{background:var(--accent-soft,#f0f9ff);color:var(--primary-dark);font-weight:650}
+.nav-i:hover{background:var(--accent-soft);color:var(--primary-dark)}
+.nav-i.active{background:var(--accent-soft);color:var(--primary-dark);font-weight:650;
+  box-shadow:inset 0 0 0 1px var(--accent-ring)}
 .nav-i .ic{width:18px;text-align:center;flex:0 0 auto}
 .nav-i .lbl{flex:1;min-width:0}
 .nav-b{margin-left:auto;background:var(--primary);color:#fff;font-size:10px;font-weight:800;
@@ -712,7 +720,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 .nav-grp{margin-top:6px}
 .nav-gh{display:flex;align-items:center;gap:11px;width:100%;cursor:pointer;padding:9px 12px;border-radius:12px;
   border:none;background:none;font:inherit;font-size:14px;font-weight:500;color:var(--ink)}
-.nav-gh:hover{background:var(--accent-soft,#f0f9ff);color:var(--primary-dark)}
+.nav-gh:hover{background:var(--accent-soft);color:var(--primary-dark)}
 .nav-gh.has-active{color:var(--primary-dark);font-weight:650}
 .nav-gh .chev{margin-left:auto;color:var(--muted);font-size:11px;transition:transform .18s var(--ease)}
 .nav-gh[aria-expanded="true"] .chev{transform:rotate(90deg)}
@@ -750,7 +758,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 .today-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-bottom:18px}
 .tcard{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 18px;
   box-shadow:0 6px 18px rgba(16,35,63,.05)}
-.tcard .k{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.tcard .k{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--primary-dark)}
 .tcard .v{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-top:5px;line-height:1.15}
 .tcard .s{font-size:12.5px;color:var(--muted);margin-top:4px}
 /* --navy is already a gradient — nesting it inside another linear-gradient()
@@ -760,6 +768,8 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .v{font-size:34px}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.sb-lake{border-color:var(--accent-ring)}
+.mob-bar b{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -846,7 +856,7 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div class="quick">
     <button class="btn" data-goto="log">&#128221; Log a catch</button>
     <button class="btn ghost" data-goto="plan">&#129504; Today's plan</button>
-    <button class="btn ghost" data-goto="spots">&#128205; Spots</button>
+    <button class="btn ghost" data-goto="log" data-sub="spots">&#128205; Spots</button>
     <button class="btn ghost" data-goto="friends">&#127907; Friends' activity</button>
   </div>
   <div class="today-grid" id="todayCards"></div>
@@ -1017,32 +1027,6 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
 </section>
 
-<section class="panel" id="p-spots" hidden>
-  <p class="lede">Your spots, ranked for today's wind and season. Tap to expand.</p>
-  <div id="spotOut"></div>
-  <details class="fish" style="margin-top:16px">
-    <summary><span class="fname" style="font-size:1.15rem">Add a spot</span><span class="chev">&#9656;</span></summary>
-    <div class="fbody">
-      <div class="fgrid">
-        <div class="fld"><label for="spName">Name</label><input type="text" id="spName" placeholder="Brush pile off the point"></div>
-        <div class="fld"><label for="spType">Type</label><select id="spType">
-          <option>Bridge pilings</option><option>Brush pile</option><option>Channel ledge</option>
-          <option>Creek arm</option><option>Dock row</option><option>Flat</option>
-          <option>Main lake</option><option>Ramp</option><option>River</option></select></div>
-        <div class="fld"><label for="spDepth">Depth</label><input type="text" id="spDepth" placeholder="18-24 ft"></div>
-        <div class="fld"><label for="spShelter">Wind exposure</label><select id="spShelter">
-          <option value="1">Wide open</option><option value="2">Exposed</option>
-          <option value="3" selected>Moderate</option><option value="4">Fairly protected</option>
-          <option value="5">Well protected</option></select></div>
-        <div class="fld wide"><label for="spNotes">Notes</label><textarea id="spNotes" placeholder="What's down there, what depth produced, how to line up on it."></textarea></div>
-      </div>
-      <div class="formfoot"><button class="btn" id="spSave">Save spot</button>
-        <button class="btn ghost" id="spReset">Restore defaults</button>
-        <span class="snap" id="spMsg"></span></div>
-    </div>
-  </details>
-</section>
-
 <section class="panel" id="p-species" hidden>
   <div id="aiGuideBox" style="margin-bottom:18px"></div>
   <p class="lede">Where to go, how to fish it, what to use. Tactics change with the goal — flip the switch above.</p>
@@ -1074,6 +1058,12 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-log" hidden>
+<div class="tabs subtabs" role="tablist" id="waterTabs">
+  <button class="tab" role="tab" aria-selected="true" data-w="map">Map &amp; waypoints</button>
+  <button class="tab" role="tab" aria-selected="false" data-w="spots">Spots</button>
+  <button class="tab" role="tab" aria-selected="false" data-w="trips">Trips</button>
+</div>
+<div id="w-map">
   <h3 style="margin-top:0">Waypoints</h3>
   <p class="lede">Tap the map to drop a pin where you caught fish. Everything saves, and you can export it straight to your Garmin, Lowrance or Humminbird.</p>
 
@@ -1128,7 +1118,34 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
   <div id="wpList" class="trips" style="margin-top:14px"></div>
 
-  <h3>Quick log</h3>
+  </div>
+<div id="w-spots" hidden>
+  <p class="lede">Your spots, ranked for today's wind and season. Tap to expand.</p>
+  <div id="spotOut"></div>
+  <details class="fish" style="margin-top:16px">
+    <summary><span class="fname" style="font-size:1.15rem">Add a spot</span><span class="chev">&#9656;</span></summary>
+    <div class="fbody">
+      <div class="fgrid">
+        <div class="fld"><label for="spName">Name</label><input type="text" id="spName" placeholder="Brush pile off the point"></div>
+        <div class="fld"><label for="spType">Type</label><select id="spType">
+          <option>Bridge pilings</option><option>Brush pile</option><option>Channel ledge</option>
+          <option>Creek arm</option><option>Dock row</option><option>Flat</option>
+          <option>Main lake</option><option>Ramp</option><option>River</option></select></div>
+        <div class="fld"><label for="spDepth">Depth</label><input type="text" id="spDepth" placeholder="18-24 ft"></div>
+        <div class="fld"><label for="spShelter">Wind exposure</label><select id="spShelter">
+          <option value="1">Wide open</option><option value="2">Exposed</option>
+          <option value="3" selected>Moderate</option><option value="4">Fairly protected</option>
+          <option value="5">Well protected</option></select></div>
+        <div class="fld wide"><label for="spNotes">Notes</label><textarea id="spNotes" placeholder="What's down there, what depth produced, how to line up on it."></textarea></div>
+      </div>
+      <div class="formfoot"><button class="btn" id="spSave">Save spot</button>
+        <button class="btn ghost" id="spReset">Restore defaults</button>
+        <span class="snap" id="spMsg"></span></div>
+    </div>
+  </details>
+</div>
+<div id="w-trips" hidden>
+<h3>Quick log</h3>
   <p class="lede">Wet-hands version — ten seconds from the boat. Date, conditions and moon get captured automatically.</p>
   <div class="form" id="qlog">
     <div class="qrow">
@@ -1196,6 +1213,8 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
     <textarea id="ioBox" hidden placeholder="Paste an exported log here, then press Import."></textarea>
   </div>
+
+</div>
 </section>
 
 <section class="panel" id="p-friends" hidden>
@@ -3859,8 +3878,7 @@ const NAV=[
   {id:'best',    ic:'📅', label:'Best days',title:'Best days',        sub:'The next 7 days scored on pressure, wind, cloud, temperature and rain.'},
   {id:'weeks',   ic:'🗓️', label:'Best weeks', title:'Best weeks', sub:'The strongest stretches of the year on this water.'},
   {id:'water',   ic:'💧', label:'Water',    title:'Water',            sub:'Temperature, level and what the water column is doing.'},
-  {id:'log',     ic:'📓', label:'My log',   title:'My log',           sub:'Every trip, every catch, and the map of where they happened.'},
-  {id:'spots',   ic:'📍', label:'Spots',    title:'Spots',            sub:'The structure worth your time, and what has produced.'},
+  {id:'log',     ic:'📍', label:'My water', title:'My water',         sub:'Your map, your spots and every trip — the water as you know it.'},
   {id:'msgs',    ic:'💬', label:'Messages', title:'Messages',         sub:'Private messages with your fishing friends.', badge:true},
   {id:'friends', ic:'🎣', label:'Friends',  title:'Friends',          sub:'Your circle, your groups, and what they are sharing here.'},
   {grp:'guide', ic:'📚', label:'Lake guide', kids:[
@@ -3897,7 +3915,7 @@ function navHtml(){
       '</div>';
   }).join('');
 }
-const BOT=[['today','🎯','Today'],['plan','🧠','Plan'],['log','📓','Log'],['friends','🎣','Crew']];
+const BOT=[['today','🎯','Today'],['plan','🧠','Plan'],['log','📍','My water'],['friends','🎣','Crew']];
 function renderNav(){
   const h=navHtml();
   $('navMain').innerHTML=h; $('navDrawer').innerHTML=h;
@@ -3924,18 +3942,26 @@ function go(id,push){
   window.scrollTo({top:0,behavior:'instant'});
   // per-view work
   if(id==='today'){ renderToday(); }
-  if(id==='log'){ initMap(); setTimeout(function(){ if(map)map.invalidateSize(); },80); }
+  if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
   if(id==='friends'){ loadFriends(); }
   if(id==='msgs'){ openMessages(); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
+}
+// My water holds three sections behind sub-tabs; goSub() lets other views
+// (and the Today quick actions) land on the right one.
+function goSub(w){
+  ['map','spots','trips'].forEach(function(v){ const el=$('w-'+v); if(el)el.hidden=(v!==w); });
+  document.querySelectorAll('#waterTabs .tab').forEach(function(x){ x.setAttribute('aria-selected',x.dataset.w===w); });
+  if(w==='map'){ initMap(); setTimeout(function(){ if(map)map.invalidateSize(); },80); }
 }
 function openDrawer(){ $('drawer').dataset.open='1'; }
 function closeDrawer(){ $('drawer').dataset.open='0'; }
 document.addEventListener('click',function(e){
   const g=e.target.closest('[data-go]'), gr=e.target.closest('[data-grp]'),
         dw=e.target.closest('[data-drawer]'), cl=e.target.closest('[data-close]');
-  if(g){ go(g.dataset.go); return; }
+  if(g){ go(g.dataset.go); if(g.dataset.sub)goSub(g.dataset.sub); return; }
+  const wt=e.target.closest('#waterTabs .tab'); if(wt){ goSub(wt.dataset.w); return; }
   if(gr){ NAV_OPEN[gr.dataset.grp]=!(NAV_OPEN[gr.dataset.grp]); try{localStorage.setItem(GRP_KEY,JSON.stringify(NAV_OPEN));}catch(e){} renderNav(); return; }
   if(dw){ openDrawer(); return; }
   if(cl){ closeDrawer(); return; }
