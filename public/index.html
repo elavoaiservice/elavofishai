@@ -1270,10 +1270,10 @@ body.feed-loading .stat-v *{visibility:hidden}
   </tbody>
 </table>
 </div>
-<div class="note"><b>Check before you keep.</b> Statewide limits for the Sept 1 2025 – Aug 31 2026 license year. Verify Lake Granbury's TPWD page for exceptions, and re-check after September 1.</div>
+<div class="note" id="regsNote"><b>Check before you keep.</b> Statewide limits for the Sept 1 2025 – Aug 31 2026 license year. Verify Lake Granbury's TPWD page for exceptions, and re-check after September 1.</div>
 
 <footer>
-  Ratings synthesize TPWD's Lake Granbury profile, TPWD's last published lake report, and North Texas seasonal patterns.<br>
+  <span id="ratingsNote">Ratings synthesize TPWD's Lake Granbury profile, TPWD's last published lake report, and North Texas seasonal patterns.</span><br>
   Informed judgment, not measured catch data. Forecast via Open-Meteo. Sun and moon computed locally.<br>
   TPWD has paused weekly fishing reports — local bait shops are the best real-time source.
 </footer>
@@ -1294,10 +1294,31 @@ const GRANBURY_LAKE = {
   id:'granbury', key:'granbury', name:'Lake Granbury',
   region:'Hood County, Texas · Brazos River · 8,310 acres',
   lat:32.4421, lon:-97.7669, gauge:'08090900', fullPool:693.0, seed:true,
+  axisDeg:135, axisLabel:'northwest-southeast',
   sub:'When to go, what hours to fish, which bank holds bait, and what to throw.'
 };
 let ACTIVE = Object.assign({}, GRANBURY_LAKE);
+// The active lake's guide content once loaded (regsUrl, source, …) — null until
+// drawLakeGuide() fetches it, and on Granbury, which has built-in content.
+let LAKE_PROFILE = null;
 function LK(n){ return ACTIVE.key + ':' + n; }
+// The regulations + ratings notes are written for Granbury (hand-verified).
+// On any other lake, say what is actually true of that lake's guidance.
+function applyLakeNotes(){
+  const isG=(ACTIVE.key==='granbury');
+  const regs=document.getElementById('regsNote'), rat=document.getElementById('ratingsNote');
+  if(regs&&!isG){
+    const url=(LAKE_PROFILE&&LAKE_PROFILE.regsUrl)||'';
+    regs.innerHTML='<b>Check before you keep.</b> Limits and seasons vary by state and by water. '
+      +(url?'Check <a href="'+escAttr(url)+'" target="_blank" rel="noopener">the official regulations for '+escHtml(ACTIVE.name)+'</a> before you keep a fish.'
+          :'Check your state wildlife agency\u0027s regulations for '+escHtml(ACTIVE.name)+' before you keep a fish.');
+  }
+  if(rat&&!isG){
+    rat.textContent='Ratings for '+ACTIVE.name+' come from an AI starter guide plus regional seasonal patterns'
+      +(LAKE_PROFILE&&LAKE_PROFILE.source==='community'?' and community contributions':'')+'.';
+  }
+}
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
 function applyActive(){ LAT=ACTIVE.lat; LON=ACTIVE.lon; FULL_POOL=(ACTIVE.fullPool==null?null:ACTIVE.fullPool); USGS_SITE=ACTIVE.gauge||null; }
 let LAT=ACTIVE.lat, LON=ACTIVE.lon;
 const SPOTS=["Hunter Park","City Ramp / 377 bridge","Hwy 51 bridge","De Cordova Bend","Rough Creek",
@@ -1829,14 +1850,23 @@ const OPPOSITE={N:'south',NNE:'south-southwest',NE:'southwest',ENE:'west-southwe
 function bankAdvice(dir,spd){
   if(dir===null)return null;
   const from=dirName(dir), toward=OPPOSITE[from];
-  // Granbury's long axis runs roughly NW-SE
-  const axis=Math.min(Math.abs(((dir-315)%360+360)%360), Math.abs(((dir-135)%360+360)%360));
-  const alongAxis=(axis<35||axis>325);
+  // Fetch depends on how the wind lines up with the lake's long axis, which is
+  // per-lake (ACTIVE.axisDeg, 0-179 from the lake profile or its bounding box).
+  // Unknown axis → say nothing about fetch rather than assume Granbury's shape.
+  const axisDeg=(typeof ACTIVE.axisDeg==='number')?ACTIVE.axisDeg:null;
+  const axisName=ACTIVE.axisLabel||null;
   let fetch;
-  if(alongAxis&&spd>=15) fetch='This wind runs straight down the lake\u0027s long northwest-southeast axis, so it builds the most fetch it possibly can. Expect a real chop on the main lake and look hard for protected water.';
-  else if(alongAxis) fetch='Wind is running along the lake\u0027s northwest-southeast axis, so the main lake will have more chop than the speed suggests.';
-  else if(spd>=18) fetch='Wind is crossing the lake rather than running its length, which limits fetch, but at this speed the open water will still be uncomfortable.';
-  else fetch='Wind is crossing the lake rather than running its length, so fetch stays short and protected water is easy to find.';
+  if(axisDeg===null){
+    fetch=spd>=18?'At this speed the open water will be uncomfortable wherever the lake runs \u2014 pick banks with something upwind of them.':'';
+  }else{
+    // Angle between the wind bearing and the axis line (both mod 180).
+    const off=Math.abs((((dir-axisDeg)%180)+180)%180);
+    const alongAxis=Math.min(off,180-off)<35;
+    if(alongAxis&&spd>=15) fetch='This wind runs straight down the lake\u0027s long '+axisName+' axis, so it builds the most fetch it possibly can. Expect a real chop on the main lake and look hard for protected water.';
+    else if(alongAxis) fetch='Wind is running along the lake\u0027s '+axisName+' axis, so the main lake will have more chop than the speed suggests.';
+    else if(spd>=18) fetch='Wind is crossing the lake rather than running its length, which limits fetch, but at this speed the open water will still be uncomfortable.';
+    else fetch='Wind is crossing the lake rather than running its length, so fetch stays short and protected water is easy to find.';
+  }
   let strength;
   if(spd<4) strength='<b>Slick calm.</b> No wind means no bait push and spookier fish. Go lighter on line, longer on casts, and lean on low light.';
   else if(spd<=13) strength='<b>Ideal breeze.</b> Enough chop to break up the surface and push plankton without making boat control a problem.';
@@ -1845,7 +1875,7 @@ function bankAdvice(dir,spd){
   return {from:from, toward:toward,
    txt:strength+' Wind out of the <b>'+from+'</b> is pushing plankton toward the <b>'+toward+
        '</b> shorelines \u2014 that is where shad stack up and where everything else follows. Fish banks and cove ends on the '+
-       toward+' side, with the wind at your back. '+fetch};
+       toward+' side, with the wind at your back.'+(fetch?' '+fetch:'')};
 }
 
 /* ============ day scoring ============ */
@@ -2740,10 +2770,15 @@ function setActiveLake(l){
   ACTIVE={ id:l.id, key:l.key||l.id, name:l.name,
     region:l.region||(isG?GRANBURY_LAKE.region:''), lat:l.lat, lon:l.lon,
     gauge:l.gaugeId||null, fullPool:(l.fullPool!=null?l.fullPool:null), seed:isG,
+    // Which way this lake runs — drives the wind/fetch advice. Null means the
+    // backend doesn't know, and the advice stays quiet about fetch.
+    axisDeg:(typeof l.axisDeg==='number'?l.axisDeg:(isG?GRANBURY_LAKE.axisDeg:null)),
+    axisLabel:l.axisLabel||(isG?GRANBURY_LAKE.axisLabel:null),
     sub:isG?GRANBURY_LAKE.sub:'When to go, what hours to fish, and what to throw \u2014 for this lake.' };
   applyActive();
-  if(!isG){ spots=[]; waypoints=[]; }
+  if(!isG){ spots=[]; waypoints=[]; LAKE_PROFILE=null; }
   renderLakeHeader();
+  applyLakeNotes();
 }
 async function loadActiveLake(){
   renderLakeHeader();
@@ -2844,7 +2879,7 @@ async function drawLakeGuide(){
     if(!d.profile){
       box.innerHTML='<div style="border:1px dashed var(--border);border-radius:14px;padding:16px;background:var(--surface)"><b>AI lake guide</b><p class="lede" style="margin:6px 0 10px">No guide yet for '+escHtml(ACTIVE.name)+'.</p>'+(AI_ON?'<button class="btn" id="aiGuideGen">Generate AI guide</button>':'<span class="snap" style="color:var(--muted)">AI isn’t configured yet.</span>')+'</div>';
       const g=$('aiGuideGen'); if(g)g.onclick=genLakeGuide;
-    } else renderLakeGuide(d.profile);
+    } else { LAKE_PROFILE=Object.assign({source:d.profile.source},d.profile.content||{}); applyLakeNotes(); renderLakeGuide(d.profile); }
   }catch(e){ box.innerHTML=''; }
 }
 function renderLakeGuide(p){

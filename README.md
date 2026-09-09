@@ -167,6 +167,17 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
 
+## Lake orientation
+
+Wind advice tells you which bank the bait is stacking on, and how much fetch the
+wind is building — the second half depends on which way the lake runs. That
+orientation (`axisDeg`, a 0-179 bearing) comes from the lake profile when it has
+one (Granbury is hand-verified at 135° — northwest-southeast — and the AI
+profile prompt asks for it), otherwise from the OSM bounding box, which can only
+tell north-south from east-west and only for a clearly elongated lake. When
+neither knows, the app says nothing about fetch rather than assuming every lake
+is shaped like Granbury.
+
 ## Blocking
 
 An angler can block another from the Friends tab. A block replaces whatever

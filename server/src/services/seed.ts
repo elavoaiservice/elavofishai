@@ -35,6 +35,9 @@ export async function seedGranbury(): Promise<void> {
             'Lake Granbury — 8,310-acre Brazos River impoundment in Hood County, TX. ' +
             'The app carries hand-verified, lake-specific guidance for Granbury.',
           species: ['Largemouth Bass', 'White Bass', 'Striped/Hybrid Bass', 'Catfish', 'Crappie', 'Sunfish'],
+          // Long axis runs NW-SE — hand-verified, and what the wind/fetch
+          // advice was originally written around.
+          axisDeg: 135,
           regsUrl: 'https://tpwd.texas.gov/fishboat/fish/recreational/lakes/granbury/',
         },
       },

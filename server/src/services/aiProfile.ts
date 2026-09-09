@@ -23,8 +23,11 @@ export async function generateLakeProfile(lakeId: string): Promise<void> {
     `"species": [{"name": string, "months": number[12], "notes": string}], ` +
     `"seasonalCalendar": [{"month": string, "note": string}], ` +
     `"patterns": [string], ` +
+    `"axisDeg": number|null, ` +
     `"regsUrl": string}\n\n` +
     `Rules: "months" is 12 integers 1-5 rating that species' activity Jan..Dec. ` +
+    `"axisDeg" is the compass bearing 0-179 of the lake's LONG axis (0 = runs north-south, ` +
+    `90 = east-west, 135 = northwest-southeast) — null if the lake is roughly round or you are unsure. ` +
     `List the 4-8 species actually common to THIS water. Keep notes tactical (where/when/what to throw). ` +
     `For "regsUrl", give the official state fish & wildlife regulations page URL — do NOT invent limit numbers. ` +
     `If you are unsure this specific water exists, still give sound guidance for its region and climate.`;

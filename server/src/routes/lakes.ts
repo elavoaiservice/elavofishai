@@ -4,21 +4,29 @@ import { clientIp, requireUser } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import { searchLakes } from '../services/lakeSearch';
 import { generateLakeProfile } from '../services/aiProfile';
+import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 
 const GRANBURY_OSM_REF = 'seed:lake-granbury';
 
 // Public shape sent to the client. `key` is the per-lake storage namespace: the
 // seeded Granbury keeps the legacy 'granbury' key (so existing local data migrates
 // cleanly); every other lake namespaces by its id.
-function lakeView(l: {
-  id: string; name: string; region: string | null; country: string | null;
-  lat: number; lon: number; gaugeId: string | null; gaugeSource: string; fullPool: number | null;
-  osmRef: string | null;
-}) {
+function lakeView(
+  l: {
+    id: string; name: string; region: string | null; country: string | null;
+    lat: number; lon: number; gaugeId: string | null; gaugeSource: string; fullPool: number | null;
+    osmRef: string | null; bbox?: string | null;
+  },
+  profileContent?: unknown
+) {
+  // Which way the lake runs — drives the wind/fetch advice. Null when we don't
+  // actually know, so the app can stay quiet instead of guessing.
+  const axisDeg = resolveLakeAxis(l.bbox, profileContent);
   return {
     id: l.id, key: l.osmRef === GRANBURY_OSM_REF ? 'granbury' : l.id,
     name: l.name, region: l.region, country: l.country,
     lat: l.lat, lon: l.lon, gaugeId: l.gaugeId, gaugeSource: l.gaugeSource, fullPool: l.fullPool,
+    axisDeg, axisLabel: axisLabel(axisDeg),
   };
 }
 
@@ -87,11 +95,11 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     await ensureHomeLake(user.id);
     const rows = await prisma.userLake.findMany({
       where: { userId: user.id },
-      include: { lake: true },
+      include: { lake: { include: { profile: { select: { content: true } } } } },
       orderBy: [{ isHome: 'desc' }, { addedAt: 'asc' }],
     });
     return reply.send({
-      lakes: rows.map((r) => ({ ...lakeView(r.lake), isHome: r.isHome })),
+      lakes: rows.map((r) => ({ ...lakeView(r.lake, r.lake.profile?.content), isHome: r.isHome })),
     });
   });
 
@@ -100,7 +108,7 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     const user = await requireUser(req, reply);
     if (!user) return;
     const home = await ensureHomeLake(user.id);
-    return reply.send({ lake: home ? lakeView(home) : null });
+    return reply.send({ lake: home ? lakeView(home, home.profile?.content) : null });
   });
 
   // Add an existing lake to my lakes.
@@ -149,7 +157,7 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     const lake = await prisma.lake.findUnique({ where: { id }, include: { profile: true } });
     if (!lake) return reply.code(404).send({ error: 'Lake not found.' });
     return reply.send({
-      lake: lakeView(lake),
+      lake: lakeView(lake, lake.profile?.content),
       profile: lake.profile
         ? { content: lake.profile.content, source: lake.profile.source, verified: lake.profile.verified }
         : null,
@@ -161,17 +169,24 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
 async function ensureHomeLake(userId: string) {
   const home = await prisma.userLake.findFirst({
     where: { userId, isHome: true },
-    include: { lake: true },
+    include: { lake: { include: { profile: { select: { content: true } } } } },
   });
   if (home) return home.lake;
 
-  const any = await prisma.userLake.findFirst({ where: { userId }, include: { lake: true }, orderBy: { addedAt: 'asc' } });
+  const any = await prisma.userLake.findFirst({
+    where: { userId },
+    include: { lake: { include: { profile: { select: { content: true } } } } },
+    orderBy: { addedAt: 'asc' },
+  });
   if (any) {
     await prisma.userLake.update({ where: { id: any.id }, data: { isHome: true } });
     return any.lake;
   }
 
-  const granbury = await prisma.lake.findUnique({ where: { osmRef: GRANBURY_OSM_REF } });
+  const granbury = await prisma.lake.findUnique({
+    where: { osmRef: GRANBURY_OSM_REF },
+    include: { profile: { select: { content: true } } },
+  });
   if (!granbury) return null;
   await prisma.userLake.create({ data: { userId, lakeId: granbury.id, isHome: true } });
   return granbury;
