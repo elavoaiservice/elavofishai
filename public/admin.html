@@ -70,7 +70,7 @@ pre{background:#0B1B33;color:#dbeafe;border-radius:12px;padding:14px;font-size:1
 <body>
 
 <!-- LOGIN -->
-<div class="login-wrap" id="loginView">
+<div class="login-wrap hidden" id="loginView">
   <div class="card login-card">
     <div class="brand" style="justify-content:center;margin-bottom:6px"><img src="/icon-512.png" alt="">Command Center</div>
     <p class="snap" style="text-align:center;margin:0 0 18px">ElavoFishAI admin — restricted access.</p>
@@ -119,7 +119,10 @@ $('loginBtn').onclick=async()=>{ USERNAME=$('au').value.trim(); $('loginMsg').te
   $('step1').classList.add('hidden'); $('step2').classList.remove('hidden');
   if(d.devCode){ $('ac').value=d.devCode; $('loginMsg').className='msg'; $('loginMsg').textContent='Dev mode: code '+d.devCode+' (email not configured yet).'; } };
 $('mfaBtn').onclick=async()=>{ const r=await api('/api/admin/mfa',{method:'POST',body:JSON.stringify({username:USERNAME,code:$('ac').value.trim()})});
-  if(!r.ok){ const d=await r.json(); $('loginMsg').className='msg err'; $('loginMsg').textContent=d.error||'Bad code.'; return; } location.reload(); };
+  if(!r.ok){ const d=await r.json(); $('loginMsg').className='msg err'; $('loginMsg').textContent=d.error||'Bad code.'; return; }
+  // Go straight to the dashboard (no reload — avoids stale-cache / race issues).
+  const d=await (await api('/api/admin/me')).json();
+  if(d.admin){ showDash(d.admin); } else { $('loginMsg').className='msg err'; $('loginMsg').textContent='Signed in but the session cookie was blocked — enable cookies and retry.'; } };
 $('logoutBtn').onclick=async()=>{ await api('/api/admin/logout',{method:'POST'}); location.reload(); };
 
 /* ---- shell / nav ---- */
