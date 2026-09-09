@@ -45,10 +45,29 @@ describe('auth', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () =
       payload: { email: 'remote@example.com' },
       remoteAddress: '203.0.113.9',
     });
-    const body = res.json() as { devLink?: string };
+    const body = res.json() as { devLink?: string; error?: string; message?: string };
     assert.equal(body.devLink, undefined);
+    // Nothing was emailed and nothing can be shown — say so rather than telling
+    // them to check an inbox that will never receive anything.
+    assert.equal(res.statusCode, 503);
+    assert.match(String(body.error), /not configured|couldn't send/i);
+    assert.equal(body.message, undefined);
     // The token still exists — it just isn't handed to the requester.
     assert.equal(await prisma.authToken.count({ where: { email: 'remote@example.com' } }), 1);
+  });
+
+  test('a deliverable request still reads as "check your email"', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/request-link',
+      payload: { email: 'local@example.com' },
+      remoteAddress: '127.0.0.1',
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { devLink?: string; message?: string };
+    assert.ok(body.devLink, 'a private-network caller in dev mode gets the link');
+    assert.match(String(body.message), /check your email/i);
   });
 
   test('the app and private endpoints are closed to anonymous callers', async () => {

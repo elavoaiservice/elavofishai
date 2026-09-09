@@ -18,6 +18,9 @@ async function audit(by: string, action: string, target?: string, meta?: Record<
 }
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
 import { buildInfo, incomingCommits, targetVersion, versionStatus } from '../version';
+import { emailStatus } from '../services/email';
+import { issueMagicLink } from '../services/magicLink';
+import { env } from '../env';
 import {
   classifyCommits,
   COMMIT_TYPE_META,
@@ -295,6 +298,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return {
       status: db === 'ok' ? 'ok' : 'down',
       db, dbBytes, dbConns, counts,
+      // Whether sign-in email actually WORKS — `email` below is only "a key is
+      // set". A broken sender locks every user out silently, so the delivery
+      // record belongs on the health page.
+      emailHealth: emailStatus(),
+      magicLinkDev: env.devShowMagicLink,
       uptimeSec: Math.round(process.uptime()),
       hostUptimeSec: Math.round(os.uptime()),
       cpu: { cores: cpus.length || 1, model: cpus[0]?.model?.trim() || 'unknown', load1: load[0], load5: load[1], load15: load[2] },
@@ -307,6 +315,48 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       email: !!process.env.RESEND_API_KEY,
       mode: process.env.NODE_ENV || 'development',
     };
+  });
+
+  // ---- sign-in links ----
+  // Diagnostics only: tokens are stored hashed, so a link can never be read
+  // back out of the database. This shows whether links are being requested and
+  // used; use the break-glass generator below to get an actual link.
+  app.get('/api/admin/magic-links', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const rows = await prisma.authToken.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { id: true, email: true, purpose: true, createdAt: true, expiresAt: true, usedAt: true, ip: true },
+    });
+    return {
+      links: rows.map((r) => ({
+        ...r,
+        state: r.usedAt ? 'used' : r.expiresAt.getTime() < Date.now() ? 'expired' : 'pending',
+      })),
+      email: emailStatus(),
+    };
+  });
+
+  // Break-glass: mint a one-time sign-in link for an address and show it to the
+  // admin once. For when email delivery is down and someone has to get in.
+  // Audited — this is, by design, a way into another user's account.
+  app.post('/api/admin/signin-link', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const email = String((req.body as { email?: string }).email || '').trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.code(400).send({ error: 'Enter a valid email address.' });
+    }
+    const base = env.publicBaseUrl || `${req.protocol}://${req.headers.host}`;
+    const link = await issueMagicLink(email, undefined, clientIp(req), base);
+    await audit(admin.username, 'admin.signin_link', email, { purpose: link.purpose, emailed: link.emailed });
+    return reply.send({
+      url: link.url,
+      purpose: link.purpose,
+      expiresAt: link.expiresAt,
+      emailed: link.emailed,
+    });
   });
 
   // ---- changelog ----

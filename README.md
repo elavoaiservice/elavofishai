@@ -91,7 +91,15 @@ Without an Anthropic key the engine still works — AI profiles and plans stay
 pending.
 
 **Sign-in links.** With `RESEND_API_KEY` set, magic links are emailed and the
-API says nothing more than "check your inbox". Dev/console mode
+API says nothing more than "check your inbox". Set `EMAIL_FROM` to a sender on
+a domain you have verified in Resend — without it the shared
+`onboarding@resend.dev` sender is used, which only delivers to your own Resend
+account address, so every other angler silently gets nothing. Admin → **System
+health** shows the real delivery record (sent/failed, last error) and warns
+about exactly this; admin → **Sign-in links** lists recent link requests and can
+mint a one-time link when delivery is down (audited — it signs that person in).
+When a link can neither be emailed nor shown, the API returns an error saying so
+instead of a hollow "check your email". Dev/console mode
 (`DEV_SHOW_MAGIC_LINK=1`) hands the link straight back to whoever asked for it,
 which is an account takeover for any address they care to type — so it is off by
 default, a production build refuses to start with it on unless
@@ -146,7 +154,8 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
   `POST /api/lakes/:id/profile/regenerate`, `GET /api/ai/status`
 - **Social:** friends request/accept/decline, groups + membership, direct messages,
   `GET/PUT /api/me/sharing` (default scope per data type)
-- **Admin:** login/MFA, metrics, users, admins, config, upgrade, lakes, health, audit
+- **Admin:** login/MFA, metrics, users, admins, config, upgrade, lakes, health, audit,
+  changelog, `GET /api/admin/magic-links`, `POST /api/admin/signin-link`
 - **Ops:** `GET /health`, `GET /health/ready`
 
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services

@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { env } from '../env';
 import { randomToken, sha256 } from '../lib/crypto';
-import { emailConfigured, magicLinkEmail, sendEmail } from './email';
+import { emailConfigured, emailStatus, magicLinkEmail, sendEmail } from './email';
 import { defaultMessagePrivacy } from '../config-store';
 
 export interface IssuedLink {
@@ -9,6 +9,8 @@ export interface IssuedLink {
   purpose: 'login' | 'signup';
   expiresAt: Date;
   emailed: boolean;
+  /** Why delivery didn't happen, when it didn't. */
+  deliveryError?: string;
 }
 
 // Issue a magic link for an email. Unified login+signup: if the email already
@@ -39,15 +41,19 @@ export async function issueMagicLink(
 
   // Send a real email when Resend is configured; otherwise dev/console mode.
   let emailed = false;
+  let deliveryError: string | undefined;
   if (emailConfigured()) {
     const { subject, html } = magicLinkEmail(url, purpose);
     emailed = await sendEmail(email, subject, html);
+    if (!emailed) deliveryError = emailStatus().lastError || 'send failed';
+  } else {
+    deliveryError = 'no email provider configured';
   }
   if (!emailed && env.devShowMagicLink) {
     // eslint-disable-next-line no-console
     console.log(`\n[magic-link] ${purpose} for ${email}\n  ${url}\n`);
   }
-  return { url, purpose, expiresAt, emailed };
+  return { url, purpose, expiresAt, emailed, deliveryError };
 }
 
 export interface ConsumeResult {

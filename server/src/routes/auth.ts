@@ -3,6 +3,7 @@ import { env } from '../env';
 import { clientIp, endSession, startSession } from '../lib/auth';
 import { isPrivateIp } from '../lib/net';
 import { overLimit } from '../lib/rateLimit';
+import { emailConfigured } from '../services/email';
 import { consumeMagicLink, issueMagicLink } from '../services/magicLink';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -42,16 +43,25 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           ? 'Check your email to finish creating your account.'
           : 'Check your email for your sign-in link.',
     };
+
     // Only surface the link in-app when we did NOT email it (dev/console mode),
     // and only to a caller on the local network — otherwise handing back the
     // link would let anyone on the internet sign in as any address they type.
-    if (!link.emailed && env.devShowMagicLink) {
-      if (isPrivateIp(ip)) {
-        payload.devLink = link.url;
-      } else {
-        req.log.warn({ ip }, 'dev magic-link withheld from a non-private client');
-        payload.message = 'Email delivery is not configured yet. Ask an admin for your sign-in link.';
-      }
+    const devLinkOk = !link.emailed && env.devShowMagicLink && isPrivateIp(ip);
+    if (devLinkOk) payload.devLink = link.url;
+
+    // Nothing was emailed and nothing can be shown: say so instead of telling
+    // someone to check an inbox that will never receive anything.
+    if (!link.emailed && !devLinkOk) {
+      req.log.error(
+        { email, configured: emailConfigured(), reason: link.deliveryError },
+        'sign-in link could not be delivered'
+      );
+      return reply.code(503).send({
+        error: emailConfigured()
+          ? "We couldn't send your sign-in link just now. Please try again in a minute — if it keeps failing, contact support."
+          : 'Sign-in email is not configured on this server yet. Ask an admin for a sign-in link.',
+      });
     }
     return reply.send(payload);
   });

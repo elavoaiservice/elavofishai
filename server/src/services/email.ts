@@ -6,10 +6,59 @@ export function emailConfigured(): boolean {
   return !!process.env.RESEND_API_KEY;
 }
 
+// Last delivery outcome, kept in memory so the admin panel can show whether
+// sign-in email is actually working. A send that fails used to be logged and
+// forgotten, which is how "check your email" can lie to every new user.
+export interface EmailStatus {
+  configured: boolean;
+  from: string;
+  fromIsDefault: boolean;
+  lastSentAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  sent: number;
+  failed: number;
+}
+const DEFAULT_FROM = 'ElavoFishAI <onboarding@resend.dev>';
+let lastSentAt: string | null = null;
+let lastErrorAt: string | null = null;
+let lastError: string | null = null;
+let sent = 0;
+let failed = 0;
+
+export function emailStatus(): EmailStatus {
+  const from = process.env.EMAIL_FROM || DEFAULT_FROM;
+  return {
+    configured: emailConfigured(),
+    from,
+    // Resend's shared onboarding sender only delivers to the account owner's
+    // own address — every other recipient silently gets nothing.
+    fromIsDefault: !process.env.EMAIL_FROM,
+    lastSentAt,
+    lastErrorAt,
+    lastError,
+    sent,
+    failed,
+  };
+}
+
+function noteSent(): void {
+  sent++;
+  lastSentAt = new Date().toISOString();
+}
+function noteFailed(message: string): void {
+  failed++;
+  lastErrorAt = new Date().toISOString();
+  lastError = message.slice(0, 300);
+}
+
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  if (!key) return false;
-  const from = process.env.EMAIL_FROM || 'ElavoFishAI <onboarding@resend.dev>';
+  if (!key) {
+    noteFailed('No RESEND_API_KEY configured.');
+    return false;
+  }
+  const from = process.env.EMAIL_FROM || DEFAULT_FROM;
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -18,14 +67,18 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 200);
       // eslint-disable-next-line no-console
-      console.error(`[email] Resend ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+      console.error(`[email] Resend ${res.status}: ${detail}`);
+      noteFailed(`Resend ${res.status}: ${detail}`);
       return false;
     }
+    noteSent();
     return true;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[email] send failed', e);
+    noteFailed((e as Error).message || 'send failed');
     return false;
   }
 }
