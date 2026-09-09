@@ -768,6 +768,50 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .v{font-size:34px}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+
+/* ================= phone layer =================
+   Everything below 1024px is a phone in a boat: one thumb, bright sun, gloves.
+   Bigger targets, fewer columns, no horizontal surprises. */
+@media(max-width:1023px){
+  .shell{width:100%;margin:0;padding:14px 0 30px}
+  .main{padding:0 14px}
+  /* 16px is the threshold under which iOS zooms the page on focus. */
+  input,select,textarea{font-size:16px}
+  .pagehead{margin-bottom:14px}
+  .pagehead h2{font-size:20px}
+  .pagehead p{font-size:13px}
+  /* The goal toggle is two big thumb targets, not a wide segmented bar. */
+  .modebar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mode{min-height:52px}
+  .modehint{font-size:12.5px;line-height:1.4;margin-bottom:14px}
+  .quick{gap:8px}
+  .quick .btn{flex:1 1 calc(50% - 4px);min-height:46px;justify-content:center}
+  .today-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .tcard{padding:13px 14px;border-radius:15px}
+  .tcard .v{font-size:22px}
+  .tcard.hero .v{font-size:30px}
+  .tcard .s{font-size:11.5px}
+  /* Sub-tabs scroll rather than wrap into a stack of rows. */
+  .subtabs{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;margin:0 0 16px;padding-bottom:2px}
+  .subtabs::-webkit-scrollbar{display:none}
+  .subtabs .tab{flex:0 0 auto}
+  /* Day cards: name and score on one line, the numbers wrapping underneath. */
+  .day-head{padding:16px 16px 10px;gap:10px}
+  .day-d{min-width:0;flex:1;font-size:1.05rem}
+  .day-m{order:3;flex-basis:100%;gap:10px 14px;font-size:.8rem}
+  .day-why{padding:0 16px 16px;font-size:.86rem}
+  #map{height:320px}
+  .maptools{gap:8px}
+  .maptools .btn{min-height:44px}
+  /* Any wide block scrolls inside itself instead of stretching the page. */
+  .scroll,.hours,.days{max-width:100%;overflow-x:auto}
+  table{font-size:13px}
+}
+@media(max-width:359px){
+  .today-grid{grid-template-columns:1fr}
+  .quick .btn{flex:1 1 100%}
+}
 .sb-lake{border-color:var(--accent-ring)}
 .mob-bar b{color:var(--ink)}
 </style>
@@ -904,7 +948,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-best" hidden>
-  <p class="lede">Next 7 days scored on pressure trend, wind, cloud, temperature and rain. Tap a day for the reasoning.</p>
+  <p class="lede">Tap a day for the reasoning.</p>
   <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
   <div class="note" id="bestNote" hidden></div>
 </section>

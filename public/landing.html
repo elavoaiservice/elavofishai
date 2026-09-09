@@ -83,6 +83,17 @@ h2{font-size:clamp(27px,4vw,40px);line-height:1.12;letter-spacing:-.02em;margin:
   color:var(--primary-dark);background:var(--sky);padding:4px 9px;border-radius:6px;margin-bottom:14px}
 
 /* Steps */
+.layers{display:grid;gap:16px;max-width:860px;margin:0 auto}
+.layer{display:flex;gap:18px;align-items:flex-start;background:var(--bg);border:1px solid var(--border);
+  border-radius:18px;padding:22px 24px}
+.layer h3{margin:0 0 6px;font-size:17px}
+.layer p{margin:0;color:var(--muted);font-size:15px;line-height:1.6}
+.lnum{flex:0 0 auto;width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:16px;color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
+.intel-note{max-width:860px;margin:22px auto 0;color:var(--muted);font-size:14.5px;line-height:1.65;
+  background:var(--accent-soft,#F0F9FF);border:1px solid var(--border);border-radius:16px;padding:18px 22px}
+.intel-note b{color:var(--ink)}
+@media(max-width:620px){.layer{padding:18px;gap:14px}.layer h3{font-size:16px}.layer p{font-size:14px}}
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px}
 .step{text-align:center}
 .step .num{width:46px;height:46px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;
@@ -112,6 +123,7 @@ footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font
     <a class="brand" href="/"><img src="/icon-512.png" alt="ElavoFishAI"><span>Elavo<b>Fish</b>AI</span></a>
     <nav class="nav-links">
       <a href="#features">Features</a>
+      <a href="#intel">The intelligence</a>
       <a href="#how">How it works</a>
       <a href="#lakes">Any lake</a>
       <a href="#friends">Friends</a>
@@ -216,6 +228,64 @@ footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font
       <div class="card"><div class="ic">🤖</div><h3>AI writes the guide</h3><p>A starter species &amp; seasonal profile is generated for the lake — a real head start, not a blank page.</p></div>
       <div class="card"><div class="ic">👥</div><h3>Your crew fills it in</h3><p>As you and your friends fish it, real logs and spots layer on top and the lake gets sharper over time.</p></div>
     </div>
+  </div>
+</section>
+
+<section id="intel" style="background:var(--surface);border-bottom:1px solid var(--border)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">How the intelligence works</div>
+      <h2>Four sources, stacked — so the answer gets sharper the more you fish</h2>
+      <p>Most apps give you either a weather widget or a crowd feed. ElavoFishAI layers four
+         different kinds of knowledge about your water and always shows you the most trustworthy
+         one it has.</p>
+    </div>
+    <div class="layers">
+      <div class="layer">
+        <div class="lnum">1</div>
+        <div>
+          <h3>Live conditions, computed for your coordinates</h3>
+          <p>Hourly weather and the 7-day forecast, barometric trend, wind speed and direction,
+             cloud, water temperature and lake level from the nearest gauge — plus sun, moon phase
+             and the solunar windows, calculated on the spot for your lake's exact position. Not a
+             regional forecast: your water.</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="lnum">2</div>
+        <div>
+          <h3>An AI guide written for that specific lake</h3>
+          <p>Add a lake and Claude writes its starter profile — the species actually in it, how each
+             one moves through the twelve months, the patterns that work there, and a link to the
+             real regulations. A head start on water nobody has logged yet, cached so it's instant
+             from then on.</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="lnum">3</div>
+        <div>
+          <h3>Your own log, which outranks all of it</h3>
+          <p>Every trip, catch, spot and waypoint you record teaches the app your water. It learns
+             which of your spots produce, at what depth, in which wind — and starts ranking them for
+             the conditions you're about to fish in. What you caught beats what anyone predicted.</p>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="lnum">4</div>
+        <div>
+          <h3>What your circle shares with you</h3>
+          <p>Friends' logs, spots and waypoints — shared only with the people they chose — layer on
+             top as the freshest, most local intelligence there is. Yesterday's bite from someone
+             who was actually on the lake beats any model. Private by default, always.</p>
+        </div>
+      </div>
+    </div>
+    <p class="intel-note">
+      <b>The order matters.</b> A live measurement outranks a prediction, your logged catch outranks
+      a generated guide, and a friend's report from this week outranks last season's pattern.
+      Hand-verified lakes are never overwritten by AI. Where we're inferring rather than measuring,
+      the app says so — it's informed judgment, not a promise.
+    </p>
   </div>
 </section>
 
