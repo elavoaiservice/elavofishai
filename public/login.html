@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — ElavoFishAI</title>
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#0B1B33">
+<meta name="theme-color" content="#ffffff">
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -13,72 +13,79 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <style>
-  :root{--primary:#29ABE2;--primary-dark:#1882AE;--ink:#10233F;--muted:#5F708A;--border:#DCE7F5;--surface:#fff}
+  :root{--primary:#29ABE2;--primary-dark:#1F96C8;--ink:#0f172a;--muted:#64748b;--border:#c8e6f7}
   *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-    color:var(--ink);background:
-      radial-gradient(1200px 600px at 50% -10%, #EAF6FF 0%, rgba(234,246,255,0) 60%),
-      linear-gradient(180deg,#F8FBFF 0%,#EDF4FC 100%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px}
-  .wrap{width:100%;max-width:420px}
-  .brand{display:flex;align-items:center;justify-content:center;gap:11px;font-weight:800;font-size:20px;margin-bottom:22px;color:var(--ink);text-decoration:none}
-  .brand img{height:40px;width:40px;border-radius:11px}
-  .brand b{color:var(--primary)}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:30px 26px;
-    box-shadow:0 18px 50px rgba(16,35,63,.10)}
-  h1{font-size:1.4rem;font-weight:800;letter-spacing:-.02em;margin:0 0 6px}
-  .lede{color:var(--muted);font-size:.95rem;line-height:1.5;margin:0 0 20px}
-  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
-  .snap{font-size:12px;color:var(--muted)}
-  input{width:100%;min-height:46px;padding:0 13px;border:1px solid var(--border);border-radius:11px;
-    background:#fff;color:var(--ink);font-size:1rem;font-family:inherit}
-  input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(41,171,226,.15)}
-  .fld{margin-bottom:14px}
-  .btn{width:100%;min-height:48px;border:none;border-radius:12px;background:var(--primary);color:#fff;
-    font-weight:700;font-size:1rem;cursor:pointer;transition:.15s;margin-top:4px}
+  body{margin:0;min-height:100vh;background:#fff;color:var(--ink);
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:512px;margin:0 auto;display:flex;flex-direction:column;align-items:center;padding:48px 24px}
+  .logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);font-weight:800;font-size:28px}
+  .logo img{height:56px;width:56px;border-radius:14px}
+  .logo b{color:var(--primary)}
+  .card{margin-top:40px;width:100%;border:1px solid var(--border);border-radius:28px;background:#fff;padding:32px;box-shadow:0 18px 45px rgba(16,35,63,.10)}
+  h1{font-size:1.7rem;font-weight:700;letter-spacing:-.02em;text-align:center;margin:0 0 10px}
+  .sub{text-align:center;color:var(--muted);font-size:.92rem;line-height:1.6;margin:0 0 24px}
+  label{display:block;font-size:.87rem;font-weight:600;color:#334155;margin:0 0 7px}
+  input{width:100%;min-height:48px;padding:0 14px;border:1px solid #cbd5e1;border-radius:12px;font-size:1rem;font-family:inherit;color:var(--ink)}
+  input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(41,171,226,.16)}
+  .btn{width:100%;min-height:50px;margin-top:18px;border:none;border-radius:12px;background:var(--primary);color:#fff;font-weight:700;font-size:1rem;cursor:pointer;transition:.15s}
   .btn:hover{background:var(--primary-dark)}
   .btn:disabled{opacity:.6;cursor:default}
-  #msg{font-size:.9rem;margin-top:14px;min-height:1.2em}
-  #msg.ok{color:#1D6F42}#msg.err{color:#B3402C}
-  #dev{margin-top:12px;font-size:.82rem;padding:11px 12px;background:#F2F7FF;border:1px solid var(--border);border-radius:10px}
-  #dev a{word-break:break-all;color:var(--primary-dark)}
-  .foot{text-align:center;margin-top:20px}
-  .foot a{color:var(--muted);text-decoration:none;font-size:.88rem}
-  .foot a:hover{color:var(--primary-dark)}
-  .sent .fld,.sent .btn{display:none}
+  #msg{font-size:.88rem;margin-top:14px;text-align:center;min-height:1.1em}
+  #msg.err{color:#b3402c}
+  .alt{margin-top:22px;text-align:center;font-size:.9rem;color:var(--muted)}
+  .alt a{color:var(--primary-dark);font-weight:600;text-decoration:none}
+  .alt a:hover{text-decoration:underline}
+  .home{display:block;text-align:center;margin-top:20px;font-size:.85rem;color:var(--muted);text-decoration:none}
+  .home:hover{color:var(--primary-dark)}
+  /* success state */
+  .sent{display:none;text-align:center}
+  .sent .ic{width:52px;height:52px;border-radius:50%;background:#e0f4fc;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px}
+  .sent h3{font-size:1.15rem;font-weight:700;margin:0 0 8px}
+  .sent p{color:var(--muted);font-size:.9rem;line-height:1.6;margin:0}
+  #dev{margin-top:14px;font-size:.8rem;padding:11px 12px;background:#f1f7fd;border:1px solid var(--border);border-radius:10px;word-break:break-all}
+  #dev a{color:var(--primary-dark)}
+  .on-sent .form-view{display:none}
+  .on-sent .sent{display:block}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <a class="brand" href="/"><img src="/icon-512.png" alt="">Elavo<b>Fish</b>AI</a>
+    <a class="logo" href="/"><img src="/icon-512.png" alt="">Elavo<b>Fish</b>AI</a>
     <div class="card" id="card">
-      <h1>Sign in</h1>
-      <p class="lede">Enter your email and we'll send you a secure one-time sign-in link — no password to remember. New here? This creates your account.</p>
-      <form id="form">
-        <div class="fld"><label for="email">Email</label><input id="email" type="email" autocomplete="email" placeholder="you@example.com" required></div>
-        <div class="fld"><label for="name">Name <span class="snap">(new accounts)</span></label><input id="name" autocomplete="name" placeholder="optional"></div>
-        <button class="btn" id="send" type="submit">Send my sign-in link</button>
-      </form>
-      <div id="msg" aria-live="polite"></div>
-      <div id="dev" hidden><span class="snap">Dev link — click to sign in:</span><br><a id="devLink" href="#"></a></div>
+      <div class="form-view">
+        <h1>Sign in to ElavoFishAI</h1>
+        <p class="sub">Use your email to receive a secure one-time link. No passwords to remember.</p>
+        <form id="form">
+          <label for="email">Email address</label>
+          <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          <button class="btn" id="send" type="submit">Email me a sign-in link</button>
+        </form>
+        <div id="msg"></div>
+        <div class="alt">New to ElavoFishAI? <a href="/signup">Create an account</a></div>
+      </div>
+      <div class="sent">
+        <div class="ic">📬</div>
+        <h3>Check your email</h3>
+        <p>We sent a sign-in link to <strong id="sentTo"></strong>.<br>It's good for 15 minutes.</p>
+        <div id="dev" hidden><span>Dev link — tap to sign in:</span><br><a id="devLink" href="#"></a></div>
+      </div>
     </div>
-    <div class="foot"><a href="/">← Back to home</a></div>
+    <a class="home" href="/">← Back to home</a>
   </div>
 <script>
   const $=id=>document.getElementById(id);
   $('form').addEventListener('submit', async function(e){
     e.preventDefault();
-    const email=$('email').value.trim();
-    const msg=$('msg');
+    const email=$('email').value.trim(), msg=$('msg');
     if(!email){ msg.className='err'; msg.textContent='Enter your email.'; return; }
-    $('send').disabled=true; msg.className=''; msg.textContent='Sending…'; $('dev').hidden=true;
+    $('send').disabled=true; msg.className=''; msg.textContent='Sending…';
     try{
       const r=await fetch('/api/auth/request-link',{method:'POST',headers:{'Content-Type':'application/json'},
-        credentials:'same-origin',body:JSON.stringify({email:email,displayName:$('name').value.trim()})});
+        credentials:'same-origin',body:JSON.stringify({email})});
       const d=await r.json();
       if(!r.ok){ msg.className='err'; msg.textContent=d.error||'That did not work.'; $('send').disabled=false; return; }
-      msg.className='ok'; msg.textContent=d.message||'Check your email for your sign-in link.';
-      $('card').classList.add('sent');
+      $('sentTo').textContent=email;
+      $('card').classList.add('on-sent');
       if(d.devLink){ $('dev').hidden=false; const a=$('devLink'); a.textContent=d.devLink; a.href=d.devLink; }
     }catch(err){ msg.className='err'; msg.textContent='Server not reachable.'; $('send').disabled=false; }
   });

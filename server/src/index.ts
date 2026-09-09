@@ -66,11 +66,14 @@ async function main(): Promise<void> {
     if (!(await currentUser(req))) return reply.redirect('/login');
     return reply.sendFile('index.html');
   });
-  // Login screen — bounce already-signed-in users straight into the app.
+  // Login + signup screens — bounce already-signed-in users straight into the app.
   app.get('/login', async (req, reply) => {
-    const u = await currentUser(req);
-    if (u) return reply.redirect('/app');
+    if (await currentUser(req)) return reply.redirect('/app');
     return reply.sendFile('login.html');
+  });
+  app.get('/signup', async (req, reply) => {
+    if (await currentUser(req)) return reply.redirect('/app');
+    return reply.sendFile('signup.html');
   });
   // Admin Command Center.
   app.get('/admin', (_req, reply) => reply.sendFile('admin.html'));
