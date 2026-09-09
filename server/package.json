@@ -2,7 +2,7 @@
   "name": "elavofishai-server",
   "version": "0.1.0",
   "private": true,
-  "description": "ElavoFishAI backend — Fastify + Prisma + Postgres; serves the PWA same-origin and the /api surface.",
+  "description": "ElavoFishAI backend \u2014 Fastify + Prisma + Postgres; serves the PWA same-origin and the /api surface.",
   "license": "UNLICENSED",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -12,7 +12,9 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "test:unit": "node --import tsx --test test/net.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

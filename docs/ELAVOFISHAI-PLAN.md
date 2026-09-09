@@ -222,8 +222,31 @@ built for AlphaGasIQ (config GUI + git-upgrade + RBAC):
 
 ---
 
+## Hardening pass (2026-09-09) — done
+
+Five items taken off the list before any wider exposure:
+
+1. **Dev magic links can no longer be handed to strangers.** `DEV_SHOW_MAGIC_LINK`
+   defaults to `0`, a production build refuses to boot with it on unless
+   `ALLOW_INSECURE_DEV_LOGIN=1`, and the link is only ever returned to a caller on
+   a private network. Resend is the intended path.
+2. **Real migrations.** `prisma/migrations/` is committed and the container runs
+   `migrate deploy`, not `db push --accept-data-loss`. A database from the push
+   era is baselined against `0001_init` automatically. `scripts/backup.sh` does
+   nightly gzipped dumps with retention.
+3. **Upgrade-from-Git is live**: compose mounts `./deploy`, and
+   `scripts/upgrade-agent.sh` (+ a launchd plist) is the host watcher that pulls,
+   rebuilds, restarts and health-checks.
+4. **Sharing finished**: `SharingPref` is wired end to end (`GET/PUT /api/me/sharing`
+   + a Sharing defaults card), and waypoints are first-class shareable records
+   like spots and catches — create, list, delete, feed, per-record visibility.
+5. **Tests**: `node:test` suites over sign-in/session lifecycle and the whole
+   visibility scale, run against a throwaway Postgres by `scripts/test.sh`.
+
 ## Open items for later
-- Email provider choice (Resend/Postmark/SES) when going past dev/console magic links.
 - AI model for profiles: Opus (default) vs Sonnet (cheaper at bulk).
 - Public exposure (Cloudflare Tunnel) vs LAN-only — LAN-only to start, like AlphaGasIQ.
 - Whether to generalize Granbury's wind→bank logic (lake-orientation aware) for all lakes.
+- Admin: lake-profile regenerate/verify actions, magic-link viewer, community
+  profile corrections (`ProfileContribution`), moderation hooks.
+- Phase 4 monetization (Stripe Billing + Connect) — hooks reserved, nothing built.

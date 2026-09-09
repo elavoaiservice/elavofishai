@@ -1,5 +1,5 @@
 import path from 'path';
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { env, requireEnv } from './env';
@@ -22,9 +22,10 @@ import { seedGranbury } from './services/seed';
 
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.join(__dirname, '..', '..', 'public');
 
-async function main(): Promise<void> {
-  requireEnv();
-
+// Build the app — every route and plugin, no side effects. main() adds the
+// startup work (seeding, sweeps, listening); tests call this and use
+// app.inject() so they never bind a port.
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: env.isProd ? 'info' : 'info' },
     trustProxy: true,
@@ -96,6 +97,13 @@ async function main(): Promise<void> {
     return reply.code(404).send({ error: 'Not found.' });
   });
 
+  return app;
+}
+
+async function main(): Promise<void> {
+  requireEnv();
+  const app = await buildApp();
+
   // Seed the flagship lake (idempotent). Best-effort — never blocks startup.
   await seedGranbury().catch((e) => app.log.warn({ err: e }, 'granbury seed skipped'));
   // Overlay admin-managed config onto process.env, then seed the admin from env.
@@ -126,8 +134,12 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-main().catch((e) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal startup error:', e);
-  process.exit(1);
-});
+// Only start a server when run as the entry point — importing this module
+// (tests do, for buildApp) must not listen on a port.
+if (require.main === module) {
+  main().catch((e) => {
+    // eslint-disable-next-line no-console
+    console.error('Fatal startup error:', e);
+    process.exit(1);
+  });
+}

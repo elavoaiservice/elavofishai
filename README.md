@@ -23,8 +23,10 @@ Stack: TypeScript + Fastify + Prisma + Postgres (Node 22), serving the PWA and
       src/services/      magic links, email, lake search, AI profiles, day plans,
                          catch photo ID, Granbury seed
       src/lib/           sessions, admin auth, crypto, rate limits, sharing rules
-      prisma/schema.prisma
+      prisma/schema.prisma + migrations/
+      test/              node:test suites (auth, sharing/visibility, unit)
       Dockerfile, docker-start.sh
+    scripts/             test.sh, backup.sh, upgrade-agent.sh + launchd plist
     docker-compose.yml   postgres + app
     docs/ELAVOFISHAI-PLAN.md   the build plan and phase status
 
@@ -38,10 +40,14 @@ Legacy from the single-file era, kept for reference only: `legacy-server.js.bak`
     docker compose up -d --build
 
 App on http://localhost:3100 (Postgres stays internal — not published). The
-container runs `prisma db push` on start and seeds the hand-verified Granbury
-lake profile. Rebuild after a pull:
+container applies any pending Prisma migrations on start and seeds the
+hand-verified Granbury lake profile. Rebuild after a pull:
 
     git pull && docker compose up -d --build
+
+A database created before migrations existed (by the old `prisma db push`
+path) has no migration history; the entrypoint detects that and baselines it
+against `0001_init` once, then migrates forward normally.
 
 ## Run it — local development
 
@@ -51,12 +57,13 @@ Node 22 and a Postgres you can reach.
     npm install
     export DATABASE_URL=postgres://elavofish:elavofish@localhost:5432/elavofish
     npm run prisma:generate
-    npm run db:push
+    npm run migrate:deploy
     npm run dev            # tsx watch, http://localhost:3100
 
-Other scripts: `npm run build`, `npm start`, `npm run typecheck`,
-`npm run migrate:dev` / `migrate:deploy` (once migrations are committed — the
-prototype still uses `db push`).
+Other scripts: `npm run build`, `npm start`, `npm run typecheck`, `npm test`,
+and `npm run migrate:dev` to author a new migration after editing
+`prisma/schema.prisma`. Don't use `db:push` against anything holding real data —
+it reshapes tables in place and can drop columns.
 
 ## Configuration
 
@@ -70,7 +77,8 @@ on top of `process.env` and reloads in place (secrets encrypted at rest with
 | `PG_PASSWORD` | Postgres password; compose builds `DATABASE_URL` from it |
 | `PUBLIC_BASE_URL` | Origin the app is reached at — magic-link URLs, cookies |
 | `COOKIE_SECURE` | `true` only behind HTTPS; LAN over http → `false` |
-| `DEV_SHOW_MAGIC_LINK` | `1` returns and logs the sign-in link instead of emailing |
+| `DEV_SHOW_MAGIC_LINK` | `1` returns the sign-in link instead of emailing it — **anyone who can reach the app can then sign in as any email**, so it defaults to `0` |
+| `ALLOW_INSECURE_DEV_LOGIN` | required alongside the above for a production build to start at all |
 | `RESEND_API_KEY`, `EMAIL_FROM` | real email for magic links + admin MFA |
 | `ANTHROPIC_API_KEY` | AI lake profiles, day planner, catch-photo logging |
 | `AI_PROFILE_MODEL` | `claude-opus-4-8` (default) or `claude-sonnet-5` (cheaper) |
@@ -79,7 +87,16 @@ on top of `process.env` and reloads in place (secrets encrypted at rest with
 | `DEFAULT_MESSAGE_PRIVACY` | who can DM a new user: everyone / friends / nobody (admin GUI) |
 
 Without an Anthropic key the engine still works — AI profiles and plans stay
-pending. Without a Resend key, magic links fall back to dev/console mode.
+pending.
+
+**Sign-in links.** With `RESEND_API_KEY` set, magic links are emailed and the
+API says nothing more than "check your inbox". Dev/console mode
+(`DEV_SHOW_MAGIC_LINK=1`) hands the link straight back to whoever asked for it,
+which is an account takeover for any address they care to type — so it is off by
+default, a production build refuses to start with it on unless
+`ALLOW_INSECURE_DEV_LOGIN=1` says you mean it, and even then the link is only
+ever returned to a caller on a private network (127.0.0.0/8, 10/8, 192.168/16,
+172.16–31, IPv6 loopback/ULA).
 
 ## Admin Command Center
 
@@ -89,12 +106,20 @@ lakes and profiles, recent activity, audit log, system health, the Settings GUI,
 and upgrade-from-git.
 
 **Upgrade from Git** signals a host-side agent rather than touching git or
-Docker itself: the API writes `/deploy/trigger`, the host watcher pulls,
-rebuilds and restarts, writing progress to `/deploy/status.log`. It shows as
-"not configured" until a `/deploy` volume is mounted into the app container —
-compose does not mount one yet. The version display compares the commit baked
-into the image at build time against the latest commit on the tracked branch of
-`elavoaiservice/elavofishai`.
+Docker itself: the API writes `/deploy/trigger` (compose mounts `./deploy`
+there), and the agent on the host fast-forwards the checkout, rebuilds, restarts
+and waits for `/health/ready`, streaming progress to `deploy/status.log` — which
+the admin panel tails live. Run the agent as the user that owns the checkout:
+
+    ./scripts/upgrade-agent.sh          # watch for trigger files
+    ./scripts/upgrade-agent.sh --once   # do one upgrade now
+
+On the Mini, install it with `scripts/com.elavoai.elavofishai.upgrade.plist`
+(edit the paths, copy to `~/Library/LaunchAgents`, `launchctl load`). Without a
+running agent the button writes a trigger nothing acts on; without the `/deploy`
+mount the tab reports "not configured". The version display compares the commit
+baked into the image at build time against the latest commit on the tracked
+branch of `elavoaiservice/elavofishai`.
 
 ## API
 
@@ -104,28 +129,62 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
   `POST /api/auth/logout`, `GET /api/me`, `GET/PATCH /api/me/profile`
 - **Lakes:** `GET /api/lakes/search` (OSM + DB), `POST /api/lakes`,
   `GET /api/lakes/:id`, `GET/POST /api/me/lakes`, set home, active lake
-- **Fishing data:** `POST /api/lakes/:id/spots|catches`, `GET /api/lakes/:id/mine`,
+- **Fishing data:** `POST /api/lakes/:id/spots|catches|waypoints`,
+  `GET /api/lakes/:id/mine`, `DELETE /api/spots|catches|waypoints/:id`,
   `GET /api/lakes/:id/feed` (friends' shared), `GET/PUT /api/kv/:key`
 - **AI:** `POST /api/ai/day-plan`, `POST /api/ai/identify-catch`,
   `POST /api/lakes/:id/profile/regenerate`, `GET /api/ai/status`
-- **Social:** friends request/accept/decline, groups + membership, direct messages
+- **Social:** friends request/accept/decline, groups + membership, direct messages,
+  `GET/PUT /api/me/sharing` (default scope per data type)
 - **Admin:** login/MFA, metrics, users, admins, config, upgrade, lakes, health, audit
 - **Ops:** `GET /health`, `GET /health/ready`
 
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
 
+## Sharing model
+
+Every spot, catch and waypoint carries its own visibility — `private`,
+`friends`, `group` (one of your friend groups) or `public` — and each user sets
+a default per data type under **Sharing defaults** in the Friends tab
+(`SharingPref`). A create request that omits `visibility` gets that default; a
+new user's default is "all friends" until they change it. The feed for a lake
+resolves the whole scale: you see a friend's record when it is public, shared
+with friends, or shared with a group you belong to — never otherwise.
+
 ## Data and backups
 
-Everything lives in the `pgdata` Docker volume. Back it up:
+Everything lives in the `pgdata` Docker volume. `scripts/backup.sh` dumps it,
+gzips it, checks the dump isn't truncated and prunes anything older than
+`KEEP_DAYS` (default 14):
 
-    docker compose exec -T postgres pg_dump -U elavofish elavofish > backup.sql
+    ./scripts/backup.sh                 # → backups/elavofish-<stamp>.sql.gz
+
+Run it nightly from cron on the Mini:
+
+    0 3 * * *  cd /path/to/elavofishai && ./scripts/backup.sh >> backups/backup.log 2>&1
+
+Restore:
+
+    gunzip -c backups/elavofish-<stamp>.sql.gz | \
+      docker compose exec -T postgres psql -U elavofish elavofish
+
+## Tests
+
+    ./scripts/test.sh        # throwaway Postgres, real migrations, full suite
+    cd server && npm test    # unit tests only (integration suites skip)
+
+`scripts/test.sh` starts a disposable `postgres:16`, applies the committed
+migrations to it (so a broken migration fails the run), and executes the
+`node:test` suites in `server/test`: magic-link sign-in and session lifecycle,
+and the visibility rules — private stays private, group records reach that group
+only, and you can't share into a group you don't belong to.
 
 ## Notes
 
 - HTTPS is required for GPS ("Find me"), offline mode, and Secure cookies.
-- After changing anything in `public/`, bump `CACHE` in `sw.js` (`elavofishai-v10`
-  → `v11`) so installed copies refresh.
+- After changing anything in `public/`, bump `CACHE` in `sw.js` (`elavofishai-v11`
+  → `v12`) so installed copies refresh.
 - The planner is account-gated: `/app` redirects anonymous visitors to `/login`.
 - The USGS lake-level API is slated for decommissioning in early 2027; the app
   already has manual entry as a fallback.
