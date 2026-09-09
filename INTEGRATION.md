@@ -73,7 +73,11 @@ B. **Separate accounts**: implement register/login as specified, storing
   `manifest.webmanifest`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`.
 - `Cache-Control: no-store` on all `/api/*` responses.
 - Rate-limit login attempts (any reasonable strategy; 10 fails / 10 min / IP
-  is the reference behavior).
+  is the reference behavior). Do not let the table of attempts grow forever.
+- Cap per-user storage. The app needs about a dozen keys; the reference server
+  allows 64 keys, 2 MB each, 8 MB per account, so one login cannot fill a disk.
+- A PUT is read-modify-write over one user's data. Serialize it per user (or
+  use a real upsert) so two saves at once cannot lose one.
 - Never serve the storage/data location as static files.
 
 ## Acceptance
@@ -81,6 +85,9 @@ B. **Separate accounts**: implement register/login as specified, storing
 Run the provided contract test against the dev server:
 
     BASE_URL=http://localhost:<port> node contract-test.js
+
+The test registers its own users, so run the dev server with registration open
+while testing.
 
 Done means: **CONTRACT SATISFIED** with zero FAIL lines (WARN lines are
 recommendations). Then open the app in a browser, create a user, log a trip,

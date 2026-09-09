@@ -15,8 +15,21 @@ const path = require('path');
 const PORT = process.env.PORT || 8787;
 const ROOT = __dirname;
 const DATA = path.join(ROOT, 'data');
-const INVITE = process.env.INVITE_CODE || null;
 const SESSION_DAYS = 90;
+
+/* Registration is gated unless you say otherwise. Set INVITE_CODE to pick the
+   code, or OPEN_REGISTRATION=1 to let anyone sign up. With neither, a code is
+   generated and printed at startup: you can still register from the console,
+   the internet cannot. */
+const OPEN_REG = process.env.OPEN_REGISTRATION === '1';
+const INVITE = OPEN_REG ? null : (process.env.INVITE_CODE || crypto.randomBytes(6).toString('hex'));
+const INVITE_GENERATED = !OPEN_REG && !process.env.INVITE_CODE;
+
+/* Per-user storage caps. The app itself uses about a dozen keys; these exist so
+   one account cannot fill the disk. */
+const MAX_KEY_BYTES = 2 * 1024 * 1024;
+const MAX_KEYS_PER_USER = 64;
+const MAX_USER_BYTES = 8 * 1024 * 1024;
 
 fs.mkdirSync(DATA, { recursive: true });
 
@@ -32,6 +45,18 @@ function writeJson(f, obj) {
 }
 let users = readJson('users.json', {});
 let sessions = readJson('sessions.json', {});
+
+/* Expired sessions were only dropped when someone presented one, so abandoned
+   ones accumulated forever. Sweep them on boot and daily. */
+function pruneSessions() {
+  const now = Date.now();
+  const dead = Object.keys(sessions).filter(t => sessions[t].exp < now);
+  dead.forEach(t => delete sessions[t]);
+  if (dead.length) writeJson('sessions.json', sessions);
+  return dead.length;
+}
+pruneSessions();
+setInterval(pruneSessions, 86400000).unref();
 
 /* ---------- auth primitives ---------- */
 function hashPassword(pw) {
@@ -75,33 +100,67 @@ function cookieFor(req, tok) {
 }
 
 /* ---------- login rate limiting (per IP) ---------- */
-const fails = {};
+const FAIL_WINDOW = 600000;
+const fails = new Map();
+function pruneFails() {
+  const cut = Date.now() - FAIL_WINDOW;
+  for (const [ip, f] of fails) if (f.t < cut) fails.delete(ip);
+}
 function tooMany(ip) {
-  const f = fails[ip];
-  return f && f.n >= 10 && Date.now() - f.t < 600000;
+  const f = fails.get(ip);
+  return !!f && f.n >= 10 && Date.now() - f.t < FAIL_WINDOW;
 }
 function noteFail(ip) {
-  const f = fails[ip] || { n: 0, t: Date.now() };
-  if (Date.now() - f.t > 600000) { f.n = 0; f.t = Date.now(); }
-  f.n++; fails[ip] = f;
+  const f = fails.get(ip) || { n: 0, t: Date.now() };
+  if (Date.now() - f.t > FAIL_WINDOW) { f.n = 0; f.t = Date.now(); }
+  f.n++; fails.set(ip, f);
+  if (fails.size > 5000) pruneFails();   // one IP per entry; do not grow forever
 }
+setInterval(pruneFails, FAIL_WINDOW).unref();
 
 /* ---------- per-user kv ---------- */
 function kvFile(user) { return 'kv_' + user + '.json'; }
+
+/* A PUT is read-modify-write over one file per user, so two in flight at once
+   could lose one. Serialize them per user. */
+const kvLocks = new Map();
+function withKvLock(user, fn) {
+  const prev = kvLocks.get(user) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const done = run.then(() => {}, () => {});
+  kvLocks.set(user, done);
+  done.then(() => { if (kvLocks.get(user) === done) kvLocks.delete(user); });
+  return run;
+}
 const VALID_USER = /^[a-zA-Z0-9_.-]{3,24}$/;
 const VALID_KEY = /^[\w:.-]{1,80}$/;
 
 /* ---------- helpers ---------- */
 function send(res, code, body, headers) {
+  if (res.writableEnded || res.destroyed) return;   // client already hung up
   const h = Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, headers || {});
   res.writeHead(code, h);
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
+async function readJsonBody(req, limit) {
+  let raw;
+  try { raw = await readBody(req, limit || 4096); } catch (e) { return null; }
+  try { return JSON.parse(raw || '{}'); } catch (e) { return null; }
+}
 function readBody(req, limit) {
   return new Promise((res, rej) => {
-    let b = ''; let n = 0;
-    req.on('data', c => { n += c.length; if (n > (limit || 1048576)) { rej(new Error('too big')); req.destroy(); } b += c; });
-    req.on('end', () => res(b));
+    const max = limit || 1048576;
+    let b = ''; let n = 0; let over = false;
+    req.on('data', c => {
+      n += c.length;
+      if (over) { if (n > max * 8) req.destroy(); return; }   // drain, but not forever
+      if (n > max) { over = true; b = ''; rej(new Error('too big')); return; }
+      b += c;
+    });
+    /* Keep draining after the limit rather than destroying the socket outright:
+       the connection stays alive long enough to answer 413 instead of leaving
+       the client staring at a broken pipe. */
+    req.on('end', () => { if (!over) res(b); });
     req.on('error', rej);
   });
 }
@@ -122,7 +181,8 @@ http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/register' && req.method === 'POST') {
       if (tooMany(ip)) return send(res, 429, { error: 'Too many attempts. Wait ten minutes.' });
-      const b = JSON.parse(await readBody(req, 4096) || '{}');
+      const b = await readJsonBody(req);
+      if (!b) return send(res, 400, { error: 'Could not read that request.' });
       const u = String(b.username || '').trim();
       if (!VALID_USER.test(u)) return send(res, 400, { error: 'Username: 3-24 letters, numbers, . _ -' });
       if (String(b.password || '').length < 8) return send(res, 400, { error: 'Password needs at least 8 characters.' });
@@ -135,14 +195,15 @@ http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/login' && req.method === 'POST') {
       if (tooMany(ip)) return send(res, 429, { error: 'Too many attempts. Wait ten minutes.' });
-      const b = JSON.parse(await readBody(req, 4096) || '{}');
+      const b = await readJsonBody(req);
+      if (!b) return send(res, 400, { error: 'Could not read that request.' });
       const u = String(b.username || '').trim();
       const rec = users[u];
       if (!rec || !(await verifyPassword(String(b.password || ''), rec.hash))) {
         noteFail(ip);
         return send(res, 401, { error: 'Wrong username or password.' });
       }
-      delete fails[ip];
+      fails.delete(ip);
       const tok = newSession(u);
       return send(res, 200, { user: u }, { 'Set-Cookie': cookieFor(req, tok) });
     }
@@ -153,17 +214,32 @@ http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/kv/')) {
       const u = sessionUser(req);
       if (!u) return send(res, 401, { error: 'Sign in first.' });
-      const key = decodeURIComponent(url.pathname.slice(8));
+      let key;
+      try { key = decodeURIComponent(url.pathname.slice(8)); }
+      catch (e) { return send(res, 400, { error: 'Bad key.' }); }   // stray % escape
       if (!VALID_KEY.test(key)) return send(res, 400, { error: 'Bad key.' });
-      const kv = readJson(kvFile(u), {});
       if (req.method === 'GET') {
+        const kv = readJson(kvFile(u), {});
         if (!(key in kv)) return send(res, 404, { error: 'empty' });
         return send(res, 200, { value: kv[key] });
       }
       if (req.method === 'PUT') {
-        kv[key] = await readBody(req, 2097152); // 2 MB per key is plenty
-        writeJson(kvFile(u), kv);
-        return send(res, 200, { ok: true });
+        let body;
+        try { body = await readBody(req, MAX_KEY_BYTES); }
+        catch (e) { return send(res, 413, { error: 'That value is too large. 2 MB per key.' }); }
+        return withKvLock(u, () => {
+          const kv = readJson(kvFile(u), {});           // re-read inside the lock
+          const fresh = !(key in kv);
+          if (fresh && Object.keys(kv).length >= MAX_KEYS_PER_USER)
+            return send(res, 409, { error: 'Too many stored keys on this account.' });
+          const others = Object.keys(kv).reduce(
+            (n, k) => k === key ? n : n + Buffer.byteLength(kv[k]), 0);
+          if (others + Buffer.byteLength(body) > MAX_USER_BYTES)
+            return send(res, 507, { error: 'Storage is full for this account.' });
+          kv[key] = body;
+          writeJson(kvFile(u), kv);
+          return send(res, 200, { ok: true });
+        });
       }
       return send(res, 405, { error: 'GET or PUT.' });
     }
@@ -185,6 +261,15 @@ http.createServer(async (req, res) => {
     send(res, 500, { error: 'Server hiccup.' });
   }
 }).listen(PORT, () => {
-  console.log('Lake Granbury Fishing AI on http://localhost:' + PORT +
-    (INVITE ? '  (invite code required to register)' : '  (open registration)'));
+  console.log('Lake Granbury Fishing AI on http://localhost:' + PORT);
+  if (INVITE_GENERATED) {
+    console.log('\n  Registration is gated. Your invite code for this run:\n');
+    console.log('      ' + INVITE + '\n');
+    console.log('  It changes every restart. Set INVITE_CODE=... to fix it, or');
+    console.log('  OPEN_REGISTRATION=1 to let anyone sign up.\n');
+  } else if (INVITE) {
+    console.log('  (invite code required to register)');
+  } else {
+    console.log('  (OPEN REGISTRATION - anyone who reaches this URL can create an account)');
+  }
 });

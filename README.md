@@ -20,15 +20,25 @@ Copy everything except server.js to any web folder. Serve over HTTPS.
 Data stays in each visitor's browser. Add to Home Screen for the app icon.
 
 ## Option 2 — standalone backend with accounts
-    node server.js                          # open registration, port 8787
-    INVITE_CODE=secret node server.js       # invite-only registration
+    node server.js                          # gated; prints an invite code, port 8787
+    INVITE_CODE=secret node server.js       # invite-only, code of your choosing
+    OPEN_REGISTRATION=1 node server.js      # anyone who finds it can sign up
     PORT=3000 node server.js                # custom port
+
+Registration is gated by default. Plain `node server.js` generates an invite
+code and prints it at startup — use that to create your own account. It changes
+on every restart, so set INVITE_CODE to keep one. Only OPEN_REGISTRATION=1
+leaves signup open to anyone who reaches the URL.
+
 Put HTTPS in front (nginx/Caddy/Cloudflare). All user data lives in ./data —
-back up that folder. Keep it running with pm2 or systemd.
+back up that folder. Keep it running with pm2 or systemd. Each account is
+capped at 64 keys, 2 MB per key, 8 MB in total.
 
 ## Option 3 — integrate into an existing backend
 Give INTEGRATION.md + contract-test.js to your implementer (human or
-Claude Code). Done = contract-test.js exits clean against your server.
+Claude Code). Done = contract-test.js exits clean against your server. The
+test creates its own accounts, so point it at a dev server with registration
+open: OPEN_REGISTRATION=1 node server.js
 
 ## Notes
 - HTTPS is required for GPS ("Find me"), offline mode, and secure cookies.
