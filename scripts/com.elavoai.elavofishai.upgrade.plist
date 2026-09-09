@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for the ElavoFishAI upgrade agent on the Mac Mini.
+
+  Edit the two paths below to wherever the repo is checked out, then:
+
+    cp scripts/com.elavoai.elavofishai.upgrade.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.elavoai.elavofishai.upgrade.plist
+    launchctl list | grep elavofishai
+
+  Uses a LaunchAgent (not a daemon) so it runs as your login user, which is the
+  user that owns the checkout and can reach Docker Desktop.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.elavoai.elavofishai.upgrade</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/CHANGEME/elavofishai/scripts/upgrade-agent.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/CHANGEME/elavofishai</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Docker Desktop's CLI is not on launchd's default PATH. -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>UPGRADE_BRANCH</key>
+    <string>main</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CHANGEME/elavofishai/deploy/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/CHANGEME/elavofishai/deploy/agent.log</string>
+</dict>
+</plist>

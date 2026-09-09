@@ -42,6 +42,12 @@ services:
       CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
+    volumes:
+      # Shared with the host upgrade agent (scripts/upgrade-agent.sh). The admin
+      # "Upgrade from Git" button writes a trigger file here and tails
+      # status.log; the container never runs git or docker itself. Without this
+      # mount the Upgrade tab reports "not configured".
+      - ./deploy:/deploy
     ports:
       - '3100:3100'
     depends_on:
