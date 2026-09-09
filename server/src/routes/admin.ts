@@ -5,8 +5,16 @@ import { prisma } from '../db';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
-  startAdminLogin, completeAdminLogin, endAdminSession, currentAdmin, requireAdmin,
+  startAdminLogin, completeAdminLogin, endAdminSession, currentAdmin, requireAdmin, createAdminUser,
 } from '../lib/admin-auth';
+
+// Lightweight audit trail for admin actions (actor kept in meta.by; AuditLog.userId
+// is for end-users, so we leave it null for admin-initiated events).
+async function audit(by: string, action: string, target?: string, meta?: Record<string, unknown>) {
+  try {
+    await prisma.auditLog.create({ data: { action, target: target || null, meta: { by, ...(meta || {}) } } });
+  } catch { /* never block on audit */ }
+}
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
 
 const DEPLOY_DIR = '/deploy';
@@ -148,5 +156,108 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     } catch (e) {
       return reply.send({ ok: false, error: `Could not signal the upgrade agent: ${(e as Error).message}` });
     }
+  });
+
+  // ---- create / delete end-users ----
+  app.post('/api/admin/users', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const b = (req.body || {}) as { email?: string; displayName?: string; role?: string };
+    const email = String(b.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'A valid email is required.' });
+    if (await prisma.user.findUnique({ where: { email } })) return reply.code(409).send({ error: 'That email already has an account.' });
+    const role = ['user', 'pro', 'guide', 'admin'].includes(String(b.role)) ? (b.role as 'user' | 'pro' | 'guide' | 'admin') : 'user';
+    const u = await prisma.user.create({ data: { email, displayName: String(b.displayName || email.split('@')[0]).slice(0, 80), role } });
+    await audit(admin.username, 'user.create', u.id, { email });
+    return reply.send({ user: { id: u.id, email: u.email, displayName: u.displayName } });
+  });
+
+  app.delete('/api/admin/users/:id', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const u = await prisma.user.findUnique({ where: { id } });
+    if (!u) return reply.code(404).send({ error: 'No such user.' });
+    await prisma.user.delete({ where: { id } }); // cascades sessions/lakes/trips/spots/kv/friendships
+    await audit(admin.username, 'user.delete', id, { email: u.email });
+    return reply.send({ ok: true });
+  });
+
+  // ---- admin users ----
+  app.get('/api/admin/admins', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const admins = await prisma.adminUser.findMany({ select: { id: true, username: true, email: true, createdAt: true, lastLoginAt: true }, orderBy: { createdAt: 'asc' } });
+    return { admins, me: admin.username };
+  });
+
+  app.post('/api/admin/admins', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const b = (req.body || {}) as { username?: string; password?: string; email?: string };
+    const username = String(b.username || '').trim();
+    if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return reply.code(400).send({ error: 'Username: 3-24 letters, numbers, . _ -' });
+    if (String(b.password || '').length < 8) return reply.code(400).send({ error: 'Password needs at least 8 characters.' });
+    if (await prisma.adminUser.findUnique({ where: { username } })) return reply.code(409).send({ error: 'That username is taken.' });
+    const a = await createAdminUser(username, String(b.password), String(b.email || '').trim() || 'admin@elavofishai.local');
+    await audit(admin.username, 'admin.create', a.id, { username });
+    return reply.send({ ok: true });
+  });
+
+  app.delete('/api/admin/admins/:id', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const target = await prisma.adminUser.findUnique({ where: { id } });
+    if (!target) return reply.code(404).send({ error: 'No such admin.' });
+    if (target.username === admin.username) return reply.code(400).send({ error: "You can't delete yourself." });
+    if ((await prisma.adminUser.count()) <= 1) return reply.code(400).send({ error: 'Cannot delete the last admin.' });
+    await prisma.adminUser.delete({ where: { id } });
+    await audit(admin.username, 'admin.delete', id, { username: target.username });
+    return reply.send({ ok: true });
+  });
+
+  // ---- activity feed ----
+  app.get('/api/admin/activity', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const [users, lakes, trips, friendships] = await Promise.all([
+      prisma.user.findMany({ orderBy: { createdAt: 'desc' }, take: 15, select: { displayName: true, createdAt: true } }),
+      prisma.lake.findMany({ orderBy: { createdAt: 'desc' }, take: 15, select: { name: true, region: true, createdAt: true } }),
+      prisma.trip.findMany({ orderBy: { createdAt: 'desc' }, take: 15, include: { user: { select: { displayName: true } }, lake: { select: { name: true } } } }),
+      prisma.friendship.findMany({ where: { status: 'accepted' }, orderBy: { updatedAt: 'desc' }, take: 10, include: { user: { select: { displayName: true } }, friend: { select: { displayName: true } } } }),
+    ]);
+    const events = [
+      ...users.map((u) => ({ t: u.createdAt, kind: 'signup', text: `${u.displayName} joined` })),
+      ...lakes.map((l) => ({ t: l.createdAt, kind: 'lake', text: `Lake added: ${l.name}${l.region ? ` (${l.region})` : ''}` })),
+      ...trips.map((x) => ({ t: x.createdAt, kind: 'catch', text: `${x.user.displayName} shared a ${x.species || 'catch'} on ${x.lake.name}` })),
+      ...friendships.map((f) => ({ t: f.updatedAt, kind: 'friend', text: `${f.user.displayName} & ${f.friend.displayName} became friends` })),
+    ].sort((a, b) => +new Date(b.t) - +new Date(a.t)).slice(0, 40);
+    return { events };
+  });
+
+  // ---- lakes ----
+  app.get('/api/admin/lakes', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const lakes = await prisma.lake.findMany({ orderBy: { createdAt: 'desc' }, take: 200, include: { profile: { select: { source: true, verified: true } }, _count: { select: { userLakes: true, trips: true } } } });
+    return { lakes: lakes.map((l) => ({ id: l.id, name: l.name, region: l.region, profile: l.profile?.source || null, verified: l.profile?.verified || false, savedBy: l._count.userLakes, catches: l._count.trips })) };
+  });
+
+  // ---- system health ----
+  app.get('/api/admin/health', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    let db = 'down';
+    try { await prisma.$queryRaw`SELECT 1`; db = 'ok'; } catch { /* down */ }
+    return { db, uptimeSec: Math.round(process.uptime()), node: process.version, ai: !!process.env.ANTHROPIC_API_KEY, email: !!process.env.RESEND_API_KEY, mode: process.env.NODE_ENV || 'development' };
+  });
+
+  // ---- audit log ----
+  app.get('/api/admin/audit', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const log = await prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 80 });
+    return { log };
   });
 }

@@ -28,6 +28,12 @@ export function verifyPassword(pw: string, stored: string): Promise<boolean> {
   });
 }
 
+// Create a new admin account (used by the admin Security tab).
+export async function createAdminUser(username: string, password: string, email: string) {
+  const passwordHash = await hashPassword(password);
+  return prisma.adminUser.create({ data: { username, passwordHash, email } });
+}
+
 // Seed/refresh the admin account from env (ADMIN_USERNAME/PASSWORD/EMAIL).
 export async function bootstrapAdmin(): Promise<void> {
   const username = process.env.ADMIN_USERNAME;
