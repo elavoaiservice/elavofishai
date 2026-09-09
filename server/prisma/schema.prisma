@@ -380,6 +380,23 @@ model SharingPref {
   @@unique([userId, dataType])
 }
 
+// Client-side JavaScript errors, reported by the app. Without these a broken
+// deploy is invisible: the page blanks on someone's phone and the server logs
+// look perfectly healthy. Bounded — the sweep keeps only recent rows.
+model ClientError {
+  id        String   @id @default(cuid())
+  message   String   @db.Text
+  source    String? // file:line:col
+  stack     String? @db.Text
+  url       String? // page the error happened on
+  userAgent String?
+  userId    String? // when the reporter was signed in
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // ---- P3 admin / community ----
 
 model AuditLog {

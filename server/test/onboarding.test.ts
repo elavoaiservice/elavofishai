@@ -75,3 +75,31 @@ describe('onboarding', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }
     assert.equal(o.hasBoat, null);
   });
 });
+
+/**
+ * Client error reporting — the only way a broken deploy on someone's phone
+ * becomes visible to an admin.
+ */
+describe('client errors', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('an anonymous report is accepted and stored', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/client-error',
+      payload: { message: 'TypeError: x is not a function', url: 'https://example.test/app#today', stack: 'at foo' },
+    });
+    assert.equal(res.statusCode, 200);
+    const row = await prisma.clientError.findFirst({ where: { message: 'TypeError: x is not a function' } });
+    assert.ok(row, 'the report is stored even without a session');
+    assert.equal(row?.url, 'https://example.test/app#today');
+  });
+
+  test('an empty message is rejected rather than stored as noise', async () => {
+    const app = await getApp();
+    const res = await app.inject({ method: 'POST', url: '/api/client-error', payload: { message: '   ' } });
+    assert.equal(res.statusCode, 400);
+  });
+});

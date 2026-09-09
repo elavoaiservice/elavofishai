@@ -267,14 +267,32 @@ Restore:
 
 ## Tests
 
-    ./scripts/test.sh        # throwaway Postgres, real migrations, full suite
+    ./scripts/test.sh        # throwaway Postgres, migrations, server suite + UI smoke
+    ./scripts/smoke-ui.sh    # just the browser pass
     cd server && npm test    # unit tests only (integration suites skip)
 
 `scripts/test.sh` starts a disposable `postgres:16`, applies the committed
 migrations to it (so a broken migration fails the run), and executes the
 `node:test` suites in `server/test`: magic-link sign-in and session lifecycle,
-and the visibility rules — private stays private, group records reach that group
-only, and you can't share into a group you don't belong to.
+the visibility rules (private stays private, group records reach that group
+only, you can't share into a group you don't belong to), blocking, onboarding,
+and the changelog and lake-geometry pure functions.
+
+It then runs `scripts/smoke-ui.sh`, which loads the real `public/index.html` in
+headless Chrome once per view and checks the view opened, the sidebar rendered,
+and nothing threw — the server suite never loads the app, so without this a
+typo in the nav model ships silently and blanks the page for everyone. The app
+stamps `data-js-error` on `<html>` from its own error handler, which is what the
+smoke test reads. It skips cleanly when no Chrome is installed.
+
+## Client errors
+
+The app reports its own JavaScript failures to `POST /api/client-error`
+(anonymous allowed — the errors worth catching are the ones that break the page
+before sign-in — rate-limited by IP, capped at five per page load). Admin →
+**Client errors** groups them by message, and System health shows a 24-hour
+count, so a bad deploy is visible to you rather than only to the angler whose
+screen went blank. Rows older than 14 days are swept.
 
 ## Notes
 

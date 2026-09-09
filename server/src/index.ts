@@ -13,6 +13,7 @@ import { aiRoutes } from './routes/ai';
 import { adminRoutes } from './routes/admin';
 import { socialRoutes } from './routes/social';
 import { messageRoutes } from './routes/messages';
+import { clientErrorRoutes, sweepClientErrors } from './routes/clientErrors';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
 import { currentUser } from './lib/auth';
@@ -55,6 +56,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminRoutes);
   await app.register(socialRoutes);
   await app.register(messageRoutes);
+  await app.register(clientErrorRoutes);
 
   // The planner app lives at /app — GATED: the Granbury (and all lake) data is
   // account-only. Anonymous visitors are sent to the login screen; the HTML is
@@ -115,6 +117,7 @@ async function main(): Promise<void> {
   const sweep = async () => {
     await sweepAuthTokens().catch(() => {});
     await sweepRateLimits(24 * hour).catch(() => {});
+    await sweepClientErrors().catch(() => {});
     await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   };
   await sweep();

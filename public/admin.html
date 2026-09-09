@@ -166,10 +166,10 @@ const NAV=[
   {h:'Content',items:[['lakes','🗺️ Lakes']]},
   {h:'Growth',items:[['analytics','📈 Analytics']]},
   {h:'Security',items:[['admins','🛡️ Admins'],['signin','🔑 Sign-in links'],['audit','📜 Audit log']]},
-  {h:'Operations',items:[['changelog','🧾 Changelog'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
+  {h:'Operations',items:[['changelog','🧾 Changelog'],['errors','🐞 Client errors'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
   {h:'Settings',items:[['environment','⚙️ Environment']]},
 ];
-const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],analytics:['Analytics','Growth and engagement.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
+const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],analytics:['Analytics','Growth and engagement.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
 function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden'); $('whoami').textContent='Signed in as '+admin.username;
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
   $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
@@ -178,10 +178,27 @@ function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').
 function go(tab){
   document.querySelectorAll('.nav-i[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $('pageTitle').textContent=(TITLES[tab]||[tab])[0]; $('pageSub').textContent=(TITLES[tab]||['',''])[1];
-  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,analytics:tAnalytics,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
+  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,analytics:tAnalytics,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
 }
 
 /* ---- panels ---- */
+/* Client errors — grouped by message so one broken line doesn't fill the page.
+   Empty here is the good state, and it is worth saying so plainly. */
+async function tErrors(){
+  $('content').innerHTML='<div class="muted">Loading…</div>';
+  const d=await (await api('/api/admin/client-errors')).json();
+  const errs=d.errors||[];
+  if(!errs.length){ $('content').innerHTML='<div class="card"><b>No client errors reported.</b>'
+    +'<div class="snap" style="margin-top:6px">The app reports its own JavaScript failures here — nothing in the last 14 days.</div></div>'; return; }
+  $('content').innerHTML='<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr>'
+    +'<th>Message</th><th>Seen</th><th>Last</th><th>Where</th></tr></thead><tbody>'
+    +errs.map(e=>'<tr><td style="max-width:420px"><code style="font-size:12px">'+esc(e.message)+'</code>'
+      +(e.stack?'<div class="snap" style="white-space:pre-wrap;margin-top:4px;max-height:70px;overflow:auto">'+esc(e.stack)+'</div>':'')+'</td>'
+      +'<td><b>'+e.count+'</b></td><td class="muted">'+ago(e.last)+'</td>'
+      +'<td class="snap">'+esc((e.url||'').replace(/^https?:\/\/[^/]+/,''))+'</td></tr>').join('')
+    +'</tbody></table></div>';
+}
+
 /* Sign-in links — diagnostics for magic-link delivery plus a break-glass
    generator. Tokens are stored hashed, so an existing link can never be read
    back; the generator mints a fresh one and shows it once. */
@@ -396,6 +413,7 @@ async function tHealth(){ $('content').innerHTML='<div class="muted">Loading sys
       + (h.emailHealth&&h.emailHealth.fromIsDefault&&h.emailHealth.configured?'<tr><td colspan="2" class="snap" style="color:#b7791f">⚠ No EMAIL_FROM set — Resend\'s shared sender only delivers to your own address. Verify a domain and set EMAIL_FROM, or nobody else can sign in.</td></tr>':'')
       + (h.emailHealth&&h.emailHealth.lastError?'<tr><td colspan="2" class="snap" style="color:var(--bear)">Last send failed '+ago(h.emailHealth.lastErrorAt)+': '+esc(h.emailHealth.lastError)+'</td></tr>':'')
       + (h.magicLinkDev?'<tr><td colspan="2" class="snap" style="color:#b7791f">⚠ Dev sign-in links are ON (private-network callers only).</td></tr>':'')
+      + '<tr><td class="muted">Client errors (24h)</td><td style="text-align:right">'+(h.clientErrors24h?'<span class="pill down">'+h.clientErrors24h+'</span>':'<span class="pill ok">0</span>')+'</td></tr>'
       + '<tr><td class="muted">Mode</td><td style="text-align:right"><b>'+esc(h.mode)+'</b></td></tr>'
       + '<tr><td class="muted">Node</td><td style="text-align:right">'+esc(h.node)+'</td></tr>'
       + '<tr><td class="muted">Platform</td><td style="text-align:right">'+esc(h.platform||'')+' · '+esc(h.arch||'')+'</td></tr>'

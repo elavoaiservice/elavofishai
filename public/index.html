@@ -881,13 +881,6 @@ body.feed-loading .stat-v *{visibility:hidden}
       </div>
     </div>
   </div>
-  <div class="acct-panel" id="lakePanel" hidden>
-    <div class="fld"><label for="lkSearch">Find a lake or body of water</label><input id="lkSearch" placeholder="Search any public lake…" autocomplete="off"></div>
-    <div id="lkResults" class="snap" style="margin:6px 0;max-height:180px;overflow:auto"></div>
-    <div class="snap" style="margin-top:6px;font-weight:600">My lakes</div>
-    <div id="lkMine" class="snap" style="margin-top:4px;max-height:160px;overflow:auto"></div>
-    <div id="lkMsg" class="snap" style="color:#B6C6DC;margin-top:6px"></div>
-  </div>
   <div class="brand">
     <img src="/icon-512.png" alt="ElavoFishAI" class="brand-logo" style="width:60px;height:60px;border-radius:15px;flex:0 0 auto" width="60" height="60">
     <div>
@@ -1255,17 +1248,6 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
 
   <div class="formfoot">
-    <select id="wpVendor" class="fr-in" style="max-width:170px" aria-label="Chartplotter">
-      <option value="garmin">Garmin</option>
-      <option value="lowrance">Lowrance</option>
-      <option value="humminbird">Humminbird</option>
-      <option value="generic">Other / generic GPX</option>
-    </select>
-    <button class="btn ghost" id="wpGpx">Export GPX</button>
-    <button class="btn ghost" id="wpImportBtn">Import GPX</button>
-    <input type="file" id="wpImportFile" accept=".gpx,application/gpx+xml,.usr,.hwr,.hws" hidden>
-    <button class="btn ghost" id="wpJson">Export waypoints</button>
-    <button class="btn ghost" id="wpSeed">Load the known spots</button>
     <span class="snap" id="wpMsg"></span>
   </div>
   <div id="wpList" class="trips" style="margin-top:14px"></div>
@@ -1388,17 +1370,12 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
     <div id="frRequests" style="margin-top:12px"></div>
     <div id="frList" style="margin-top:6px"></div>
-    <div id="frBlocked"></div>
 
     <h3 style="margin-top:24px">Groups</h3>
     <p class="lede" style="margin-top:2px">Group friends so you can share with just one crew.</p>
     <div class="formfoot"><input id="grName" class="fr-in" placeholder="e.g. Bass buddies" style="max-width:220px"><button class="btn" id="grAdd">Create group</button></div>
     <div id="grList" style="margin-top:10px"></div>
 
-    <h3 style="margin-top:24px">Sharing defaults</h3>
-    <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.</p>
-    <div id="shDefaults" class="shareGrid"></div>
-    <div class="formfoot" style="margin-top:10px"><button class="btn" id="shDefSave">Save defaults</button><span class="snap" id="shDefMsg" style="color:var(--muted)"></span></div>
 
     <h3 style="margin-top:24px">Share on <span id="frLake"></span></h3>
     <p class="lede" style="margin-top:2px">Private by default — you choose exactly who sees each spot and catch.</p>
@@ -1545,6 +1522,58 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
 </section>
 
+<section class="panel" id="p-lakes" hidden>
+  <div id="lakesAuth" class="lede" hidden>Sign in to add and switch lakes.</div>
+    <div class="fld"><label for="lkSearch">Find a lake or body of water</label><input id="lkSearch" placeholder="Search any public lake…" autocomplete="off"></div>
+    <div id="lkResults" class="snap" style="margin:6px 0;max-height:180px;overflow:auto"></div>
+    <div class="snap" style="margin-top:6px;font-weight:600">My lakes</div>
+    <div id="lkMine" class="snap" style="margin-top:4px;max-height:160px;overflow:auto"></div>
+    <div id="lkMsg" class="snap" style="color:#B6C6DC;margin-top:6px"></div>
+</section>
+
+<section class="panel" id="p-sharing" hidden>
+  <div id="sharingAuth" class="lede" hidden>Sign in to set your sharing defaults.</div>
+  <div id="sharingMain">
+    
+    <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.</p>
+    <div id="shDefaults" class="shareGrid"></div>
+    <div class="formfoot" style="margin-top:10px"><button class="btn" id="shDefSave">Save defaults</button><span class="snap" id="shDefMsg" style="color:var(--muted)"></span></div>
+  </div>
+</section>
+
+<section class="panel" id="p-blocked" hidden>
+  <p class="lede">Blocked anglers can't message you, see anything you share, or send you a
+     request — and you won't see theirs. Only you can lift a block.</p>
+  <div id="frBlocked"></div>
+  <p class="snap" id="blockedEmpty" hidden>You haven't blocked anyone.</p>
+</section>
+
+<section class="panel" id="p-data" hidden>
+  <p class="lede">Your waypoints and trip log, in and out. GPX works with Garmin, Lowrance and
+     Humminbird; the JSON export is a full backup you can import on another device.</p>
+  <h3>Waypoints</h3>
+  <div class="formfoot" style="flex-wrap:wrap">
+    <select id="wpVendor" class="fr-in" style="max-width:170px" aria-label="Chartplotter">
+      <option value="garmin">Garmin</option>
+      <option value="lowrance">Lowrance</option>
+      <option value="humminbird">Humminbird</option>
+      <option value="generic">Other / generic GPX</option>
+    </select>
+    <button class="btn ghost" id="wpGpx">Export GPX</button>
+    <button class="btn ghost" id="wpImportBtn">Import GPX</button>
+    <input type="file" id="wpImportFile" accept=".gpx,application/gpx+xml,.usr,.hwr,.hws" hidden>
+    <button class="btn ghost" id="wpJson">Export waypoints</button>
+    <button class="btn ghost" id="wpSeed">Load the known spots</button>
+    <span class="snap" id="wpMsg"></span>
+  </div>
+  <h3 style="margin-top:22px">Trip log</h3>
+  <div class="formfoot" style="flex-wrap:wrap">
+    <button class="btn ghost" id="dtExport">Export log</button>
+    <button class="btn ghost" id="dtCsv">Download CSV</button>
+    <span class="snap" id="dtMsg"></span>
+  </div>
+</section>
+
 <section class="panel" id="p-reference" hidden>
 <h2>Reading the barometer</h2>
 <p class="lede">The trend matters far more than the number.</p>
@@ -1593,6 +1622,29 @@ body.feed-loading .stat-v *{visibility:hidden}
 <nav class="botnav" id="botnav" aria-label="Sections"></nav>
 
 <script>
+/* ============ error reporting ============
+   A JS exception blanks the app for whoever hit it and looks perfectly healthy
+   from the server. Report it, mark the document (the UI smoke tests read this
+   attribute), and never let the reporter itself throw. */
+(function(){
+  var sent=0;
+  function report(message,source,stack){
+    try{
+      document.documentElement.setAttribute('data-js-error',String(message).slice(0,120));
+      if(sent++>=5)return;                    // one broken frame shouldn't spam
+      fetch('/api/client-error',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:String(message||'').slice(0,2000),source:source||'',
+          stack:String(stack||'').slice(0,2000),url:location.href}),keepalive:true}).catch(function(){});
+    }catch(e){}
+  }
+  window.addEventListener('error',function(e){
+    report(e.message||'script error',(e.filename||'')+':'+(e.lineno||0)+':'+(e.colno||0),e.error&&e.error.stack);
+  });
+  window.addEventListener('unhandledrejection',function(e){
+    var r=e.reason; report('unhandled rejection: '+((r&&r.message)||r),'',r&&r.stack);
+  });
+})();
+
 /* ============ constants ============ */
 const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -3197,7 +3249,9 @@ function wireOnboard(){
   };
 }
 /* ---- lake switcher ---- */
-function toggleLakePanel(){ $('acctPanel').hidden=true; const p=$('lakePanel'); p.hidden=!p.hidden; if(!p.hidden)refreshMyLakes(); }
+// Lake switching lives in Settings now, but it stays one tap from anywhere:
+// the header chip and the mobile chevron both jump straight to it.
+function toggleLakePanel(){ $('acctPanel').hidden=true; go('lakes'); }
 async function refreshMyLakes(){
   if(!AUTH.user){$('lkMine').innerHTML='<i>Sign in to add and switch lakes.</i>';return;}
   try{ const r=await apiFetch('/api/me/lakes'); const d=await r.json();
@@ -3322,8 +3376,8 @@ async function refreshFriends(){
     $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button> <button class="btn ghost btn-sm" data-block="'+f.id+'" data-blockname="'+escHtml(f.displayName)+'">Block</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
     // Blocked anglers: hidden from your feed, spots and messages until unblocked.
     const bl=d.blocked||[];
-    $('frBlocked').innerHTML=bl.length?('<h3 style="margin-top:24px">Blocked</h3><p class="lede" style="margin-top:2px">They can\'t message you, see your shared spots, or send you requests — and you won\'t see theirs.</p>'
-      +bl.map(b=>'<div class="fr-row"><span>'+escHtml(b.displayName)+'</span><button class="btn ghost btn-sm" data-unblock="'+b.id+'">Unblock</button></div>').join('')):'';
+    const be=$('blockedEmpty'); if(be)be.hidden=bl.length>0;
+    $('frBlocked').innerHTML=bl.length?(bl.map(b=>'<div class="fr-row"><span>'+escHtml(b.displayName)+'</span><button class="btn ghost btn-sm" data-unblock="'+b.id+'">Unblock</button></div>').join('')):'';
   }catch(e){}
 }
 async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)return; $('frMsg').textContent='Sending…';
@@ -3428,7 +3482,8 @@ async function loadFeed(){
 function wireFriends(){
   const p=$('p-friends'); if(!p)return;
   $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup; $('spShare').onclick=shareSpot; $('caShare').onclick=shareCatch;
-  $('wsShare').onclick=shareWaypoint; $('shDefSave').onclick=saveSharing;
+  $('wsShare').onclick=shareWaypoint;
+  const sd=$('shDefSave'); if(sd)sd.onclick=saveSharing;
   $('spGps').onclick=()=>gpsInto('spLat','spLon');
   $('wsGps').onclick=()=>gpsInto('wsLat','wsLon');
   $('spVis').onchange=()=>{$('spGroup').hidden=$('spVis').value!=='group';};
@@ -4156,7 +4211,11 @@ const NAV=[
     {id:'reference', ic:'📖', label:'Reference',  title:'Reference',       sub:'Reading the barometer, and the limits before you keep.'}
   ]},
   {grp:'settings', ic:'⚙️', label:'Settings', kids:[
-    {id:'profile', ic:'👤', label:'Profile', title:'Profile', sub:'How other anglers see you, and who can reach you.'}
+    {id:'profile', ic:'👤', label:'Profile',  title:'Profile',  sub:'How other anglers see you, and who can reach you.'},
+    {id:'lakes',   ic:'🗺️', label:'My lakes', title:'My lakes', sub:'Add water, switch water, and choose your home lake.'},
+    {id:'sharing', ic:'🔒', label:'Sharing',  title:'Sharing defaults', sub:'Who sees a new spot, catch or waypoint unless you say otherwise.'},
+    {id:'blocked', ic:'🚫', label:'Blocked',  title:'Blocked anglers', sub:'People you have blocked, and how to lift it.'},
+    {id:'data',    ic:'💾', label:'Data & export', title:'Data & export', sub:'GPX for your plotter, and a full backup of your log.'}
   ]}
 ];
 const VIEWS=[]; (function(){ NAV.forEach(n=>n.kids?n.kids.forEach(k=>VIEWS.push(k.id)):VIEWS.push(n.id)); })();
@@ -4214,6 +4273,11 @@ function go(id,push){
   if(id==='friends'){ loadFriends(); }
   if(id==='msgs'){ openMessages(); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
+  if(id==='lakes'){ $('lakesAuth').hidden=!!AUTH.user; refreshMyLakes(); }
+  if(id==='sharing'){ $('sharingAuth').hidden=!!AUTH.user; $('sharingMain').hidden=!AUTH.user;
+    if(AUTH.user){ refreshGroups(); loadSharing(); } }
+  if(id==='blocked'){ refreshFriends(); }
+  if(id==='data'){ drawWpList(); }
 }
 // My water holds three sections behind sub-tabs; goSub() lets other views
 // (and the Today quick actions) land on the right one.
@@ -4449,6 +4513,11 @@ $('wpSeed').onclick=async()=>{
 };
 $('lgSave').onclick=saveTrip;
 wireCatchAi();
+// Settings → Data & export mirrors the in-log buttons.
+['dtExport:lgExport','dtCsv:lgCsv'].forEach(function(pair){
+  const p=pair.split(':'), from=$(p[0]), to=$(p[1]);
+  if(from&&to) from.onclick=function(){ to.click(); const m=$('dtMsg'); if(m){ m.textContent='Done.'; setTimeout(()=>{m.textContent='';},2500); } };
+});
 $('lgExport').onclick=function(){
   $('ioBox').hidden=false; $('ioBox').value=JSON.stringify(trips,null,1);
   $('ioBox').select(); $('ioMsg').textContent='Copy this somewhere safe.';
@@ -4596,7 +4665,7 @@ drawTrips();
   if(sp){try{const a=JSON.parse(sp);if(Array.isArray(a)&&a.length)spots=a;}catch(e){}}
   const wt=await stGet(LK('water'));
   if(wt){try{const o=JSON.parse(wt);if(o&&o.t!=null){waterTemp=o.t;waterDate=o.d;}}catch(e){}}
-  $('acctBtn').onclick=()=>{$('lakePanel').hidden=true;$('acctPanel').hidden=!$('acctPanel').hidden;};
+  $('acctBtn').onclick=()=>{$('acctPanel').hidden=!$('acctPanel').hidden;};
   $('auLink').onclick=requestLink;
   $('auEmail').addEventListener('keydown',e=>{if(e.key==='Enter')requestLink();});
   $('auOut').onclick=async()=>{try{await apiFetch('/api/auth/logout',{method:'POST'})}catch(e){} location.reload();};

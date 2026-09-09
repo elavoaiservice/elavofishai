@@ -302,6 +302,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       // set". A broken sender locks every user out silently, so the delivery
       // record belongs on the health page.
       emailHealth: emailStatus(),
+      clientErrors24h: await prisma.clientError.count({ where: { createdAt: { gt: new Date(Date.now() - 86400000) } } }).catch(() => 0),
       magicLinkDev: env.devShowMagicLink,
       uptimeSec: Math.round(process.uptime()),
       hostUptimeSec: Math.round(os.uptime()),
@@ -315,6 +316,23 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       email: !!process.env.RESEND_API_KEY,
       mode: process.env.NODE_ENV || 'development',
     };
+  });
+
+  // ---- client errors ----
+  // A JS exception on someone's phone is invisible server-side; this is where
+  // it surfaces.
+  app.get('/api/admin/client-errors', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const rows = await prisma.clientError.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+    // Group identical messages so one broken line doesn't fill the page.
+    const groups = new Map<string, { message: string; count: number; last: Date; url: string | null; stack: string | null }>();
+    for (const r of rows) {
+      const g = groups.get(r.message);
+      if (g) { g.count++; if (r.createdAt > g.last) g.last = r.createdAt; }
+      else groups.set(r.message, { message: r.message, count: 1, last: r.createdAt, url: r.url, stack: r.stack });
+    }
+    return { errors: [...groups.values()].sort((a, b) => b.last.getTime() - a.last.getTime()), total: rows.length };
   });
 
   // ---- sign-in links ----

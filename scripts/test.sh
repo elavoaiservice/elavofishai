@@ -37,3 +37,7 @@ echo "[test] applying migrations"
 npx prisma migrate deploy
 echo "[test] running suite"
 npm test
+
+# The server suite never loads the app itself; this does.
+echo "[test] running UI smoke tests"
+"$REPO_DIR/scripts/smoke-ui.sh"
