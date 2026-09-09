@@ -5,6 +5,9 @@ import { requireUser } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import { getOrGenerateDayPlan } from '../services/dayPlan';
 import { generateLakeProfile } from '../services/aiProfile';
+import { identifyCatch } from '../services/identifyCatch';
+
+const MAX_PHOTO_CHARS = 900_000; // ~670KB image (client resizes first)
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   // Is the AI configured? Lets the UI show the right state.
@@ -27,6 +30,23 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       conditions: b.conditions,
       force: !!b.force,
     });
+    if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
+    return reply.send(r);
+  });
+
+  // Identify a fish from a catch photo → species + size estimate (editable).
+  app.post('/api/ai/identify-catch', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send({ error: 'AI is not configured yet.', needsKey: true });
+    const b = (req.body || {}) as { image?: string; lake?: string };
+    const image = String(b.image || '');
+    if (!image) return reply.code(400).send({ error: 'No photo provided.' });
+    if (image.length > MAX_PHOTO_CHARS) return reply.code(413).send({ error: 'Photo too large — try again (it should auto-resize).' });
+    if (await overLimit(`identify:${user.id}`, 40, 3600000)) {
+      return reply.code(429).send({ error: 'Too many photo IDs this hour — try again later.' });
+    }
+    const r = await identifyCatch(image, { lake: b.lake ? String(b.lake).slice(0, 80) : undefined });
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);
   });

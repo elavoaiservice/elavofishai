@@ -1029,6 +1029,17 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
   <h3>Log a trip</h3>
   <p class="lede">Conditions get captured automatically. After a season this beats anything I can infer.</p>
+  <div class="form" id="catchAiBox" style="margin-bottom:14px">
+    <div class="qrow" style="align-items:center;gap:12px;flex-wrap:wrap">
+      <input type="file" id="catchPhoto" accept="image/*" capture="environment" hidden>
+      <button class="btn" id="catchPhotoBtn" type="button">📷 Log from a photo</button>
+      <span class="snap" id="catchAiMsg" style="color:var(--muted);flex:1;min-width:180px">Snap your catch — AI reads the species, size, weather &amp; spot. You just confirm.</span>
+    </div>
+    <div id="catchPreview" hidden style="margin-top:12px;display:flex;gap:14px;align-items:flex-start">
+      <img id="catchImg" alt="Your catch" style="width:118px;height:118px;object-fit:cover;border-radius:12px;border:1px solid var(--border);flex:0 0 auto">
+      <div id="catchResult" style="flex:1;font-size:.92rem;line-height:1.5"></div>
+    </div>
+  </div>
   <div class="form">
     <div class="fgrid">
       <div class="fld"><label for="lgDate">Date</label><input type="date" id="lgDate"></div>
@@ -2207,6 +2218,9 @@ async function saveTrip(){
     hours:$('lgHours').value, count:$('lgCount').value, big:$('lgBig').value,
     depth:$('lgDepth').value, bait:$('lgBait').value,
     water:$('lgWater').value, clarity:$('lgClarity').value, notes:$('lgNotes').value,
+    time:new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),
+    photo:pendingCatchPhoto||null,
+    lat:pendingCatchGeo?pendingCatchGeo.lat:null, lon:pendingCatchGeo?pendingCatchGeo.lon:null,
     cond:{hi:curHi,trend:curTrend,wind:curWindSpd,dir:curWindDir,
           moon:Math.round(moonPhase($('lgDate').value?new Date($('lgDate').value+'T12:00:00'):now).frac*100)}
   };
@@ -2214,6 +2228,7 @@ async function saveTrip(){
   trips.unshift(t);
   const ok=await stSet(LK('trips'),JSON.stringify(trips));
   drawTrips(); drawWpList(); if(map)drawMarkers(); drawBrief();
+  resetCatchAi();
   ['lgHours','lgCount','lgBig','lgDepth','lgBait','lgWater','lgNotes'].forEach(id=>$(id).value='');
   $('ioMsg').textContent=ok?'Saved.':'Saved for this session only \u2014 use Export to keep it.';
   setTimeout(()=>{$('ioMsg').textContent=''},4000);
@@ -2222,6 +2237,57 @@ async function delTrip(id){
   trips=trips.filter(t=>t.id!==id);
   await stSet(LK('trips'),JSON.stringify(trips));
   drawTrips(); drawWpList(); if(map)drawMarkers(); drawBrief();
+}
+
+/* ---- AI catch photo → auto-fill the log ---- */
+let pendingCatchPhoto=null, pendingCatchGeo=null, pendingCatchAi=null;
+function resizePhoto(file,maxDim,cb){
+  const rd=new FileReader();
+  rd.onload=function(){ const img=new Image(); img.onload=function(){
+    let w=img.width,h=img.height; const s=Math.min(1,maxDim/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+    const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h);
+    cb(c.toDataURL('image/jpeg',0.72));
+  }; img.onerror=function(){cb(null)}; img.src=rd.result; };
+  rd.onerror=function(){cb(null)}; rd.readAsDataURL(file);
+}
+function setLgSpecies(name){
+  if(!name)return; const sel=$('lgSpecies');
+  let found=[].slice.call(sel.options).find(o=>o.value.toLowerCase()===name.toLowerCase());
+  if(!found){ const o=document.createElement('option'); o.value=name; o.textContent=name; sel.insertBefore(o,sel.firstChild); found=o; }
+  sel.value=found.value;
+}
+function runCatchAi(file){
+  const msg=$('catchAiMsg'), res=$('catchResult');
+  msg.textContent='Reading your photo…';
+  resizePhoto(file,800,async function(dataUrl){
+    if(!dataUrl){ msg.textContent='Could not read that image.'; return; }
+    pendingCatchPhoto=dataUrl; pendingCatchAi=null;
+    $('catchImg').src=dataUrl; $('catchPreview').hidden=false; res.innerHTML='<span class="snap">Identifying…</span>';
+    if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>{pendingCatchGeo={lat:+p.coords.latitude.toFixed(5),lon:+p.coords.longitude.toFixed(5)};},()=>{},{timeout:8000,maximumAge:60000});
+    try{
+      const r=await apiFetch('/api/ai/identify-catch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,lake:ACTIVE.name})});
+      const d=await r.json();
+      if(!r.ok){ res.innerHTML='<span style="color:var(--danger)">'+escHtml(d.error||'Could not identify that.')+'</span>'; msg.textContent=''; return; }
+      const c=d.result||{}; pendingCatchAi=c;
+      if(!c.species){ res.innerHTML='<b>No fish spotted in that photo.</b> <span class="snap">Fill the log in below, or try a clearer shot. Your photo is still attached.</span>'; msg.textContent=''; return; }
+      if(!$('lgDate').value)$('lgDate').value=new Date(now.valueOf()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+      setLgSpecies(c.species);
+      const size=[]; if(c.lengthInches)size.push(c.lengthInches+' in'); if(c.weightLbs)size.push(c.weightLbs+' lb');
+      if(size.length)$('lgBig').value=size.join(' / ');
+      if(c.notes){ const cur=$('lgNotes').value.trim(); $('lgNotes').value=(cur?cur+'\n':'')+'AI: '+c.notes; }
+      const conf=c.confidence==='high'?'high confidence':c.confidence==='low'?'low confidence — double-check':'rough estimate';
+      res.innerHTML='<b>🐟 '+escHtml(c.species)+'</b>'+(size.length?' · ~'+escHtml(size.join(' / ')):'')+' <span class="snap">('+conf+')</span>'
+        +(c.notes?'<div class="snap" style="margin-top:4px">'+escHtml(c.notes)+'</div>':'')
+        +'<div class="snap" style="margin-top:6px;color:var(--primary-dark)">Prefilled below — edit anything, then <b>Save trip</b>. Date, weather &amp; location are captured on save.</div>';
+      msg.textContent='';
+    }catch(e){ res.innerHTML='<span style="color:var(--danger)">Server not reachable.</span>'; msg.textContent=''; }
+  });
+}
+function resetCatchAi(){ pendingCatchPhoto=null; pendingCatchGeo=null; pendingCatchAi=null; if($('catchPreview'))$('catchPreview').hidden=true; if($('catchResult'))$('catchResult').innerHTML=''; }
+function wireCatchAi(){
+  if(!$('catchPhotoBtn'))return;
+  $('catchPhotoBtn').onclick=()=>$('catchPhoto').click();
+  $('catchPhoto').onchange=function(){ const f=this.files&&this.files[0]; if(f)runCatchAi(f); this.value=''; };
 }
 function drawTrips(){
   if(!trips.length){
@@ -2244,11 +2310,13 @@ function drawTrips(){
     if(t.bait)b.push('on <b>'+esc(t.bait)+'</b>');
     if(t.water)b.push('water <b>'+esc(t.water)+'\u00b0</b>');
     if(t.clarity)b.push(esc(t.clarity).toLowerCase());
-    return '<div class="trip"><div class="trip-h"><span class="trip-d">'+esc(t.date)+
+    const thumb=t.photo?'<img src="'+esc(t.photo)+'" alt="catch" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--border);flex:0 0 auto;cursor:pointer" onclick="window.open(this.src)">':'';
+    const body='<div class="trip-h"><span class="trip-d">'+esc(t.date)+(t.time?' <span class="snap">'+esc(t.time)+'</span>':'')+
       '</span><span class="trip-s">'+esc(t.spot)+' \u00b7 '+esc(t.species)+
       '</span><button class="trip-x" data-id="'+t.id+'" aria-label="Delete trip">\u00d7</button></div>'+
       '<div class="trip-b">'+b.join(', ')+(t.notes?'<br>'+esc(t.notes):'')+'</div>'+
-      (cbits.length?'<div class="trip-c">'+cbits.join(' \u00b7 ')+'</div>':'')+'</div>';
+      (cbits.length?'<div class="trip-c">'+cbits.join(' \u00b7 ')+'</div>':'');
+    return '<div class="trip">'+(thumb?'<div style="display:flex;gap:12px;align-items:flex-start">'+thumb+'<div style="flex:1;min-width:0">'+body+'</div></div>':body)+'</div>';
   }).join('');
   $('trips').querySelectorAll('.trip-x').forEach(b=>b.onclick=()=>delTrip(+b.dataset.id));
   drawPatterns();
@@ -3649,6 +3717,7 @@ $('wpSeed').onclick=async()=>{
   $('wpMsg').textContent=n?('Added '+n+' spots.'):'Already loaded.';
 };
 $('lgSave').onclick=saveTrip;
+wireCatchAi();
 $('lgExport').onclick=function(){
   $('ioBox').hidden=false; $('ioBox').value=JSON.stringify(trips,null,1);
   $('ioBox').select(); $('ioMsg').textContent='Copy this somewhere safe.';
