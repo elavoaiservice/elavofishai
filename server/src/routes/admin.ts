@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
@@ -249,9 +250,54 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/health', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
+
+    // ---- database ----
     let db = 'down';
-    try { await prisma.$queryRaw`SELECT 1`; db = 'ok'; } catch { /* down */ }
-    return { db, uptimeSec: Math.round(process.uptime()), node: process.version, ai: !!process.env.ANTHROPIC_API_KEY, email: !!process.env.RESEND_API_KEY, mode: process.env.NODE_ENV || 'development' };
+    let dbBytes = 0;
+    let dbConns = 0;
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      db = 'ok';
+      const rows = await prisma.$queryRaw<{ bytes: number; conns: number }[]>`
+        SELECT pg_database_size(current_database())::float8 AS bytes,
+               (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database())::int AS conns`;
+      if (rows[0]) { dbBytes = Number(rows[0].bytes) || 0; dbConns = Number(rows[0].conns) || 0; }
+    } catch { /* down */ }
+
+    // ---- record counts (best-effort) ----
+    let counts: Record<string, number> = {};
+    try {
+      const [users, lakes, messages, sessions, friendships] = await Promise.all([
+        prisma.user.count(), prisma.lake.count(), prisma.message.count(),
+        prisma.session.count(), prisma.friendship.count(),
+      ]);
+      counts = { users, lakes, messages, sessions, friendships };
+    } catch { /* ignore */ }
+
+    // ---- host metrics ----
+    const cpus = os.cpus();
+    const load = os.loadavg();
+    let disk: { total: number; free: number } | null = null;
+    try {
+      const s = (fs as typeof fs & { statfsSync?: (p: string) => { bsize: number; blocks: number; bavail: number } }).statfsSync?.('/');
+      if (s) disk = { total: s.blocks * s.bsize, free: s.bavail * s.bsize };
+    } catch { /* ignore */ }
+
+    return {
+      status: db === 'ok' ? 'ok' : 'down',
+      db, dbBytes, dbConns, counts,
+      uptimeSec: Math.round(process.uptime()),
+      hostUptimeSec: Math.round(os.uptime()),
+      cpu: { cores: cpus.length || 1, model: cpus[0]?.model?.trim() || 'unknown', load1: load[0], load5: load[1], load15: load[2] },
+      mem: { total: os.totalmem(), free: os.freemem(), appRss: process.memoryUsage().rss },
+      disk,
+      node: process.version,
+      platform: `${os.platform()} ${os.release()}`,
+      arch: process.arch,
+      ai: !!process.env.ANTHROPIC_API_KEY,
+      email: !!process.env.RESEND_API_KEY,
+      mode: process.env.NODE_ENV || 'development',
+    };
   });
 
   // ---- audit log ----

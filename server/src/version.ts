@@ -80,15 +80,53 @@ export async function targetVersion(): Promise<TargetInfo> {
   return data;
 }
 
+function ghHeaders(): Record<string, string> {
+  const h: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'ElavoFishAI' };
+  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  return h;
+}
+
+// The commits on the branch that the running build doesn't have yet (base..head),
+// newest first — this is the "Incoming" list shown before an upgrade.
+export async function incomingCommits(baseSha: string, headSha: string): Promise<{ sha: string; subject: string }[]> {
+  if (!baseSha || !headSha || baseSha === headSha) return [];
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/compare/${baseSha}...${headSha}`, {
+      headers: ghHeaders(),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { commits?: { sha?: string; commit?: { message?: string } }[] };
+    return (j.commits || [])
+      .map((c) => ({ sha: (c.sha || '').slice(0, 7), subject: (c.commit?.message || '').split('\n')[0] }))
+      .reverse(); // newest first
+  } catch {
+    return [];
+  }
+}
+
 export interface VersionStatus {
+  environment: string;
+  branch: string;
   current: BuildInfo;
   target: TargetInfo;
   upToDate: boolean;
+  incoming: { sha: string; subject: string }[];
 }
 
 export async function versionStatus(): Promise<VersionStatus> {
   const current = buildInfo();
   const target = await targetVersion();
   const upToDate = !!current.commit && !!target.commit && current.commit === target.commit;
-  return { current, target, upToDate };
+  const incoming = upToDate || !current.commit || !target.commit
+    ? []
+    : await incomingCommits(current.commit, target.commit);
+  return {
+    environment: process.env.NODE_ENV || 'development',
+    branch: target.branch,
+    current,
+    target,
+    upToDate,
+    incoming,
+  };
 }
