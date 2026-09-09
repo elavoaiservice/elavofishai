@@ -769,6 +769,46 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
 
+/* ================= first run ================= */
+.onboard{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;
+  justify-content:center;padding:24px;overflow-y:auto}
+.onboard[hidden]{display:none}
+.ob-card{width:min(100%,480px);background:var(--surface);border:1px solid var(--border);
+  border-radius:24px;padding:32px 28px;box-shadow:0 18px 50px rgba(16,35,63,.12);text-align:center}
+.ob-card h2::before{display:none}
+.ob-card h2{margin:14px 0 8px;font-size:24px;letter-spacing:-.02em}
+.ob-card>p{color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 20px}
+.ob-card input{width:100%;min-height:50px;font-size:16px;padding:0 16px;border:1px solid var(--border);
+  border-radius:14px;background:var(--surface);color:var(--ink)}
+.ob-card input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--accent-soft)}
+#obResults{text-align:left;margin:12px 0 0;max-height:280px;overflow-y:auto}
+#obResults button{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;
+  border-radius:12px;padding:11px 13px;font:inherit;cursor:pointer;color:var(--ink)}
+#obResults button:hover{background:var(--accent-soft);border-color:var(--accent-ring)}
+#obResults button span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+#obMsg,#obMsg3{margin:10px 0;color:var(--muted);min-height:18px}
+#obDemo{margin-top:6px}
+.ob-dots{display:flex;gap:6px;justify-content:center;margin-bottom:18px}
+.ob-dots span{width:26px;height:4px;border-radius:2px;background:var(--border)}
+.ob-dots span.on{background:var(--primary)}
+.ob-step[hidden]{display:none}
+.ob-f{text-align:left;margin-bottom:14px}
+.ob-f label{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px}
+.ob-f select{width:100%;min-height:48px;font-size:16px;padding:0 12px;border:1px solid var(--border);
+  border-radius:13px;background:var(--surface);color:var(--ink)}
+.ob-chips{display:flex;flex-wrap:wrap;gap:8px}
+.ob-chips button{border:1px solid var(--border);background:var(--surface);color:var(--ink);
+  border-radius:999px;padding:9px 14px;font:inherit;font-size:13.5px;cursor:pointer;min-height:40px}
+.ob-chips button.on{background:var(--accent-soft);border-color:var(--primary);color:var(--primary-dark);font-weight:650}
+.ob-choice{display:grid;gap:10px;text-align:left}
+.ob-choice button{border:1px solid var(--border);background:var(--surface);border-radius:14px;
+  padding:13px 15px;font:inherit;cursor:pointer;color:var(--ink);text-align:left}
+.ob-choice button b{display:block;font-size:15px}
+.ob-choice button span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.ob-choice button.on{background:var(--accent-soft);border-color:var(--primary);box-shadow:0 0 0 1px var(--accent-ring)}
+.ob-nav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px}
+
 /* ================= phone layer =================
    Everything below 1024px is a phone in a boat: one thumb, bright sun, gloves.
    Bigger targets, fewer columns, no horizontal surprises. */
@@ -859,6 +899,74 @@ body.feed-loading .stat-v *{visibility:hidden}
 
 
 </div></header>
+<!-- First run: a new account has no lake yet. Until they pick one the app has
+     nothing true to show them, so this covers everything. -->
+<div class="onboard" id="onboard" hidden>
+  <div class="ob-card">
+    <div class="ob-dots"><span class="on"></span><span></span><span></span></div>
+
+    <!-- 1. the water: nothing in the app is true until we know this -->
+    <div class="ob-step" id="ob1">
+      <img src="/icon-512.png" alt="" width="54" height="54" style="border-radius:14px">
+      <h2>Where do you fish?</h2>
+      <p>Search any public lake, reservoir, river or pond. We'll wire up its map, gauges and
+         forecast, and write a starter guide for that water.</p>
+      <input id="obSearch" placeholder="Search a lake — “Lake Fork”, “Table Rock”…" autocomplete="off">
+      <div id="obResults"></div>
+      <div id="obMsg" class="snap"></div>
+      <button class="btn ghost btn-sm" id="obDemo">Just show me the demo lake</button>
+    </div>
+
+    <!-- 2. the angler -->
+    <div class="ob-step" id="ob2" hidden>
+      <h2>Tell us how you fish</h2>
+      <p>This shapes your plans and what your friends see on your profile. Skip anything you like.</p>
+      <div class="ob-f"><label for="obName">Your name</label>
+        <input id="obName" maxlength="60" placeholder="How other anglers see you"></div>
+      <div class="ob-f"><label for="obLoc">Where you're based</label>
+        <input id="obLoc" maxlength="120" placeholder="e.g. Granbury, TX"></div>
+      <div class="ob-f"><label>Do you have a boat?</label>
+        <div class="ob-chips" id="obBoat">
+          <button type="button" data-boat="bass boat">Bass boat</button>
+          <button type="button" data-boat="pontoon">Pontoon</button>
+          <button type="button" data-boat="jon boat">Jon boat</button>
+          <button type="button" data-boat="kayak">Kayak</button>
+          <button type="button" data-boat="other boat">Other boat</button>
+          <button type="button" data-boat="">Bank &amp; wade</button>
+        </div></div>
+      <div class="ob-f"><label for="obSpecies">Favorite species</label>
+        <input id="obSpecies" maxlength="60" placeholder="e.g. Largemouth Bass"></div>
+      <div class="ob-f"><label for="obLure">Go-to lure or bait</label>
+        <input id="obLure" maxlength="80" placeholder="e.g. 1/16 oz chartreuse jig"></div>
+      <div class="ob-f"><label for="obYears">How long have you fished?</label>
+        <select id="obYears">
+          <option value="">Prefer not to say</option>
+          <option>Just starting out</option>
+          <option>A few years</option>
+          <option>10+ years</option>
+          <option>All my life</option>
+        </select></div>
+      <div class="ob-nav"><button class="btn ghost btn-sm" id="obSkip2">Skip</button>
+        <button class="btn" id="obNext2">Continue</button></div>
+    </div>
+
+    <!-- 3. the thing that makes this app different -->
+    <div class="ob-step" id="ob3" hidden>
+      <h2>Who sees your spots?</h2>
+      <p>Your log is yours. Pick what a new spot or catch defaults to — you can override it on
+         anything, any time, and change this later in Settings.</p>
+      <div class="ob-choice" id="obShare">
+        <button type="button" data-share="none"><b>Just me</b><span>Nothing is shared. The safest start.</span></button>
+        <button type="button" data-share="friends" class="on"><b>My friends</b><span>Anglers you've accepted. Recommended.</span></button>
+        <button type="button" data-share="public"><b>Everyone</b><span>Anyone on ElavoFishAI can see it.</span></button>
+      </div>
+      <div id="obMsg3" class="snap"></div>
+      <div class="ob-nav"><button class="btn ghost btn-sm" id="obBack3">Back</button>
+        <button class="btn" id="obDone">Start fishing</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="mob-bar">
   <button class="mob-btn" id="mobMenu" aria-label="Menu">&#9776;</button>
   <b id="mobTitle">Today</b>
@@ -1403,6 +1511,26 @@ body.feed-loading .stat-v *{visibility:hidden}
       <div><label for="pfLocation">Location</label><input id="pfLocation" class="pf-in" maxlength="120" placeholder="e.g. Granbury, TX"></div>
       <div><label for="pfSpecies">Favorite species</label><input id="pfSpecies" class="pf-in" maxlength="60" placeholder="e.g. Largemouth Bass"></div>
     </div>
+    <div class="pf-grid">
+      <div><label for="pfLure">Go-to lure or bait</label><input id="pfLure" class="pf-in" maxlength="80" placeholder="e.g. 1/16 oz chartreuse jig"></div>
+      <div><label for="pfBoat">Boat</label><select id="pfBoat" class="pf-in">
+        <option value="__unset">— not saying —</option>
+        <option value="">Bank &amp; wade</option>
+        <option value="bass boat">Bass boat</option>
+        <option value="pontoon">Pontoon</option>
+        <option value="jon boat">Jon boat</option>
+        <option value="kayak">Kayak</option>
+        <option value="other boat">Other boat</option>
+      </select></div>
+    </div>
+    <label for="pfYears">How long you've fished</label>
+    <select id="pfYears" class="pf-in">
+      <option value="">Prefer not to say</option>
+      <option>Just starting out</option>
+      <option>A few years</option>
+      <option>10+ years</option>
+      <option>All my life</option>
+    </select>
     <label for="pfLake">Favorite lake</label>
     <select id="pfLake" class="pf-in"><option value="">— none —</option></select>
     <label for="pfBio">About you</label>
@@ -2976,8 +3104,97 @@ async function loadActiveLake(){
     const r=await apiFetch('/api/me/active-lake');
     if(!r.ok)return;
     const d=await r.json();
-    if(d&&d.lake)setActiveLake(d.lake);
+    if(d&&d.lake){ setActiveLake(d.lake); hideOnboard(); }
+    else if(d&&d.needsLake){ showOnboard(); }   // signed in, no water yet
   }catch(e){}
+}
+
+/* ---- first run ----
+   A new account has no lake, so the app has nothing true to show: every number
+   on screen would be about someone else's water. Pick one before anything else. */
+let obTimer=null, obHits=[];
+function showOnboard(){ const el=$('onboard'); if(!el)return; el.hidden=false; setTimeout(()=>{const i=$('obSearch'); if(i)i.focus();},60); }
+function hideOnboard(){ const el=$('onboard'); if(el)el.hidden=true; }
+// Step 1 picks the water; 2 and 3 are the angler and their default sharing.
+// Steps 2-3 are pure profile writes, so they can be skipped without leaving
+// the account in a broken state.
+let OB={boatType:undefined,share:'friends'};
+function obStep(n){
+  [1,2,3].forEach(function(i){ const el=$('ob'+i); if(el)el.hidden=(i!==n); });
+  document.querySelectorAll('.ob-dots span').forEach(function(d,i){ d.classList.toggle('on',i<n); });
+  const focus={1:'obSearch',2:'obName'}[n];
+  if(focus){ const f=$(focus); if(f)setTimeout(()=>f.focus(),60); }
+}
+async function obFinish(){
+  const body={
+    displayName:($('obName').value||'').trim()||undefined,
+    location:($('obLoc').value||'').trim(),
+    favoriteSpecies:($('obSpecies').value||'').trim(),
+    favoriteLure:($('obLure').value||'').trim(),
+    yearsFishing:$('obYears').value||'',
+    onboarded:true
+  };
+  if(!body.displayName)delete body.displayName;
+  if(OB.boatType!==undefined){ body.hasBoat=!!OB.boatType; body.boatType=OB.boatType||''; }
+  try{
+    await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await apiFetch('/api/me/sharing',{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({spots:{scope:OB.share,groupIds:[]},trips:{scope:OB.share,groupIds:[]},waypoints:{scope:OB.share,groupIds:[]}})});
+  }catch(e){ /* profile is optional — never trap someone in onboarding */ }
+  location.reload();
+}
+function wireOnboard(){
+  const box=$('obSearch'); if(!box)return;
+  // step 2 + 3 controls
+  $('obBoat').onclick=function(e){
+    const b=e.target.closest('[data-boat]'); if(!b)return;
+    OB.boatType=b.dataset.boat;
+    $('obBoat').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  };
+  $('obShare').onclick=function(e){
+    const b=e.target.closest('[data-share]'); if(!b)return;
+    OB.share=b.dataset.share;
+    $('obShare').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  };
+  $('obNext2').onclick=function(){ obStep(3); };
+  $('obSkip2').onclick=function(){ obStep(3); };
+  $('obBack3').onclick=function(){ obStep(2); };
+  $('obDone').onclick=function(){ $('obMsg3').textContent='Saving\u2026'; obFinish(); };
+  box.oninput=function(){
+    clearTimeout(obTimer);
+    const q=box.value.trim();
+    if(q.length<2){ $('obResults').innerHTML=''; return; }
+    obTimer=setTimeout(async function(){
+      $('obMsg').textContent='Searching\u2026';
+      try{
+        const r=await apiFetch('/api/lakes/search?q='+encodeURIComponent(q));
+        const d=await r.json();
+        obHits=d.results||d.lakes||[];
+        $('obMsg').textContent='';
+        $('obResults').innerHTML=obHits.length
+          ? obHits.map((x,i)=>'<button data-ob="'+i+'"><b>'+escHtml(x.name)+'</b><span>'+escHtml(x.region||x.country||'')+'</span></button>').join('')
+          : '<p class="snap" style="padding:8px 4px">No matches. Try the lake\u2019s full name, or a nearby town.</p>';
+      }catch(e){ $('obMsg').textContent='Search is unavailable right now.'; }
+    },320);
+  };
+  $('obResults').onclick=async function(e){
+    const b=e.target.closest('[data-ob]'); if(!b)return;
+    const x=obHits[+b.dataset.ob]; if(!x)return;
+    $('obMsg').textContent='Setting up '+x.name+'\u2026';
+    try{
+      const r=await apiFetch('/api/lakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x)});
+      const d=await r.json();
+      if(!r.ok){ $('obMsg').textContent=d.error||'Could not add that lake.'; return; }
+      await apiFetch('/api/me/lakes/'+d.lake.id+'/home',{method:'POST'});
+      $('obMsg').textContent='';
+      obStep(2);           // the lake is saved; the rest is profile
+    }catch(e){ $('obMsg').textContent='Server not reachable.'; }
+  };
+  $('obDemo').onclick=async function(){
+    $('obMsg').textContent='Loading the demo lake\u2026';
+    try{ await apiFetch('/api/me/lakes/granbury',{method:'POST'}); $('obMsg').textContent=''; obStep(2); }
+    catch(e){ $('obMsg').textContent='Server not reachable.'; }
+  };
 }
 /* ---- lake switcher ---- */
 function toggleLakePanel(){ $('acctPanel').hidden=true; const p=$('lakePanel'); p.hidden=!p.hidden; if(!p.hidden)refreshMyLakes(); }
@@ -3255,6 +3472,9 @@ async function loadProfile(){
     const lakes=((await lk.json()).lakes)||[];
     $('pfName').value=p.displayName||''; $('pfLocation').value=p.location||'';
     $('pfSpecies').value=p.favoriteSpecies||''; $('pfBio').value=p.bio||'';
+    $('pfLure').value=p.favoriteLure||''; $('pfYears').value=p.yearsFishing||'';
+    // hasBoat null means never asked — distinct from "no boat".
+    $('pfBoat').value = p.hasBoat==null ? '__unset' : (p.hasBoat ? (p.boatType||'other boat') : '');
     $('pfPrivacy').value=p.messagePrivacy||'friends';
     $('pfLake').innerHTML='<option value="">— none —</option>'+lakes.map(l=>'<option value="'+l.id+'"'+(p.favoriteLakeId===l.id?' selected':'')+'>'+escHtml(l.name)+(l.region?' ('+escHtml(l.region)+')':'')+'</option>').join('');
     paintAvatar($('pfAvatar'),p.avatarUrl,p.displayName);
@@ -3276,7 +3496,10 @@ async function saveProfile(){
   $('pfMsg').textContent='Saving…';
   const body={ displayName:$('pfName').value.trim(), location:$('pfLocation').value.trim(),
     favoriteSpecies:$('pfSpecies').value.trim(), bio:$('pfBio').value.trim(),
+    favoriteLure:$('pfLure').value.trim(), yearsFishing:$('pfYears').value,
     favoriteLakeId:$('pfLake').value||null, messagePrivacy:$('pfPrivacy').value };
+  const bt=$('pfBoat').value;
+  if(bt!=='__unset'){ body.hasBoat=!!bt; body.boatType=bt; }
   if(PF_PENDING_AVATAR!==undefined) body.avatarUrl=PF_PENDING_AVATAR;
   try{
     const r=await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -4410,6 +4633,7 @@ drawTrips();
   drawWater();drawSpots();drawCheck();drawLevel();drawLeave();drawPatterns();
   // Shell last, so every panel it can open is already populated.
   renderNav();
+  wireOnboard();
   go((location.hash||'').replace('#','')||'today',false);
 })();
 

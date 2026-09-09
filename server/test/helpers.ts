@@ -14,6 +14,10 @@ export async function getApp(): Promise<FastifyInstance> {
     const { buildApp } = await import('../src/index');
     app = await buildApp();
     await app.ready();
+    // main() seeds the flagship lake at boot; buildApp() alone does not, and
+    // anything that reaches for the demo lake needs it to exist.
+    const { seedGranbury } = await import('../src/services/seed');
+    await seedGranbury();
   }
   return app;
 }
@@ -24,12 +28,16 @@ export async function closeApp(): Promise<void> {
   await prisma.$disconnect();
 }
 
-// Wipe everything the tests touch. Order matters only where cascades don't cover.
+// Wipe everything the tests touch. CASCADE reaches further than the list —
+// Lake carries an addedById FK to User, so truncating User takes Lake and its
+// profile with it. Re-seed the demo lake afterwards, the way boot would.
 export async function resetDb(): Promise<void> {
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "Waypoint","Spot","Trip","SharingPref","FriendGroupMember","FriendGroup",' +
       '"Friendship","Message","Session","AuthToken","RateLimit","Kv","UserLake","User" CASCADE'
   );
+  const { seedGranbury } = await import('../src/services/seed');
+  await seedGranbury();
 }
 
 export interface TestUser {

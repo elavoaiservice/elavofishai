@@ -86,6 +86,11 @@ model User {
   location        String? // e.g. "Granbury, TX"
   bio             String? @db.Text
   favoriteSpecies String? // e.g. "Largemouth Bass"
+  favoriteLure    String? // e.g. "1/16 oz chartreuse jig"
+  hasBoat         Boolean? // null = never asked
+  boatType        String? // bass boat | pontoon | kayak | jon boat | bank & wade ...
+  yearsFishing    String? // free text band, e.g. "10+ years"
+  onboardedAt     DateTime? // completed the first-run flow
   favoriteLakeId  String?
   favoriteLake    Lake?   @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
 

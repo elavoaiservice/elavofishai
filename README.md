@@ -167,6 +167,20 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
 
+## First run
+
+A new account gets no lake. It used to be handed Lake Granbury, which was right
+when Granbury *was* the product and wrong the moment anyone else could sign up —
+every number in the app is lake-specific, so a Florida angler would have been
+shown a Texas reservoir's brush piles with total confidence. `/api/me/active-lake`
+answers `needsLake: true` until they choose, and the app opens a three-step
+first run: pick your water (search → add → set home → AI guide generated), tell
+us how you fish (name, home town, boat or bank, favorite species, go-to lure,
+years fishing), and choose who sees your spots by default. Steps two and three
+are skippable and write only profile fields; the demo lake stays available as an
+explicit "just show me" escape hatch (`POST /api/me/lakes/granbury`). Everything
+collected is editable later under Settings → Profile.
+
 ## App layout
 
 The angler-facing app follows ElavoAI's dashboard shape: a sticky sidebar card

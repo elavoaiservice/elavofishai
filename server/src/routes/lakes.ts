@@ -108,7 +108,19 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     const user = await requireUser(req, reply);
     if (!user) return;
     const home = await ensureHomeLake(user.id);
-    return reply.send({ lake: home ? lakeView(home, home.profile?.content) : null });
+    return reply.send({
+      lake: home ? lakeView(home, home.profile?.content) : null,
+      needsLake: !home,
+    });
+  });
+
+  // "Show me the demo lake" from onboarding.
+  app.post('/api/me/lakes/granbury', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const lake = await adoptGranbury(user.id);
+    if (!lake) return reply.code(404).send({ error: 'The demo lake is not seeded on this server.' });
+    return reply.send({ lake: lakeView(lake, lake.profile?.content) });
   });
 
   // Add an existing lake to my lakes.
@@ -183,11 +195,25 @@ async function ensureHomeLake(userId: string) {
     return any.lake;
   }
 
+  // A brand-new account gets NO lake. It used to be handed Granbury, which was
+  // right when Granbury was the product and wrong now: someone signing up in
+  // Florida would land on a Texas reservoir. The app onboards them instead —
+  // `/api/me/active-lake` answers `lake: null, needsLake: true`.
+  return null;
+}
+
+// Granbury on request only: the "just show me the app" escape hatch from the
+// onboarding screen.
+async function adoptGranbury(userId: string) {
   const granbury = await prisma.lake.findUnique({
     where: { osmRef: GRANBURY_OSM_REF },
     include: { profile: { select: { content: true } } },
   });
   if (!granbury) return null;
-  await prisma.userLake.create({ data: { userId, lakeId: granbury.id, isHome: true } });
+  await prisma.userLake.upsert({
+    where: { userId_lakeId: { userId, lakeId: granbury.id } },
+    create: { userId, lakeId: granbury.id, isHome: true },
+    update: { isHome: true },
+  });
   return granbury;
 }
