@@ -33,6 +33,13 @@ services:
       DEV_SHOW_MAGIC_LINK: ${DEV_SHOW_MAGIC_LINK:-1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_PROFILE_MODEL: ${AI_PROFILE_MODEL:-claude-opus-4-8}
+      # Admin Command Center (bootstrap) + config encryption
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
     ports:
       - '3100:3100'
     depends_on:
