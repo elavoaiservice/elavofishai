@@ -1,0 +1,44 @@
+name: elavofishai
+
+# ElavoFishAI runs alongside AlphaGasIQ on the Mac Mini. AlphaGasIQ owns :3000/:8000;
+# this app owns :3100. Postgres is internal-only (not published) so it never clashes.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: elavofish
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-elavofish}
+      POSTGRES_DB: elavofish
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U elavofish']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3100
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://elavofish:${PG_PASSWORD:-elavofish}@postgres:5432/elavofish
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DEV_SHOW_MAGIC_LINK: ${DEV_SHOW_MAGIC_LINK:-1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_PROFILE_MODEL: ${AI_PROFILE_MODEL:-claude-opus-4-8}
+    ports:
+      - '3100:3100'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,352 @@
+// ElavoFishAI — full data model, designed up front (P0) so later phases (social,
+// admin, monetization) are additive migrations, not reshapes.
+//
+// Phase use:
+//   P1  User, AuthToken, Session, RateLimit, Lake, LakeProfile, UserLake, Kv
+//   P2  Trip, Spot, Waypoint (normalized + visibility), Friendship, FriendGroup(+Member), SharingPref
+//   P3  AuditLog, ProfileContribution
+//   P4  (future) marketplace + subscriptions — Role already has pro|guide and
+//       Visibility already has `paid`; reserve Listing/Purchase/Entitlement/Payout/
+//       Subscription as additive tables then.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  pro
+  guide
+  admin
+}
+
+enum AuthPurpose {
+  login
+  signup
+}
+
+enum GaugeSource {
+  usgs
+  manual
+  none
+}
+
+enum LakeProfileSource {
+  ai
+  hand_verified
+  community
+}
+
+// Sharing scale — social tiers now, `paid` reserved for the P4 marketplace.
+enum Visibility {
+  private
+  friends
+  group
+  public
+  paid
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  blocked
+}
+
+enum ShareScope {
+  none
+  friends
+  groups
+  public
+}
+
+enum ShareDataType {
+  trips
+  spots
+  waypoints
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  displayName String
+  username    String?   @unique
+  avatarUrl   String?
+  role        Role      @default(user)
+  status      String    @default("active") // active | suspended
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
+
+  sessions              Session[]
+  userLakes             UserLake[]
+  addedLakes            Lake[]               @relation("LakeAddedBy")
+  trips                 Trip[]
+  spots                 Spot[]
+  waypoints             Waypoint[]
+  kv                    Kv[]
+  sharingPrefs          SharingPref[]
+  ownedGroups           FriendGroup[]        @relation("GroupOwner")
+  groupMemberships      FriendGroupMember[]
+  friendshipsInitiated  Friendship[]         @relation("FriendshipUser")
+  friendshipsReceived   Friendship[]         @relation("FriendshipFriend")
+  auditLogs             AuditLog[]
+  profileContributions  ProfileContribution[]
+}
+
+// Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
+// captured when a brand-new email requests a link.
+model AuthToken {
+  id          String      @id @default(cuid())
+  email       String
+  tokenHash   String      @unique
+  purpose     AuthPurpose @default(login)
+  displayName String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  ip          String?
+  createdAt   DateTime    @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Bounded rate-limit buckets (e.g. "magiclink:<ip>") — swept, never grows forever.
+model RateLimit {
+  id          String   @id @default(cuid())
+  bucket      String   @unique
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+
+  @@index([windowStart])
+}
+
+// Lakes are GLOBAL and deduped — one row per real body of water, shared by all users.
+model Lake {
+  id          String       @id @default(cuid())
+  name        String
+  region      String? // state / province
+  country     String?
+  lat         Float
+  lon         Float
+  gaugeId     String?
+  gaugeSource GaugeSource  @default(none)
+  fullPool    Float?
+  bbox        String? // JSON [w,s,e,n]
+  osmRef      String?      @unique // e.g. "way/12345678"
+  addedById   String?
+  addedBy     User?        @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+
+  profile       LakeProfile?
+  userLakes     UserLake[]
+  trips         Trip[]
+  spots         Spot[]
+  waypoints     Waypoint[]
+  contributions ProfileContribution[]
+
+  @@index([name])
+}
+
+// One cached profile per lake. Granbury is seeded `hand_verified` and never
+// overwritten by AI. `content` JSON: { summary, species[], seasonalCalendar, patterns, regsUrl }.
+model LakeProfile {
+  id          String            @id @default(cuid())
+  lakeId      String            @unique
+  lake        Lake              @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  content     Json
+  source      LakeProfileSource @default(ai)
+  model       String?
+  verified    Boolean           @default(false)
+  generatedAt DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+// A user's saved lakes ("my lakes") + which one is home.
+model UserLake {
+  id      String   @id @default(cuid())
+  userId  String
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId  String
+  lake    Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  isHome  Boolean  @default(false)
+  addedAt DateTime @default(now())
+
+  @@unique([userId, lakeId])
+  @@index([userId])
+}
+
+// Per-user misc storage the frontend already syncs via GET/PUT /api/kv/:key
+// (theme, checklist, drive-time, and — in P1 — the app's JSON blobs). Keys are
+// namespaced by lake on the client (e.g. "<lakeId>:trips"), so (userId, key) is unique.
+model Kv {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+// ---- P2 social: normalized, shareable fishing data ----
+
+model Trip {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId     String
+  lake       Lake       @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  date       DateTime
+  species    String?
+  weight     Float?
+  length     Float?
+  lure       String?
+  lat        Float?
+  lon        Float?
+  notes      String?    @db.Text
+  weather    Json?
+  visibility Visibility @default(private)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId, lakeId])
+  @@index([lakeId, visibility])
+}
+
+model Spot {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId     String
+  lake       Lake       @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  name       String
+  lat        Float
+  lon        Float
+  notes      String?    @db.Text
+  visibility Visibility @default(private)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId, lakeId])
+  @@index([lakeId, visibility])
+}
+
+model Waypoint {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId     String
+  lake       Lake       @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  name       String
+  lat        Float
+  lon        Float
+  kind       String?
+  visibility Visibility @default(private)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId, lakeId])
+  @@index([lakeId, visibility])
+}
+
+// ---- P2 social: friends, groups, sharing prefs ----
+
+model Friendship {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friendId    String
+  friend      User             @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(pending)
+  requestedBy String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+}
+
+model FriendGroup {
+  id        String              @id @default(cuid())
+  ownerId   String
+  owner     User                @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime            @default(now())
+  members   FriendGroupMember[]
+
+  @@index([ownerId])
+}
+
+model FriendGroupMember {
+  id       String      @id @default(cuid())
+  groupId  String
+  group    FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId String
+  member   User        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  addedAt  DateTime    @default(now())
+
+  @@unique([groupId, memberId])
+  @@index([memberId])
+}
+
+// A user's default sharing per data type; per-record `visibility` can override.
+model SharingPref {
+  id       String        @id @default(cuid())
+  userId   String
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataType ShareDataType
+  scope    ShareScope    @default(none)
+  groupIds String[] // when scope = groups
+  updatedAt DateTime     @updatedAt
+
+  @@unique([userId, dataType])
+}
+
+// ---- P3 admin / community ----
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  target    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model ProfileContribution {
+  id        String   @id @default(cuid())
+  lakeId    String
+  lake      Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  field     String
+  content   String   @db.Text
+  status    String   @default("pending") // pending | accepted | rejected
+  createdAt DateTime @default(now())
+
+  @@index([lakeId])
+}

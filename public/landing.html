@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ElavoFishAI — the private fishing network</title>
+<meta name="description" content="Find more fish. Add any public lake, get AI + community fishing intelligence, log your trips, and share spots privately with the friends you choose. Free.">
+<meta name="theme-color" content="#0B1B33">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --primary:#29ABE2; --primary-hover:#1F96C8; --primary-dark:#1882AE;
+  --ink:#10233F; --muted:#5F708A; --border:#DCE7F5;
+  --bg:#F8FBFF; --surface:#FFFFFF; --sky:#EAF6FF;
+  --navy1:#0B1B33; --navy2:#123A5C;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;line-height:1.55;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.wrap{width:min(100% - 40px,1120px);margin:0 auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font-weight:600;font-size:15px;border-radius:12px;padding:12px 22px;cursor:pointer;
+  border:1px solid transparent;transition:.18s ease;white-space:nowrap}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-ghost{background:var(--surface);border-color:var(--border);color:var(--ink)}
+.btn-ghost:hover{background:var(--sky)}
+.btn-lg{padding:15px 30px;font-size:16px;border-radius:14px}
+
+/* Nav */
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+  background:rgba(255,255,255,.9);border-bottom:1px solid var(--border)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;min-height:70px;gap:16px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:20px;letter-spacing:-.02em}
+.brand img{height:40px;width:40px;border-radius:11px}
+.brand span b{color:var(--primary)}
+.nav-links{display:flex;align-items:center;gap:28px;color:var(--muted);font-weight:500;font-size:15px}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;gap:10px}
+@media(max-width:860px){.nav-links{display:none}}
+
+/* Hero */
+.hero{position:relative;padding:88px 0 72px;text-align:center;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;z-index:0;
+  background:radial-gradient(900px 380px at 50% -60px,#DCEEFB 0%,rgba(220,238,251,0) 70%)}
+.hero .wrap{position:relative;z-index:1}
+.eyebrow{display:inline-block;font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--primary-dark);background:var(--sky);border:1px solid var(--border);
+  padding:7px 14px;border-radius:999px;margin-bottom:22px}
+h1{font-size:clamp(34px,6vw,60px);line-height:1.05;letter-spacing:-.03em;margin:0 0 20px;font-weight:800}
+h1 .accent{background:linear-gradient(120deg,var(--primary),var(--primary-dark));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{font-size:clamp(16px,2.2vw,20px);color:var(--muted);max-width:680px;margin:0 auto 34px}
+.hero-cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.hero-note{margin-top:22px;font-size:13px;color:var(--muted)}
+.hero-note b{color:var(--primary-dark);font-weight:700}
+
+/* Sections */
+section{padding:76px 0}
+.sec-head{text-align:center;max-width:640px;margin:0 auto 52px}
+.sec-eyebrow{font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--primary)}
+h2{font-size:clamp(27px,4vw,40px);line-height:1.12;letter-spacing:-.02em;margin:10px 0 12px;font-weight:800}
+.sec-head p{color:var(--muted);font-size:17px;margin:0}
+
+/* Feature grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px;
+  box-shadow:0 10px 26px rgba(16,35,63,.05);transition:.2s ease}
+.card:hover{transform:translateY(-3px);box-shadow:0 16px 36px rgba(16,35,63,.09)}
+.card.feature-lead{border-color:var(--primary);box-shadow:0 14px 34px rgba(41,171,226,.16)}
+.ic{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  background:var(--sky);font-size:26px;margin-bottom:18px}
+.card h3{font-size:19px;margin:0 0 8px;font-weight:700}
+.card p{color:var(--muted);font-size:15px;margin:0}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--primary-dark);background:var(--sky);padding:4px 9px;border-radius:6px;margin-bottom:14px}
+
+/* Steps */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px}
+.step{text-align:center}
+.step .num{width:46px;height:46px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
+.step h3{font-size:18px;margin:0 0 6px}
+.step p{color:var(--muted);font-size:15px;margin:0}
+
+/* CTA band */
+.band{background:linear-gradient(135deg,var(--navy1),var(--navy2));border-radius:28px;padding:56px 32px;text-align:center;color:#fff;
+  position:relative;overflow:hidden}
+.band h2{color:#fff}
+.band p{color:rgba(255,255,255,.72);font-size:17px;max-width:520px;margin:0 auto 28px}
+.wavemark{position:absolute;inset:0;opacity:.14;pointer-events:none}
+
+/* Footer */
+footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px}
+.foot-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.foot-inner .brand{font-size:17px}
+.foot-links{display:flex;gap:22px}
+.foot-links a:hover{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/"><img src="/icon-512.png" alt="ElavoFishAI"><span>Elavo<b>Fish</b>AI</span></a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#lakes">Any lake</a>
+      <a href="#friends">Friends</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="/app">Sign in</a>
+      <a class="btn btn-primary" href="/app">Open the app</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow">The private fishing network</span>
+    <h1>Find more fish.<br><span class="accent">Together.</span></h1>
+    <p class="lead">Add any public lake and get an instant game plan — best days, best hours, and what to throw.
+      Log your trips, and share your spots <b>only</b> with the friends and groups you choose. Free.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="/app">Start free — no card</a>
+      <a class="btn btn-ghost btn-lg" href="#how">See how it works</a>
+    </div>
+    <p class="hero-note">Works on any device · Add to Home Screen · <b>No subscription</b></p>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">Why ElavoFishAI</div>
+      <h2>Everything you need to catch more</h2>
+      <p>An AI fishing brain and your trusted circle, working together on every lake.</p>
+    </div>
+    <div class="grid">
+      <div class="card feature-lead">
+        <div class="tag">The difference</div>
+        <div class="ic">🔒</div>
+        <h3>Private-first sharing</h3>
+        <p>Anglers hide their spots — so we built for that. Share logs, spots and waypoints only with the
+           friends and groups <em>you</em> pick. Private by default. Friends help friends find fish.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🗺️</div>
+        <h3>Any lake, instantly</h3>
+        <p>Search any public lake or body of water and add it in a tap. New lake? An AI starter guide is
+           written on the spot — species, seasonal patterns, and where to start.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🎯</div>
+        <h3>Know when to go</h3>
+        <p>Best days scored ahead, hour-by-hour day plans, solunar feeding windows, live weather, water
+           temperature and lake level — all from the lake's coordinates.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🧠</div>
+        <h3>AI day planner</h3>
+        <p>Tell it the day, the lake and what you want to catch — get an hour-by-hour game plan that
+           <b>sharpens as the day gets closer</b> and the forecast firms up.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📓</div>
+        <h3>Your fishing log</h3>
+        <p>Log every catch, mark spots and waypoints on the map, export to CSV/GPX, and it all follows
+           you to any device. Works offline on the water.</p>
+      </div>
+      <div class="card">
+        <div class="ic">💸</div>
+        <h3>Free to fish</h3>
+        <p>Sign in with just your email — a secure one-time link, no passwords. No ads, no subscription
+           to get started. Just better fishing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="lakes" style="background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">Any water, day one</div>
+      <h2>Great on every lake — not just the famous ones</h2>
+      <p>Most apps are only as good as how many people fish your lake. ElavoFishAI makes any pond useful the moment you add it.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="ic">➕</div><h3>Add it in seconds</h3><p>Search by name, pick it, done. Coordinates, map and gauges are wired up automatically.</p></div>
+      <div class="card"><div class="ic">🤖</div><h3>AI writes the guide</h3><p>A starter species &amp; seasonal profile is generated for the lake — a real head start, not a blank page.</p></div>
+      <div class="card"><div class="ic">👥</div><h3>Your crew fills it in</h3><p>As you and your friends fish it, real logs and spots layer on top and the lake gets sharper over time.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">How it works</div>
+      <h2>Three steps to more fish</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Add your lake</h3><p>Search any public water and make it your home lake — or add as many as you fish.</p></div>
+      <div class="step"><div class="num">2</div><h3>Plan &amp; log</h3><p>See the best days and hours, work an AI day plan, and log every trip and spot.</p></div>
+      <div class="step"><div class="num">3</div><h3>Invite friends</h3><p>Build your circle and choose exactly what to share — help each other find fish.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="friends">
+  <div class="wrap">
+    <div class="band">
+      <svg class="wavemark" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 70 Q50 40 100 70 T200 70 T300 70 T400 70" stroke="#fff" stroke-width="3" fill="none"/>
+        <path d="M0 92 Q50 62 100 92 T200 92 T300 92 T400 92" stroke="#fff" stroke-width="3" fill="none" opacity=".6"/>
+      </svg>
+      <h2>Ready to find more fish?</h2>
+      <p>Start free with your email. Add your lake, log a trip, and bring your fishing buddies along.</p>
+      <a class="btn btn-primary btn-lg" href="/app" style="background:#fff;color:var(--navy1)">Open ElavoFishAI</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <a class="brand" href="/"><img src="/icon-192.png" alt="" style="height:30px;width:30px">Elavo<b style="color:var(--primary)">Fish</b>AI</a>
+    <div class="foot-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="/app">Open the app</a>
+    </div>
+    <span>© <span id="yr"></span> ElavoFishAI · An Elavo AI product</span>
+  </div>
+</footer>
+<script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+</body>
+</html>

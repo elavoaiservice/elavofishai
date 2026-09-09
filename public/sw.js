@@ -1,11 +1,11 @@
-/* Lake Granbury Fishing AI — offline service worker
+/* ElavoFishAI — offline service worker
    Strategy: the app shell loads from cache first (works with zero signal),
    then refreshes the cache in the background. Live data (weather, lake
    level, map tiles) goes network-only; the app already degrades honestly
    when those are unreachable. */
-const CACHE = 'granbury-ai-v2';
-const SHELL = ['./', './lake-granbury-planner.html', './apple-touch-icon.png',
-               './icon-192.png', './icon-512.png', './manifest.webmanifest'];
+const CACHE = 'elavofishai-v4';
+const SHELL = ['/app', '/index.html', '/landing.html', '/', '/apple-touch-icon.png',
+               '/icon-192.png', '/icon-512.png', '/favicon.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(

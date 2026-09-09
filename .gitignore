@@ -8,3 +8,8 @@ data/
 node_modules/
 *.log
 .DS_Store
+
+# ElavoFishAI backend
+server/node_modules/
+server/dist/
+.env
