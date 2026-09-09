@@ -1709,25 +1709,46 @@ function hourQuality(day){
 
 /* ============ storage ============ */
 const memStore={};
+/* When signed in, a read that falls back to local storage means our copy of
+   that key may be behind the server. Saving on top of a stale copy is how a
+   trip goes missing, so track it and say so rather than overwrite in silence. */
+const stStale={};
 async function stGet(k){
-  if(AUTH.user){try{
-    const r=await apiFetch('/api/kv/'+encodeURIComponent(k));
-    if(r.ok){const d=await r.json();return d.value;}
-    if(r.status===404)return null;
-  }catch(e){}}
+  if(AUTH.user){
+    try{
+      const r=await apiFetch('/api/kv/'+encodeURIComponent(k));
+      if(r.ok){const d=await r.json(); delete stStale[k]; return d.value;}
+      if(r.status===404){delete stStale[k]; return null;}
+    }catch(e){}
+    stStale[k]=true;   // unreachable, or answered with something we cannot use
+  }
   if(window.storage){try{const r=await window.storage.get(k);return r?r.value:null}catch(e){}}
   try{ if(window.localStorage){const v=localStorage.getItem(k); if(v!=null)return v;} }catch(e){}
   return memStore[k]||null;
 }
+/* Returns true only when the write actually landed where it belongs: on this
+   device when signed out, and on the server too when signed in. A local write
+   never stands in for a failed sync. */
 async function stSet(k,v){
-  let remote=false;
+  let synced=false;
   if(AUTH.user){try{
     const r=await apiFetch('/api/kv/'+encodeURIComponent(k),{method:'PUT',body:v});
-    remote=r.ok;
+    synced=r.ok;
   }catch(e){}}
-  if(window.storage){try{await window.storage.set(k,v); if(!remote)remote=true;}catch(e){}}
-  try{ if(window.localStorage){localStorage.setItem(k,v); memStore[k]=v; return true;} }catch(e){}
-  memStore[k]=v; return remote;
+  let local=false;
+  if(window.storage){try{await window.storage.set(k,v); local=true;}catch(e){}}
+  try{ if(window.localStorage){localStorage.setItem(k,v); local=true;} }catch(e){}
+  memStore[k]=v;
+  if(AUTH.user){
+    if(synced){ delete stStale[k]; return true; }   // on the server is durable enough
+    const wasStale=stStale[k];
+    stStale[k]=true;
+    toast(!local?'Saved for this session only':
+          wasStale?'Not synced \u2014 your account may hold newer data':
+                   'Saved on this device \u2014 not synced yet');
+    return false;
+  }
+  return local;
 }
 
 /* ============ renderers ============ */
@@ -2324,8 +2345,8 @@ function drawPatterns(){
     if(hr<=0)return;
     const mult=lr>0?(hr/lr):null;
     out.push({
-      t:'<b>'+label+':</b> '+(fmtk?fmtk(hi):hi)+' is your best at '+hr.toFixed(1)+
-        ' fish per hour, against '+lr.toFixed(1)+' for '+(fmtk?fmtk(lo):lo)+
+      t:'<b>'+label+':</b> '+esc(fmtk?fmtk(hi):hi)+' is your best at '+hr.toFixed(1)+
+        ' fish per hour, against '+lr.toFixed(1)+' for '+esc(fmtk?fmtk(lo):lo)+
         (mult&&mult>=1.5?'. That is '+mult.toFixed(1)+'x.':'.'),
       n:ks.reduce((a,k)=>a+g[k].n,0), levels:ks.length
     });
@@ -2707,7 +2728,9 @@ async function qSave(){
   const ok=await stSet('granbury:trips',JSON.stringify(trips));
   drawTrips(); drawWpList(); if(map)drawMarkers(); drawBrief(); qFish=0; qDraw();
   toast('Trip logged');
-  $('qMsg').textContent=ok?'Logged. Fill in bait and depth tonight if you can \u2014 the pattern engine loves details.':'Saved for this session only.';
+  $('qMsg').textContent=ok?'Logged. Fill in bait and depth tonight if you can \u2014 the pattern engine loves details.'
+    :AUTH.user?'Logged on this device, but the sync to your account failed \u2014 it will not show up elsewhere yet.'
+    :'Saved for this session only.';
   setTimeout(()=>{$('qMsg').textContent=''},5000);
 }
 
