@@ -167,6 +167,23 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
 
+## Chartplotter import / export
+
+Waypoints move both ways as GPX 1.1. Import accepts an export from any unit:
+points are matched on local tag names (so a `gpxx:`, `lowrance:` or `h:`
+namespace prefix can't hide a field), route points come in alongside plain
+waypoints, the icon is read from `<sym>` or `<type>` against a combined
+Garmin/Lowrance/Humminbird vocabulary, and depth is picked up from whichever
+vendor extension carries it. A binary Lowrance `.usr` or Humminbird `.hwr` is
+detected and answered with "export GPX on the unit instead" rather than a parse
+error.
+
+Export asks which plotter you're loading: the `<sym>` vocabulary and the
+on-screen "where to copy it" instructions change per vendor (Garmin's
+`\Garmin\GPX\`, Lowrance's Files → Memory card → Import, Humminbird's Nav →
+Waypoint Management → Import), and generic GPX omits `<sym>` entirely. The file
+is named after the active lake.
+
 ## Lake orientation
 
 Wind advice tells you which bank the bait is stacking on, and how much fetch the

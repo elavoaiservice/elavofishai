@@ -1003,9 +1003,15 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
 
   <div class="formfoot">
-    <button class="btn ghost" id="wpGpx">Export GPX for Garmin</button>
-    <button class="btn ghost" id="wpImportBtn">Import GPX from Garmin</button>
-    <input type="file" id="wpImportFile" accept=".gpx,application/gpx+xml" hidden>
+    <select id="wpVendor" class="fr-in" style="max-width:170px" aria-label="Chartplotter">
+      <option value="garmin">Garmin</option>
+      <option value="lowrance">Lowrance</option>
+      <option value="humminbird">Humminbird</option>
+      <option value="generic">Other / generic GPX</option>
+    </select>
+    <button class="btn ghost" id="wpGpx">Export GPX</button>
+    <button class="btn ghost" id="wpImportBtn">Import GPX</button>
+    <input type="file" id="wpImportFile" accept=".gpx,application/gpx+xml,.usr,.hwr,.hws" hidden>
     <button class="btn ghost" id="wpJson">Export waypoints</button>
     <button class="btn ghost" id="wpSeed">Load the known spots</button>
     <span class="snap" id="wpMsg"></span>
@@ -3286,28 +3292,58 @@ function drawMapLegend(){
 /* ============ six features: import, scorecards, solunar, thermocline, brief, quicklog ============ */
 const fmtT=t=>{if(!t)return '';let h=t.getHours();const m=String(t.getMinutes()).padStart(2,'0'),ap=h<12?'am':'pm';h=h%12||12;return h+':'+m+ap;};
 
-/* ---- F1: GPX import ---- */
+/* ---- F1: GPX import ----
+   Garmin, Lowrance and Humminbird all export GPX, but not the same GPX:
+   waypoints may arrive as <wpt> or as route points, the icon lives in <sym> or
+   <type> with a completely different vocabulary per brand, and depth rides in a
+   vendor <extensions> block. Parse on local names so a namespace prefix can't
+   hide a tag, and read whichever fields are actually present. */
+const SYM_TYPE={
+  // Garmin
+  'fishing hot spot facility':'Brush pile','boat ramp':'Boat ramp','bridge':'Bridge piling',
+  'pier':'Dock / dock row','anchor':'Other','flag, blue':'Other','shipwreck':'Standing timber',
+  // Lowrance
+  'fish':'Brush pile','dropoff':'Channel ledge','dock':'Dock / dock row','tree':'Standing timber',
+  'hump':'Hump / point','shallow':'Flat','ramp':'Boat ramp','snag':'Log jam','waypoint':'Other',
+  // Humminbird
+  'brush':'Brush pile','ledge':'Channel ledge','timber':'Standing timber','stump':'Log jam',
+  'flat':'Flat','rock':'Other','weed':'Other'
+};
+// A .usr (Lowrance) or .hwr/.hws (Humminbird) file is binary, not GPX.
+function looksBinary(txt){ return /[\x00-\x08\x0e-\x1f]/.test(txt.slice(0,512)); }
 function importGpxText(txt){
+  if(looksBinary(txt)) return {ok:false,msg:'That looks like a Lowrance .usr or Humminbird .hwr file, which is a binary format. On the unit, export as GPX instead \u2014 then import that file here.'};
   let doc;
   try{ doc=new DOMParser().parseFromString(txt,'application/xml'); }
   catch(e){ return {ok:false,msg:'Could not read that file.'}; }
   if(doc.getElementsByTagName('parsererror').length) return {ok:false,msg:'That does not look like a GPX file.'};
-  const wpts=doc.getElementsByTagName('wpt');
-  if(!wpts.length) return {ok:false,msg:'No waypoints found in the file.'};
-  const symMap={'boat ramp':'Boat ramp','bridge':'Bridge piling','pier':'Dock / dock row',
-    'fishing hot spot facility':'Brush pile','anchor':'Other'};
+  // Local-name matching: namespace prefixes vary by unit, and route points are
+  // waypoints as far as we care.
+  const byLocal=n=>Array.prototype.filter.call(doc.getElementsByTagName('*'),e=>(e.localName||'').toLowerCase()===n);
+  const pts=byLocal('wpt').concat(byLocal('rtept'));
+  if(!pts.length) return {ok:false,msg:'No waypoints or routes found in that file.'};
   let added=0,skipped=0;
-  for(let i=0;i<wpts.length;i++){
-    const el=wpts[i];
+  for(let i=0;i<pts.length;i++){
+    const el=pts[i];
     const lat=parseFloat(el.getAttribute('lat')), lng=parseFloat(el.getAttribute('lon'));
     if(!isFinite(lat)||!isFinite(lng)){skipped++;continue;}
-    const gv=t=>{const n=el.getElementsByTagName(t)[0];return n?n.textContent.trim():''};
-    const name=gv('name')||('Garmin waypoint '+(i+1));
+    // Search descendants by local name so <gpxx:...>, <lowrance:...> and plain
+    // tags all resolve the same way.
+    const kids=el.getElementsByTagName('*');
+    const gv=n=>{ for(let j=0;j<kids.length;j++){ if((kids[j].localName||'').toLowerCase()===n) return (kids[j].textContent||'').trim(); } return ''; };
+    const name=gv('name')||('Imported waypoint '+(i+1));
     const dup=waypoints.some(w=>w.name===name||(Math.abs(w.lat-lat)<0.00025&&Math.abs(w.lng-lng)<0.00025));
     if(dup){skipped++;continue;}
-    const sym=gv('sym').toLowerCase();
-    waypoints.push({id:Date.now()+i,name:name,type:symMap[sym]||'Other',
-      lat:lat,lng:lng,depth:'',species:'',count:'',bait:'',
+    const sym=(gv('sym')||gv('type')||'').toLowerCase().trim();
+    // Depth: Humminbird and Lowrance put it in extensions; some units use <ele>
+    // as a negative number for sounded depth.
+    let depth='';
+    for(let j=0;j<kids.length;j++){
+      const ln=(kids[j].localName||'').toLowerCase();
+      if(ln.indexOf('depth')>=0){ const v=parseFloat(kids[j].textContent); if(isFinite(v)&&v>0){ depth=Math.round(v)+' ft'; break; } }
+    }
+    waypoints.push({id:Date.now()+i,name:name,type:SYM_TYPE[sym]||'Other',
+      lat:lat,lng:lng,depth:depth,species:'',count:'',bait:'',
       date:(gv('time')||'').slice(0,10),notes:gv('desc')||gv('cmt')||''});
     added++;
   }
@@ -3485,6 +3521,25 @@ const TYPE_SYM={"Brush pile":"Fishing Hot Spot Facility","Bridge piling":"Bridge
  "Standing timber":"Fishing Hot Spot Facility","Hump / point":"Fishing Hot Spot Facility",
  "Flat":"Fishing Hot Spot Facility","Boat ramp":"Boat Ramp",
  "Log jam":"Fishing Hot Spot Facility","Other":"Flag, Blue"};
+/* Chartplotters read <sym> differently: Garmin has a fixed icon vocabulary,
+   Lowrance and Humminbird use short icon names and fall back to a default pin
+   for anything they don't recognise. Same GPX otherwise. */
+const VENDOR_SYM={
+  garmin:TYPE_SYM,
+  lowrance:{"Brush pile":"fish","Bridge piling":"bridge","Channel ledge":"dropoff",
+    "Dock / dock row":"dock","Standing timber":"tree","Hump / point":"hump","Flat":"shallow",
+    "Boat ramp":"ramp","Log jam":"snag","Other":"waypoint"},
+  humminbird:{"Brush pile":"Brush","Bridge piling":"Bridge","Channel ledge":"Ledge",
+    "Dock / dock row":"Dock","Standing timber":"Timber","Hump / point":"Hump","Flat":"Flat",
+    "Boat ramp":"Ramp","Log jam":"Stump","Other":"Waypoint"},
+  generic:{}
+};
+const VENDOR_HELP={
+  garmin:'Copy it to your Garmin SD card under \\Garmin\\GPX\\, then Waypoint Manager \u2192 Import.',
+  lowrance:'Copy it to the root of an SD card, then on the unit: Files \u2192 Memory card \u2192 tap the file \u2192 Import.',
+  humminbird:'Copy it to an SD card, then on the unit: Menu \u2192 Nav \u2192 Waypoint Management \u2192 Import.',
+  generic:'Standard GPX 1.1 \u2014 import it the way your plotter or app expects.'
+};
 const typeColor=t=>{const f=WP_TYPES.filter(x=>x[0]===t)[0];return f?f[1]:"#10233F"};
 const chipText=t=>t==="Flat"?"#10233F":"#fff";
 
@@ -3633,21 +3688,26 @@ function setArmed(v){
 }
 function gpx(){
   const esc2=t=>String(t==null?'':t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  const vendor=($('wpVendor')&&$('wpVendor').value)||'garmin';
+  const syms=VENDOR_SYM[vendor]||{};
   let x='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="ElavoFishAI" xmlns="http://www.topografix.com/GPX/1/1">\n';
   waypoints.forEach(w=>{
     const d=[w.type,w.depth,(w.count?w.count+' '+(w.species||'fish'):''),
              (w.bait?'on '+w.bait:''),w.date,w.notes].filter(Boolean).join(' | ');
+    const sym=syms[w.type];
     x+='  <wpt lat="'+w.lat.toFixed(6)+'" lon="'+w.lng.toFixed(6)+'">\n'+
        '    <name>'+esc2(w.name)+'</name>\n'+
        '    <desc>'+esc2(d)+'</desc>\n'+
-       '    <sym>'+esc2(TYPE_SYM[w.type]||'Flag, Blue')+'</sym>\n  </wpt>\n';
+       (sym?'    <sym>'+esc2(sym)+'</sym>\n':'')+'  </wpt>\n';
   });
   x+='</gpx>\n';
   const a=document.createElement('a');
+  const slug=String(ACTIVE.name||'lake').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   a.href=URL.createObjectURL(new Blob([x],{type:'application/gpx+xml'}));
-  a.download='lake-granbury-waypoints.gpx';
+  a.download=slug+'-waypoints.gpx';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  $('wpMsg').textContent='GPX downloaded. Copy it to your Garmin SD card under \\Garmin\\GPX\\.'; toast('GPX exported for Garmin');
+  $('wpMsg').textContent='GPX downloaded. '+VENDOR_HELP[vendor];
+  toast('GPX exported'+(vendor==='generic'?'':' for '+vendor.charAt(0).toUpperCase()+vendor.slice(1)));
 }
 
 /* ============ mode + tabs ============ */
