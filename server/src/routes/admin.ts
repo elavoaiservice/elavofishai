@@ -16,6 +16,7 @@ async function audit(by: string, action: string, target?: string, meta?: Record<
   } catch { /* never block on audit */ }
 }
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
+import { versionStatus } from '../version';
 
 const DEPLOY_DIR = '/deploy';
 const TRIGGER = path.join(DEPLOY_DIR, 'trigger');
@@ -143,7 +144,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const configured = fs.existsSync(DEPLOY_DIR);
     let log = '';
     if (configured && fs.existsSync(LOG)) { try { log = fs.readFileSync(LOG, 'utf8').slice(-12000); } catch { log = ''; } }
-    return { configured, running: fs.existsSync(LOCK), log };
+    return { configured, running: fs.existsSync(LOCK), log, version: await versionStatus() };
   });
 
   app.post('/api/admin/upgrade', async (req, reply) => {

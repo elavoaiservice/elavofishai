@@ -15,6 +15,7 @@ import { socialRoutes } from './routes/social';
 import { messageRoutes } from './routes/messages';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
+import { currentUser } from './lib/auth';
 import { sweepRateLimits } from './lib/rateLimit';
 import { sweepAuthTokens } from './services/magicLink';
 import { seedGranbury } from './services/seed';
@@ -54,9 +55,23 @@ async function main(): Promise<void> {
   await app.register(socialRoutes);
   await app.register(messageRoutes);
 
-  // The planner app lives at /app; the marketing landing is the front door at /.
-  app.get('/app', (_req, reply) => reply.sendFile('index.html'));
-  app.get('/app/', (_req, reply) => reply.sendFile('index.html'));
+  // The planner app lives at /app — GATED: the Granbury (and all lake) data is
+  // account-only. Anonymous visitors are sent to the login screen; the HTML is
+  // never served to a request without a valid session.
+  app.get('/app', async (req, reply) => {
+    if (!(await currentUser(req))) return reply.redirect('/login');
+    return reply.sendFile('index.html');
+  });
+  app.get('/app/', async (req, reply) => {
+    if (!(await currentUser(req))) return reply.redirect('/login');
+    return reply.sendFile('index.html');
+  });
+  // Login screen — bounce already-signed-in users straight into the app.
+  app.get('/login', async (req, reply) => {
+    const u = await currentUser(req);
+    if (u) return reply.redirect('/app');
+    return reply.sendFile('login.html');
+  });
   // Admin Command Center.
   app.get('/admin', (_req, reply) => reply.sendFile('admin.html'));
   app.get('/admin/', (_req, reply) => reply.sendFile('admin.html'));

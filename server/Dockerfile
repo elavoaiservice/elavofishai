@@ -1,12 +1,16 @@
 # Build context is the REPO ROOT (so we can COPY both server/ and public/).
 FROM node:22-slim AS build
 WORKDIR /app/server
-# OpenSSL is needed by Prisma's engine.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# OpenSSL is needed by Prisma's engine; git lets us stamp the build with its commit.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY server/package.json server/package-lock.json* ./
 RUN npm install
 COPY server/ ./
 RUN npx prisma generate && npm run build
+# Stamp the built image with the git commit it came from → dist/build-info.json
+# (read at runtime as the "current version"). .git is in the build context.
+COPY .git /app/.git
+RUN node -e "const cp=require('child_process'),fs=require('fs');const g=a=>cp.execSync(\"git -c safe.directory='*' --git-dir=/app/.git \"+a).toString().trim();let i={};try{i={commit:g('rev-parse HEAD'),commitShort:g('rev-parse --short HEAD'),subject:g('log -1 --pretty=%s'),committedAt:g('log -1 --pretty=%cI'),branch:g('rev-parse --abbrev-ref HEAD')};}catch(e){}try{i.version=require('./package.json').version;}catch(e){}i.builtAt=new Date().toISOString();fs.writeFileSync('./dist/build-info.json',JSON.stringify(i));console.log('build-info:',JSON.stringify(i));"
 
 FROM node:22-slim AS runtime
 WORKDIR /app/server

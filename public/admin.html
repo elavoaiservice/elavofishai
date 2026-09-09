@@ -224,8 +224,29 @@ async function tHealth(){ const h=await (await api('/api/admin/health')).json();
    '<div class="metric"><div class="n" style="font-size:16px">'+esc(h.node)+'</div><div class="k">Node</div><div class="s">'+esc(h.mode)+'</div></div></div>'+
    '<div class="card" style="margin-top:16px"><h2>Integrations</h2><div class="snap" style="line-height:2.2">AI (Anthropic) '+yn(h.ai)+' &nbsp; Email (Resend) '+yn(h.email)+'</div></div>';
 }
-async function tUpgrade(){ $('content').innerHTML='<div class="card"><div class="row" style="margin-bottom:14px"><button class="btn btn-primary" id="upBtn">Upgrade now</button><span class="msg" id="upMsg"></span></div><pre id="upLog">Loading…</pre></div>';
-  const load=async()=>{ const d=await (await api('/api/admin/upgrade/status')).json(); $('upLog').textContent=d.log||'No upgrade has run yet.'; $('upBtn').disabled=d.running||!d.configured; if(!d.configured)$('upMsg').innerHTML='<span class="muted">Host upgrade agent not configured.</span>'; };
+function renderVer(v){ const el=$('verCard'); if(!el)return;
+  if(!v){ el.innerHTML='<div class="muted">Version info unavailable.</div>'; return; }
+  const c=v.current||{}, t=v.target||{};
+  const code=s=>'<code style="background:#0B1B33;color:#dbeafe;padding:1px 7px;border-radius:6px;font-size:12px">'+esc(s)+'</code>';
+  const cur=(c.commitShort?code(c.commitShort):'<span class="muted">unknown</span>')
+    +(c.version?' <span class="snap">v'+esc(c.version)+'</span>':'')
+    +(c.subject?'<div class="snap" style="margin-top:3px">'+esc(c.subject)+'</div>':'')
+    +(c.builtAt?'<div class="snap">built '+dt(c.builtAt)+'</div>':'');
+  let tgt, badge;
+  if(t.error){ tgt='<span class="muted">could not check ('+esc(t.error)+')</span>'; badge='<span class="pill" style="background:#eef1f5;color:#5f708a">unknown</span>'; }
+  else { tgt=(t.commitShort?code(t.commitShort):'<span class="muted">unknown</span>')
+      +(t.subject?'<div class="snap" style="margin-top:3px">'+esc(t.subject)+'</div>':'')
+      +(t.committedAt?'<div class="snap">'+dt(t.committedAt)+'</div>':'');
+    badge = v.upToDate ? '<span class="pill ok">✓ Up to date</span>'
+      : '<span class="pill" style="background:#fff4e5;color:#b7791f">↑ Update available</span>'; }
+  el.innerHTML='<h2 style="margin-bottom:12px">Version &nbsp;'+badge+'</h2>'
+    +'<div style="display:grid;grid-template-columns:130px 1fr;gap:12px 16px;align-items:start;font-size:14px">'
+    +'<div class="muted" style="padding-top:2px">Running now</div><div>'+cur+'</div>'
+    +'<div class="muted" style="padding-top:2px">Latest on <b>'+esc(t.branch||'main')+'</b></div><div>'+tgt+'</div>'
+    +'</div>';
+}
+async function tUpgrade(){ $('content').innerHTML='<div class="card" id="verCard" style="margin-bottom:16px"><div class="muted">Loading version…</div></div><div class="card"><div class="row" style="margin-bottom:14px"><button class="btn btn-primary" id="upBtn">Upgrade now</button><span class="msg" id="upMsg"></span></div><pre id="upLog">Loading…</pre></div>';
+  const load=async()=>{ const d=await (await api('/api/admin/upgrade/status')).json(); renderVer(d.version); $('upLog').textContent=d.log||'No upgrade has run yet.'; $('upBtn').disabled=d.running||!d.configured; if(!d.configured)$('upMsg').innerHTML='<span class="muted">Host upgrade agent not configured.</span>'; };
   $('upBtn').onclick=async()=>{ if(!confirm('Pull latest code, rebuild and restart? Brief downtime.'))return; const d=await (await api('/api/admin/upgrade',{method:'POST'})).json(); $('upMsg').className='msg '+(d.ok?'ok':'err'); $('upMsg').textContent=d.ok?'Upgrade started — watch the log.':(d.error||'Could not start.'); };
   load(); clearInterval(window.__upT); window.__upT=setInterval(()=>{ if($('upLog'))load(); },3000);
 }
