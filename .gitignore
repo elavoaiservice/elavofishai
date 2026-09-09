@@ -1,0 +1,10 @@
+# Runtime data written by server.js — user accounts, sessions, per-user storage.
+# Never commit this: it holds password hashes and session tokens.
+data/
+
+# The delivery archive; its contents are tracked individually.
+*.zip
+
+node_modules/
+*.log
+.DS_Store
