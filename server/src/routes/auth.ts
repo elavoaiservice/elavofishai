@@ -42,7 +42,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           ? 'Check your email to finish creating your account.'
           : 'Check your email for your sign-in link.',
     };
-    if (env.devShowMagicLink) payload.devLink = link.url;
+    // Only surface the link in-app when we did NOT email it (dev/console mode).
+    if (!link.emailed && env.devShowMagicLink) payload.devLink = link.url;
     return reply.send(payload);
   });
 

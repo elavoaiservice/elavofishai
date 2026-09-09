@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../db';
 import { env } from '../env';
 import { sha256 } from './crypto';
+import { adminMfaEmail, emailConfigured, sendEmail } from '../services/email';
 
 const ADMIN_COOKIE = 'efa_admin';
 const SESSION_DAYS = 7;
@@ -60,12 +61,17 @@ export async function startAdminLogin(username: string, password: string): Promi
   await prisma.adminMfaCode.create({
     data: { adminId: admin.id, codeHash: sha256(code), expiresAt: new Date(Date.now() + 10 * 60000) },
   });
-  // TODO: email the code once RESEND_API_KEY is configured. Until then, dev/console mode.
-  if (env.devShowMagicLink) {
+  // Email the code when Resend is configured; otherwise dev/console mode.
+  let emailed = false;
+  if (emailConfigured()) {
+    const { subject, html } = adminMfaEmail(code);
+    emailed = await sendEmail(admin.email, subject, html);
+  }
+  if (!emailed && env.devShowMagicLink) {
     // eslint-disable-next-line no-console
     console.log(`\n[admin-mfa] code for ${username}: ${code}\n`);
   }
-  return { ok: true, code: env.devShowMagicLink ? code : undefined };
+  return { ok: true, code: emailed ? undefined : env.devShowMagicLink ? code : undefined };
 }
 
 // Step 2: verify the MFA code → start an admin session.

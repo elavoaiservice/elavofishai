@@ -1,11 +1,13 @@
 import { prisma } from '../db';
 import { env } from '../env';
 import { randomToken, sha256 } from '../lib/crypto';
+import { emailConfigured, magicLinkEmail, sendEmail } from './email';
 
 export interface IssuedLink {
   url: string;
   purpose: 'login' | 'signup';
   expiresAt: Date;
+  emailed: boolean;
 }
 
 // Issue a magic link for an email. Unified login+signup: if the email already
@@ -34,12 +36,17 @@ export async function issueMagicLink(
 
   const url = `${baseUrl.replace(/\/$/, '')}/api/auth/verify?token=${token}`;
 
-  // Dev/console mode: surface the link so we can sign in on the LAN with no email.
-  if (env.devShowMagicLink) {
+  // Send a real email when Resend is configured; otherwise dev/console mode.
+  let emailed = false;
+  if (emailConfigured()) {
+    const { subject, html } = magicLinkEmail(url, purpose);
+    emailed = await sendEmail(email, subject, html);
+  }
+  if (!emailed && env.devShowMagicLink) {
     // eslint-disable-next-line no-console
     console.log(`\n[magic-link] ${purpose} for ${email}\n  ${url}\n`);
   }
-  return { url, purpose, expiresAt };
+  return { url, purpose, expiresAt, emailed };
 }
 
 export interface ConsumeResult {
