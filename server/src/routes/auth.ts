@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { env } from '../env';
 import { clientIp, endSession, startSession } from '../lib/auth';
+import { isPrivateIp } from '../lib/net';
 import { overLimit } from '../lib/rateLimit';
 import { consumeMagicLink, issueMagicLink } from '../services/magicLink';
 
@@ -32,8 +33,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     const link = await issueMagicLink(email, body.displayName, ip, baseUrlFor(req));
 
-    // Dev/console mode returns the link so we can sign in on the LAN without email.
-    // Production returns only a generic acknowledgement (email delivery is P3).
+    // With email configured the response says nothing beyond "check your inbox".
     const payload: Record<string, unknown> = {
       ok: true,
       purpose: link.purpose,
@@ -42,8 +42,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           ? 'Check your email to finish creating your account.'
           : 'Check your email for your sign-in link.',
     };
-    // Only surface the link in-app when we did NOT email it (dev/console mode).
-    if (!link.emailed && env.devShowMagicLink) payload.devLink = link.url;
+    // Only surface the link in-app when we did NOT email it (dev/console mode),
+    // and only to a caller on the local network — otherwise handing back the
+    // link would let anyone on the internet sign in as any address they type.
+    if (!link.emailed && env.devShowMagicLink) {
+      if (isPrivateIp(ip)) {
+        payload.devLink = link.url;
+      } else {
+        req.log.warn({ ip }, 'dev magic-link withheld from a non-private client');
+        payload.message = 'Email delivery is not configured yet. Ask an admin for your sign-in link.';
+      }
+    }
     return reply.send(payload);
   });
 

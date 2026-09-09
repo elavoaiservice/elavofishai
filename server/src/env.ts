@@ -24,8 +24,14 @@ export const env = {
   magicLinkTtlMin: Number(process.env.MAGIC_LINK_TTL_MIN || 15),
 
   // Dev/console magic-link mode: return + log the link instead of emailing it.
-  // (Real email provider gets wired in P3.)
+  // Handing the caller a sign-in link for any address they type is a full
+  // account takeover, so in production this needs an explicit opt-in (below)
+  // and the link is only ever returned to a caller on the local network.
   devShowMagicLink: bool(process.env.DEV_SHOW_MAGIC_LINK, NODE_ENV !== 'production'),
+
+  // Explicit "yes, I know" for running a production build with dev links on —
+  // for a LAN prototype with no email provider yet.
+  allowInsecureDevLogin: bool(process.env.ALLOW_INSECURE_DEV_LOGIN, false),
 
   // AI lake profiles (P1). Absent key → profiles stay pending, engine still works.
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -40,5 +46,16 @@ export const env = {
 export function requireEnv(): void {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required');
+  }
+  // Refuse to start a production server that hands out sign-in links: anyone who
+  // can reach it could request a link for any email and become that user.
+  if (env.isProd && env.devShowMagicLink && !env.allowInsecureDevLogin) {
+    throw new Error(
+      'Refusing to start: DEV_SHOW_MAGIC_LINK is on in production, which lets any ' +
+        'caller sign in as any email. Set DEV_SHOW_MAGIC_LINK=0 and configure ' +
+        'RESEND_API_KEY + EMAIL_FROM to email real links, or set ' +
+        'ALLOW_INSECURE_DEV_LOGIN=1 to accept the risk on a trusted LAN ' +
+        '(links are still only returned to private-network clients).'
+    );
   }
 }

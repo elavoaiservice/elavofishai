@@ -30,7 +30,9 @@ services:
       DATABASE_URL: postgres://elavofish:${PG_PASSWORD:-elavofish}@postgres:5432/elavofish
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      DEV_SHOW_MAGIC_LINK: ${DEV_SHOW_MAGIC_LINK:-1}
+      # Off by default: on, it lets any caller sign in as any email.
+      DEV_SHOW_MAGIC_LINK: ${DEV_SHOW_MAGIC_LINK:-0}
+      ALLOW_INSECURE_DEV_LOGIN: ${ALLOW_INSECURE_DEV_LOGIN:-0}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_PROFILE_MODEL: ${AI_PROFILE_MODEL:-claude-opus-4-8}
       # Admin Command Center (bootstrap) + config encryption
