@@ -94,20 +94,20 @@ model User {
   sentMessages     Message[] @relation("MsgSender")
   receivedMessages Message[] @relation("MsgRecipient")
 
-  sessions              Session[]
-  userLakes             UserLake[]
-  addedLakes            Lake[]               @relation("LakeAddedBy")
-  trips                 Trip[]
-  spots                 Spot[]
-  waypoints             Waypoint[]
-  kv                    Kv[]
-  sharingPrefs          SharingPref[]
-  ownedGroups           FriendGroup[]        @relation("GroupOwner")
-  groupMemberships      FriendGroupMember[]
-  friendshipsInitiated  Friendship[]         @relation("FriendshipUser")
-  friendshipsReceived   Friendship[]         @relation("FriendshipFriend")
-  auditLogs             AuditLog[]
-  profileContributions  ProfileContribution[]
+  sessions             Session[]
+  userLakes            UserLake[]
+  addedLakes           Lake[]                @relation("LakeAddedBy")
+  trips                Trip[]
+  spots                Spot[]
+  waypoints            Waypoint[]
+  kv                   Kv[]
+  sharingPrefs         SharingPref[]
+  ownedGroups          FriendGroup[]         @relation("GroupOwner")
+  groupMemberships     FriendGroupMember[]
+  friendshipsInitiated Friendship[]          @relation("FriendshipUser")
+  friendshipsReceived  Friendship[]          @relation("FriendshipFriend")
+  auditLogs            AuditLog[]
+  profileContributions ProfileContribution[]
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -153,20 +153,20 @@ model RateLimit {
 
 // Lakes are GLOBAL and deduped — one row per real body of water, shared by all users.
 model Lake {
-  id          String       @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
   region      String? // state / province
   country     String?
   lat         Float
   lon         Float
   gaugeId     String?
-  gaugeSource GaugeSource  @default(none)
+  gaugeSource GaugeSource @default(none)
   fullPool    Float?
   bbox        String? // JSON [w,s,e,n]
-  osmRef      String?      @unique // e.g. "way/12345678"
+  osmRef      String?     @unique // e.g. "way/12345678"
   addedById   String?
-  addedBy     User?        @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime     @default(now())
+  addedBy     User?       @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime    @default(now())
 
   profile       LakeProfile?
   userLakes     UserLake[]
@@ -314,6 +314,7 @@ model Waypoint {
   lon        Float
   kind       String?
   visibility Visibility @default(private)
+  groupId    String? // when visibility = group
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
@@ -363,13 +364,13 @@ model FriendGroupMember {
 
 // A user's default sharing per data type; per-record `visibility` can override.
 model SharingPref {
-  id       String        @id @default(cuid())
-  userId   String
-  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dataType ShareDataType
-  scope    ShareScope    @default(none)
-  groupIds String[] // when scope = groups
-  updatedAt DateTime     @updatedAt
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataType  ShareDataType
+  scope     ShareScope    @default(none)
+  groupIds  String[] // when scope = groups
+  updatedAt DateTime      @updatedAt
 
   @@unique([userId, dataType])
 }

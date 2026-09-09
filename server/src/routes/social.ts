@@ -1,9 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
-
-type Vis = 'private' | 'friends' | 'group' | 'public';
-const VIS: Vis[] = ['private', 'friends', 'group', 'public'];
+import {
+  DATA_TYPES,
+  type DataType,
+  getPrefs,
+  myGroupIds,
+  type PrefRow,
+  resolveVisibility,
+  savePrefs,
+} from '../lib/sharing';
 
 // Accepted-friend user ids for a viewer.
 async function friendIds(userId: string): Promise<string[]> {
@@ -12,14 +18,6 @@ async function friendIds(userId: string): Promise<string[]> {
     select: { userId: true, friendId: true },
   });
   return fs.map((f) => (f.userId === userId ? f.friendId : f.userId));
-}
-// Group ids the viewer owns or belongs to.
-async function myGroupIds(userId: string): Promise<string[]> {
-  const [owned, member] = await Promise.all([
-    prisma.friendGroup.findMany({ where: { ownerId: userId }, select: { id: true } }),
-    prisma.friendGroupMember.findMany({ where: { memberId: userId }, select: { groupId: true } }),
-  ]);
-  return [...owned.map((g) => g.id), ...member.map((m) => m.groupId)];
 }
 
 export async function socialRoutes(app: FastifyInstance): Promise<void> {
@@ -130,14 +128,37 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
-  // ---------- shared spots + catches ----------
-  async function checkVis(userId: string, visibility: string, groupId?: string): Promise<Vis> {
-    const v = (VIS as string[]).includes(visibility) ? (visibility as Vis) : 'friends';
-    if (v === 'group') {
-      if (!groupId || !(await myGroupIds(userId)).includes(groupId)) throw new Error('bad_group');
+  // ---------- sharing defaults ----------
+  // Per-user default scope per data type. Omitting `visibility` on a create
+  // below falls back to these instead of a hard-coded guess.
+  app.get('/api/me/sharing', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    return { sharing: await getPrefs(me.id) };
+  });
+
+  app.put('/api/me/sharing', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const body = (req.body || {}) as Partial<Record<DataType, PrefRow>>;
+    const input: Partial<Record<DataType, PrefRow>> = {};
+    for (const t of DATA_TYPES) {
+      const row = body[t];
+      if (row && typeof row.scope === 'string') {
+        input[t] = { scope: row.scope, groupIds: Array.isArray(row.groupIds) ? row.groupIds.map(String) : [] };
+      }
     }
-    return v;
-  }
+    try {
+      return reply.send({ sharing: await savePrefs(me.id, input) });
+    } catch (e) {
+      if ((e as Error).message === 'no_groups') {
+        return reply.code(400).send({ error: 'Pick at least one group to share with.' });
+      }
+      throw e;
+    }
+  });
+
+  // ---------- shared spots, catches + waypoints ----------
 
   app.post('/api/lakes/:id/spots', async (req, reply) => {
     const me = await requireUser(req, reply);
@@ -145,9 +166,9 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const lakeId = String((req.params as { id: string }).id);
     const b = (req.body || {}) as { name?: string; lat?: number; lon?: number; notes?: string; visibility?: string; groupId?: string };
     if (!b.name || !Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lon))) return reply.code(400).send({ error: 'A spot needs a name and a pin.' });
-    let vis: Vis;
-    try { vis = await checkVis(me.id, b.visibility || 'friends', b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
-    const spot = await prisma.spot.create({ data: { userId: me.id, lakeId, name: String(b.name).slice(0, 80), lat: Number(b.lat), lon: Number(b.lon), notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis, groupId: vis === 'group' ? b.groupId : null } });
+    let vis;
+    try { vis = await resolveVisibility(me.id, 'spots', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
+    const spot = await prisma.spot.create({ data: { userId: me.id, lakeId, name: String(b.name).slice(0, 80), lat: Number(b.lat), lon: Number(b.lon), notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId } });
     return reply.send({ spot: { id: spot.id } });
   });
 
@@ -157,22 +178,48 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const lakeId = String((req.params as { id: string }).id);
     const b = (req.body || {}) as { species?: string; weight?: number; length?: number; lure?: string; lat?: number; lon?: number; notes?: string; date?: string; visibility?: string; groupId?: string };
     if (!b.species) return reply.code(400).send({ error: 'What did you catch?' });
-    let vis: Vis;
-    try { vis = await checkVis(me.id, b.visibility || 'friends', b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
+    let vis;
+    try { vis = await resolveVisibility(me.id, 'trips', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
     const date = b.date && !Number.isNaN(Date.parse(b.date)) ? new Date(b.date) : new Date();
-    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis, groupId: vis === 'group' ? b.groupId : null } });
+    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId } });
     return reply.send({ catch: { id: trip.id } });
+  });
+
+  app.post('/api/lakes/:id/waypoints', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const lakeId = String((req.params as { id: string }).id);
+    const b = (req.body || {}) as { name?: string; lat?: number; lon?: number; kind?: string; visibility?: string; groupId?: string };
+    if (!b.name || !Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lon))) {
+      return reply.code(400).send({ error: 'A waypoint needs a name and a pin.' });
+    }
+    let vis;
+    try { vis = await resolveVisibility(me.id, 'waypoints', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
+    const wp = await prisma.waypoint.create({
+      data: {
+        userId: me.id,
+        lakeId,
+        name: String(b.name).slice(0, 80),
+        lat: Number(b.lat),
+        lon: Number(b.lon),
+        kind: b.kind ? String(b.kind).slice(0, 40) : null,
+        visibility: vis.visibility,
+        groupId: vis.groupId,
+      },
+    });
+    return reply.send({ waypoint: { id: wp.id } });
   });
 
   app.get('/api/lakes/:id/mine', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
     const lakeId = String((req.params as { id: string }).id);
-    const [spots, catches] = await Promise.all([
+    const [spots, catches, waypoints] = await Promise.all([
       prisma.spot.findMany({ where: { userId: me.id, lakeId }, orderBy: { createdAt: 'desc' } }),
       prisma.trip.findMany({ where: { userId: me.id, lakeId }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.waypoint.findMany({ where: { userId: me.id, lakeId }, orderBy: { createdAt: 'desc' } }),
     ]);
-    return { spots, catches };
+    return { spots, catches, waypoints };
   });
 
   app.delete('/api/spots/:id', async (req, reply) => {
@@ -187,6 +234,12 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     await prisma.trip.deleteMany({ where: { id: String((req.params as { id: string }).id), userId: me.id } });
     return reply.send({ ok: true });
   });
+  app.delete('/api/waypoints/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    await prisma.waypoint.deleteMany({ where: { id: String((req.params as { id: string }).id), userId: me.id } });
+    return reply.send({ ok: true });
+  });
 
   // Friends' shared spots + catches for a lake (visibility-resolved).
   app.get('/api/lakes/:id/feed', async (req, reply) => {
@@ -194,15 +247,17 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!me) return;
     const lakeId = String((req.params as { id: string }).id);
     const [friends, groups] = await Promise.all([friendIds(me.id), myGroupIds(me.id)]);
-    if (!friends.length) return reply.send({ spots: [], catches: [] });
+    if (!friends.length) return reply.send({ spots: [], catches: [], waypoints: [] });
     const visClause = { OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, { visibility: 'group' as const, groupId: { in: groups } }] };
-    const [spots, catches] = await Promise.all([
+    const [spots, catches, waypoints] = await Promise.all([
       prisma.spot.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
       prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.waypoint.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
     ]);
     return {
       spots: spots.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, notes: s.notes, by: s.user.displayName, at: s.createdAt })),
       catches: catches.map((c) => ({ id: c.id, species: c.species, weight: c.weight, length: c.length, lure: c.lure, notes: c.notes, lat: c.lat, lon: c.lon, by: c.user.displayName, date: c.date })),
+      waypoints: waypoints.map((w) => ({ id: w.id, name: w.name, lat: w.lat, lon: w.lon, kind: w.kind, by: w.user.displayName, at: w.createdAt })),
     };
   });
 }

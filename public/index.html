@@ -1107,6 +1107,11 @@ body.feed-loading .stat-v *{visibility:hidden}
     <div class="formfoot"><input id="grName" class="fr-in" placeholder="e.g. Bass buddies" style="max-width:220px"><button class="btn" id="grAdd">Create group</button></div>
     <div id="grList" style="margin-top:10px"></div>
 
+    <h3 style="margin-top:24px">Sharing defaults</h3>
+    <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.</p>
+    <div id="shDefaults" class="shareGrid"></div>
+    <div class="formfoot" style="margin-top:10px"><button class="btn" id="shDefSave">Save defaults</button><span class="snap" id="shDefMsg" style="color:var(--muted)"></span></div>
+
     <h3 style="margin-top:24px">Share on <span id="frLake"></span></h3>
     <p class="lede" style="margin-top:2px">Private by default — you choose exactly who sees each spot and catch.</p>
     <div class="shareGrid">
@@ -1115,16 +1120,25 @@ body.feed-loading .stat-v *{visibility:hidden}
         <input id="spName" class="fr-in" placeholder="Spot name" style="margin-top:10px">
         <div style="display:flex;gap:8px"><input id="spLat" class="fr-in" placeholder="lat"><input id="spLon" class="fr-in" placeholder="lon"><button class="btn ghost" id="spGps" style="white-space:nowrap">Use GPS</button></div>
         <input id="spNotes" class="fr-in" placeholder="Notes (optional)">
-        <select id="spVis" class="fr-in"><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
+        <select id="spVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
         <select id="spGroup" class="fr-in" hidden></select>
         <button class="btn" id="spShare" style="width:100%">Share spot</button>
+      </div>
+      <div class="fr-card">
+        <b>🧭 Share a waypoint</b>
+        <input id="wsName" class="fr-in" placeholder="Waypoint name" style="margin-top:10px">
+        <div style="display:flex;gap:8px"><input id="wsLat" class="fr-in" placeholder="lat"><input id="wsLon" class="fr-in" placeholder="lon"><button class="btn ghost" id="wsGps" style="white-space:nowrap">Use GPS</button></div>
+        <input id="wsKind" class="fr-in" placeholder="What is it? (brush pile, ramp, hump…)">
+        <select id="wsVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
+        <select id="wsGroup" class="fr-in" hidden></select>
+        <button class="btn" id="wsShare" style="width:100%">Share waypoint</button>
       </div>
       <div class="fr-card">
         <b>🐟 Share a catch</b>
         <input id="caSpecies" class="fr-in" placeholder="Species (e.g. Largemouth)" style="margin-top:10px">
         <div style="display:flex;gap:8px"><input id="caWeight" class="fr-in" placeholder="lb"><input id="caLure" class="fr-in" placeholder="lure"></div>
         <input id="caNotes" class="fr-in" placeholder="Notes (optional)">
-        <select id="caVis" class="fr-in"><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
+        <select id="caVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
         <select id="caGroup" class="fr-in" hidden></select>
         <button class="btn" id="caShare" style="width:100%">Share catch</button>
       </div>
@@ -2858,7 +2872,7 @@ async function loadFriends(){
   if(!AUTH.user){ $('friendsAuth').hidden=false; $('friendsMain').hidden=true; return; }
   $('friendsAuth').hidden=true; $('friendsMain').hidden=false;
   $('frLake').textContent=ACTIVE.name; $('frLake2').textContent=ACTIVE.name;
-  await refreshFriends(); await refreshGroups(); loadMyShared(); loadFeed();
+  await refreshFriends(); await refreshGroups(); await loadSharing(); loadMyShared(); loadFeed();
 }
 async function refreshFriends(){
   try{ const r=await apiFetch('/api/friends'); const d=await r.json(); FRIENDS=d.friends||[];
@@ -2875,11 +2889,55 @@ async function refreshGroups(){
   try{ const r=await apiFetch('/api/groups'); const d=await r.json(); GROUPS=d.groups||[];
     $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button></div><div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div><select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select></div>').join('')||'<p class="snap">No groups yet.</p>';
     const opts='<option value="">Pick a group…</option>'+GROUPS.map(g=>'<option value="'+g.id+'">'+escHtml(g.name)+'</option>').join('');
-    $('spGroup').innerHTML=opts; $('caGroup').innerHTML=opts;
+    $('spGroup').innerHTML=opts; $('caGroup').innerHTML=opts; $('wsGroup').innerHTML=opts;
+    renderSharing();
   }catch(e){}
 }
 async function createGroup(){ const name=$('grName').value.trim(); if(!name)return;
   await apiFetch('/api/groups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); $('grName').value=''; refreshGroups();
+}
+/* Sharing defaults — the scope a new spot/catch/waypoint gets when you don't
+   pick one. Kept per data type on the server (SharingPref). */
+let SHARING={};
+const SH_TYPES=[['spots','📍 Spots'],['trips','🐟 Catches'],['waypoints','🧭 Waypoints']];
+const SH_SCOPES=[['none','Just me (private)'],['friends','All friends'],['groups','A group…'],['public','Everyone']];
+async function loadSharing(){
+  try{ const r=await apiFetch('/api/me/sharing'); const d=await r.json(); SHARING=d.sharing||{}; renderSharing(); applySharingDefaults(); }catch(e){}
+}
+function renderSharing(){
+  const el=$('shDefaults'); if(!el)return;
+  el.innerHTML=SH_TYPES.map(([t,label])=>{
+    const pref=SHARING[t]||{scope:'friends',groupIds:[]};
+    const groupSel='<select class="fr-in" data-shgroup="'+t+'"'+(pref.scope==='groups'?'':' hidden')+'>'+
+      (GROUPS.length?GROUPS.map(g=>'<option value="'+g.id+'"'+((pref.groupIds||[]).includes(g.id)?' selected':'')+'>'+escHtml(g.name)+'</option>').join(''):'<option value="">No groups yet</option>')+'</select>';
+    return '<div class="fr-card"><b>'+label+'</b>'+
+      '<select class="fr-in" data-shscope="'+t+'" style="margin-top:10px">'+
+      SH_SCOPES.map(([v,n])=>'<option value="'+v+'"'+(pref.scope===v?' selected':'')+'>'+n+'</option>').join('')+'</select>'+groupSel+'</div>';
+  }).join('');
+}
+// Preselect each share form to the user's default for that data type.
+function applySharingDefaults(){
+  const map={spots:['spVis','spGroup'],trips:['caVis','caGroup'],waypoints:['wsVis','wsGroup']};
+  for(const t in map){
+    const pref=SHARING[t]; if(!pref)continue;
+    const [visId,grpId]=map[t];
+    const vis=pref.scope==='none'?'private':pref.scope==='groups'?'group':pref.scope==='public'?'public':'friends';
+    if($(visId)){ $(visId).value=vis; }
+    if($(grpId)){ $(grpId).hidden=vis!=='group'; if(vis==='group'&&(pref.groupIds||[]).length) $(grpId).value=pref.groupIds[0]; }
+  }
+}
+async function saveSharing(){
+  const body={};
+  document.querySelectorAll('[data-shscope]').forEach(sel=>{
+    const t=sel.dataset.shscope;
+    const grp=document.querySelector('[data-shgroup="'+t+'"]');
+    body[t]={scope:sel.value,groupIds:sel.value==='groups'&&grp&&grp.value?[grp.value]:[]};
+  });
+  $('shDefMsg').textContent='Saving…';
+  try{ const r=await apiFetch('/api/me/sharing',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+    if(r.ok){ SHARING=d.sharing||{}; renderSharing(); applySharingDefaults(); $('shDefMsg').textContent='Saved.'; }
+    else $('shDefMsg').textContent=d.error||'Could not save.';
+  }catch(e){ $('shDefMsg').textContent='Server not reachable.'; }
 }
 function gpsInto(latId,lonId){ if(!navigator.geolocation){return;} navigator.geolocation.getCurrentPosition(p=>{ $(latId).value=p.coords.latitude.toFixed(5); $(lonId).value=p.coords.longitude.toFixed(5); }); }
 async function shareSpot(){
@@ -2897,18 +2955,26 @@ async function shareCatch(){
     $('shMsg').textContent=r.ok?'Catch shared!':(d.error||'Could not share.'); if(r.ok){$('caSpecies').value='';$('caNotes').value='';loadMyShared();}
   }catch(e){$('shMsg').textContent='Server not reachable.';}
 }
+async function shareWaypoint(){
+  const body={name:$('wsName').value.trim(),lat:parseFloat($('wsLat').value),lon:parseFloat($('wsLon').value),kind:$('wsKind').value.trim(),visibility:$('wsVis').value,groupId:$('wsGroup').value};
+  if(!body.name||isNaN(body.lat)||isNaN(body.lon)){ $('shMsg').textContent='Waypoint needs a name + lat/lon (tap “Use GPS”).'; return; }
+  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/waypoints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+    $('shMsg').textContent=r.ok?'Waypoint shared!':(d.error||'Could not share.'); if(r.ok){$('wsName').value='';$('wsKind').value='';loadMyShared();}
+  }catch(e){$('shMsg').textContent='Server not reachable.';}
+}
 async function loadMyShared(){
   try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/mine'); const d=await r.json();
-    const items=[].concat((d.spots||[]).map(s=>({t:'spot',id:s.id,txt:'📍 '+s.name})),(d.catches||[]).map(c=>({t:'catch',id:c.id,txt:'🐟 '+c.species+(c.weight?' '+c.weight+'lb':'')})));
+    const items=[].concat((d.spots||[]).map(s=>({t:'spot',id:s.id,txt:'📍 '+s.name})),(d.catches||[]).map(c=>({t:'catch',id:c.id,txt:'🐟 '+c.species+(c.weight?' '+c.weight+'lb':'')})),(d.waypoints||[]).map(w=>({t:'waypoint',id:w.id,txt:'🧭 '+w.name+(w.kind?' — '+w.kind:'')})));
     $('myShared').innerHTML=items.length?('<div class="snap" style="font-weight:600;margin:6px 0 2px">You’ve shared here</div>'+items.map(i=>'<div class="fr-row"><span>'+escHtml(i.txt)+'</span><button class="btn ghost btn-sm" data-del="'+i.t+':'+i.id+'">Remove</button></div>').join('')):'';
   }catch(e){}
 }
 async function loadFeed(){
   try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/feed'); const d=await r.json();
-    const spots=d.spots||[], catches=d.catches||[];
-    if(!spots.length&&!catches.length){ $('frFeed').innerHTML='<p class="snap">No shared activity from friends on this lake yet. Add friends and they’ll show up here.</p>'; return; }
+    const spots=d.spots||[], catches=d.catches||[], waypoints=d.waypoints||[];
+    if(!spots.length&&!catches.length&&!waypoints.length){ $('frFeed').innerHTML='<p class="snap">No shared activity from friends on this lake yet. Add friends and they’ll show up here.</p>'; return; }
     let h='';
     if(spots.length)h+='<div style="margin-bottom:10px"><b>Spots</b>'+spots.map(s=>'<div class="fr-row"><span>📍 '+escHtml(s.name)+' <span class="snap">by '+escHtml(s.by)+(s.notes?' — '+escHtml(s.notes):'')+'</span></span></div>').join('')+'</div>';
+    if(waypoints.length)h+='<div style="margin-bottom:10px"><b>Waypoints</b>'+waypoints.map(w=>'<div class="fr-row"><span>🧭 '+escHtml(w.name)+' <span class="snap">by '+escHtml(w.by)+(w.kind?' — '+escHtml(w.kind):'')+'</span></span></div>').join('')+'</div>';
     if(catches.length)h+='<div><b>Catches</b>'+catches.map(c=>'<div class="fr-row"><span>🐟 '+escHtml(c.species)+(c.weight?' '+c.weight+'lb':'')+' <span class="snap">by '+escHtml(c.by)+(c.lure?' on '+escHtml(c.lure):'')+'</span></span></div>').join('')+'</div>';
     $('frFeed').innerHTML=h;
   }catch(e){ $('frFeed').innerHTML='<p class="snap">Could not load feed.</p>'; }
@@ -2916,9 +2982,12 @@ async function loadFeed(){
 function wireFriends(){
   const p=$('p-friends'); if(!p)return;
   $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup; $('spShare').onclick=shareSpot; $('caShare').onclick=shareCatch;
+  $('wsShare').onclick=shareWaypoint; $('shDefSave').onclick=saveSharing;
   $('spGps').onclick=()=>gpsInto('spLat','spLon');
+  $('wsGps').onclick=()=>gpsInto('wsLat','wsLon');
   $('spVis').onchange=()=>{$('spGroup').hidden=$('spVis').value!=='group';};
   $('caVis').onchange=()=>{$('caGroup').hidden=$('caVis').value!=='group';};
+  $('wsVis').onchange=()=>{$('wsGroup').hidden=$('wsVis').value!=='group';};
   p.addEventListener('click',e=>{
     const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]'),msg=e.target.closest('[data-msg]');
     if(msg){ goToMessages(msg.dataset.msg,msg.dataset.msgname); return; }
@@ -2926,9 +2995,12 @@ function wireFriends(){
     else if(dec)apiFetch('/api/friends/'+dec.dataset.dec+'/decline',{method:'POST'}).then(refreshFriends);
     else if(rem)apiFetch('/api/friends/'+rem.dataset.rem+'/decline',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
     else if(dg)apiFetch('/api/groups/'+dg.dataset.delgrp,{method:'DELETE'}).then(refreshGroups);
-    else if(del){const parts=del.dataset.del.split(':'); apiFetch('/api/'+(parts[0]==='spot'?'spots':'catches')+'/'+parts[1],{method:'DELETE'}).then(loadMyShared);}
+    else if(del){const parts=del.dataset.del.split(':'); const path={spot:'spots',catch:'catches',waypoint:'waypoints'}[parts[0]]; apiFetch('/api/'+path+'/'+parts[1],{method:'DELETE'}).then(loadMyShared);}
   });
-  p.addEventListener('change',e=>{ const a=e.target.closest('[data-addto]'); if(a&&a.value){ apiFetch('/api/groups/'+a.dataset.addto+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:a.value})}).then(refreshGroups); } });
+  p.addEventListener('change',e=>{
+    const sc=e.target.closest('[data-shscope]');
+    if(sc){ const g=p.querySelector('[data-shgroup="'+sc.dataset.shscope+'"]'); if(g)g.hidden=sc.value!=='groups'; }
+    const a=e.target.closest('[data-addto]'); if(a&&a.value){ apiFetch('/api/groups/'+a.dataset.addto+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:a.value})}).then(refreshGroups); } });
 }
 /* ---- Profile ---- */
 let PF_PENDING_AVATAR=undefined; // undefined = unchanged, null = cleared, string = new data URL
