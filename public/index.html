@@ -778,6 +778,7 @@ body.feed-loading .stat-v *{visibility:hidden}
   <button class="tab" role="tab" aria-selected="false" data-v="rigs">Rigs</button>
   <button class="tab" role="tab" aria-selected="false" data-v="scope">LiveScope</button>
   <button class="tab" role="tab" aria-selected="false" data-v="log">Log</button>
+  <button class="tab" role="tab" aria-selected="false" data-v="friends">🎣 Friends</button>
 </div>
 
 <section class="panel" id="p-best">
@@ -1065,6 +1066,61 @@ body.feed-loading .stat-v *{visibility:hidden}
       <span class="snap" id="ioMsg"></span>
     </div>
     <textarea id="ioBox" hidden placeholder="Paste an exported log here, then press Import."></textarea>
+  </div>
+</section>
+
+<section class="panel" id="p-friends" hidden>
+  <style>
+    #p-friends .fr-in{padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+    #p-friends .fr-card{border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface)}
+    #p-friends .fr-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+    #p-friends .fr-row:last-child{border-bottom:none}
+    #p-friends .shareGrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+    #p-friends .fr-card input,#p-friends .fr-card select{width:100%;margin-bottom:8px}
+  </style>
+  <div id="friendsAuth" class="lede">Sign in (top-left) to add friends and share spots — the private way to help each other find fish.</div>
+  <div id="friendsMain" hidden>
+    <h3>Your friends</h3>
+    <div class="formfoot" style="flex-wrap:wrap">
+      <input id="frEmail" class="fr-in" type="email" placeholder="friend@email.com" style="max-width:240px">
+      <button class="btn" id="frAdd">Send request</button>
+      <span class="snap" id="frMsg" style="color:var(--muted)"></span>
+    </div>
+    <div id="frRequests" style="margin-top:12px"></div>
+    <div id="frList" style="margin-top:6px"></div>
+
+    <h3 style="margin-top:24px">Groups</h3>
+    <p class="lede" style="margin-top:2px">Group friends so you can share with just one crew.</p>
+    <div class="formfoot"><input id="grName" class="fr-in" placeholder="e.g. Bass buddies" style="max-width:220px"><button class="btn" id="grAdd">Create group</button></div>
+    <div id="grList" style="margin-top:10px"></div>
+
+    <h3 style="margin-top:24px">Share on <span id="frLake"></span></h3>
+    <p class="lede" style="margin-top:2px">Private by default — you choose exactly who sees each spot and catch.</p>
+    <div class="shareGrid">
+      <div class="fr-card">
+        <b>📍 Share a spot</b>
+        <input id="spName" class="fr-in" placeholder="Spot name" style="margin-top:10px">
+        <div style="display:flex;gap:8px"><input id="spLat" class="fr-in" placeholder="lat"><input id="spLon" class="fr-in" placeholder="lon"><button class="btn ghost" id="spGps" style="white-space:nowrap">Use GPS</button></div>
+        <input id="spNotes" class="fr-in" placeholder="Notes (optional)">
+        <select id="spVis" class="fr-in"><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
+        <select id="spGroup" class="fr-in" hidden></select>
+        <button class="btn" id="spShare" style="width:100%">Share spot</button>
+      </div>
+      <div class="fr-card">
+        <b>🐟 Share a catch</b>
+        <input id="caSpecies" class="fr-in" placeholder="Species (e.g. Largemouth)" style="margin-top:10px">
+        <div style="display:flex;gap:8px"><input id="caWeight" class="fr-in" placeholder="lb"><input id="caLure" class="fr-in" placeholder="lure"></div>
+        <input id="caNotes" class="fr-in" placeholder="Notes (optional)">
+        <select id="caVis" class="fr-in"><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
+        <select id="caGroup" class="fr-in" hidden></select>
+        <button class="btn" id="caShare" style="width:100%">Share catch</button>
+      </div>
+    </div>
+    <div id="shMsg" class="snap" style="margin-top:8px;color:var(--muted)"></div>
+    <div id="myShared" style="margin-top:14px"></div>
+
+    <h3 style="margin-top:24px">Friends' activity on <span id="frLake2"></span></h3>
+    <div id="frFeed" class="lede">Loading…</div>
   </div>
 </section>
 
@@ -2639,6 +2695,83 @@ async function genLakeGuide(){
     if(d.profile)renderLakeGuide(d.profile); else drawLakeGuide();
   }catch(e){ box.innerHTML='<span class="snap">Server not reachable.</span>'; }
 }
+/* ---- Friends & private sharing ---- */
+let FRIENDS=[], GROUPS=[];
+async function loadFriends(){
+  if(!AUTH.user){ $('friendsAuth').hidden=false; $('friendsMain').hidden=true; return; }
+  $('friendsAuth').hidden=true; $('friendsMain').hidden=false;
+  $('frLake').textContent=ACTIVE.name; $('frLake2').textContent=ACTIVE.name;
+  await refreshFriends(); await refreshGroups(); loadMyShared(); loadFeed();
+}
+async function refreshFriends(){
+  try{ const r=await apiFetch('/api/friends'); const d=await r.json(); FRIENDS=d.friends||[];
+    $('frRequests').innerHTML=(d.incoming||[]).map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">wants to be friends</span></span><span><button class="btn btn-sm" data-acc="'+f.friendshipId+'">Accept</button> <button class="btn ghost btn-sm" data-dec="'+f.friendshipId+'">Decline</button></span></div>').join('');
+    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
+  }catch(e){}
+}
+async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)return; $('frMsg').textContent='Sending…';
+  try{ const r=await apiFetch('/api/friends/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); const d=await r.json();
+    $('frMsg').textContent=r.ok?'Request sent!':(d.error||'Could not send.'); if(r.ok){$('frEmail').value='';refreshFriends();}
+  }catch(e){$('frMsg').textContent='Server not reachable.';}
+}
+async function refreshGroups(){
+  try{ const r=await apiFetch('/api/groups'); const d=await r.json(); GROUPS=d.groups||[];
+    $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button></div><div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div><select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select></div>').join('')||'<p class="snap">No groups yet.</p>';
+    const opts='<option value="">Pick a group…</option>'+GROUPS.map(g=>'<option value="'+g.id+'">'+escHtml(g.name)+'</option>').join('');
+    $('spGroup').innerHTML=opts; $('caGroup').innerHTML=opts;
+  }catch(e){}
+}
+async function createGroup(){ const name=$('grName').value.trim(); if(!name)return;
+  await apiFetch('/api/groups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); $('grName').value=''; refreshGroups();
+}
+function gpsInto(latId,lonId){ if(!navigator.geolocation){return;} navigator.geolocation.getCurrentPosition(p=>{ $(latId).value=p.coords.latitude.toFixed(5); $(lonId).value=p.coords.longitude.toFixed(5); }); }
+async function shareSpot(){
+  const body={name:$('spName').value.trim(),lat:parseFloat($('spLat').value),lon:parseFloat($('spLon').value),notes:$('spNotes').value.trim(),visibility:$('spVis').value,groupId:$('spGroup').value};
+  if(!body.name||isNaN(body.lat)||isNaN(body.lon)){ $('shMsg').textContent='Spot needs a name + lat/lon (tap “Use GPS”).'; return; }
+  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/spots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+    $('shMsg').textContent=r.ok?'Spot shared!':(d.error||'Could not share.'); if(r.ok){$('spName').value='';$('spNotes').value='';loadMyShared();}
+  }catch(e){$('shMsg').textContent='Server not reachable.';}
+}
+async function shareCatch(){
+  const w=parseFloat($('caWeight').value);
+  const body={species:$('caSpecies').value.trim(),weight:isNaN(w)?undefined:w,lure:$('caLure').value.trim(),notes:$('caNotes').value.trim(),visibility:$('caVis').value,groupId:$('caGroup').value};
+  if(!body.species){ $('shMsg').textContent='What did you catch?'; return; }
+  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/catches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+    $('shMsg').textContent=r.ok?'Catch shared!':(d.error||'Could not share.'); if(r.ok){$('caSpecies').value='';$('caNotes').value='';loadMyShared();}
+  }catch(e){$('shMsg').textContent='Server not reachable.';}
+}
+async function loadMyShared(){
+  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/mine'); const d=await r.json();
+    const items=[].concat((d.spots||[]).map(s=>({t:'spot',id:s.id,txt:'📍 '+s.name})),(d.catches||[]).map(c=>({t:'catch',id:c.id,txt:'🐟 '+c.species+(c.weight?' '+c.weight+'lb':'')})));
+    $('myShared').innerHTML=items.length?('<div class="snap" style="font-weight:600;margin:6px 0 2px">You’ve shared here</div>'+items.map(i=>'<div class="fr-row"><span>'+escHtml(i.txt)+'</span><button class="btn ghost btn-sm" data-del="'+i.t+':'+i.id+'">Remove</button></div>').join('')):'';
+  }catch(e){}
+}
+async function loadFeed(){
+  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/feed'); const d=await r.json();
+    const spots=d.spots||[], catches=d.catches||[];
+    if(!spots.length&&!catches.length){ $('frFeed').innerHTML='<p class="snap">No shared activity from friends on this lake yet. Add friends and they’ll show up here.</p>'; return; }
+    let h='';
+    if(spots.length)h+='<div style="margin-bottom:10px"><b>Spots</b>'+spots.map(s=>'<div class="fr-row"><span>📍 '+escHtml(s.name)+' <span class="snap">by '+escHtml(s.by)+(s.notes?' — '+escHtml(s.notes):'')+'</span></span></div>').join('')+'</div>';
+    if(catches.length)h+='<div><b>Catches</b>'+catches.map(c=>'<div class="fr-row"><span>🐟 '+escHtml(c.species)+(c.weight?' '+c.weight+'lb':'')+' <span class="snap">by '+escHtml(c.by)+(c.lure?' on '+escHtml(c.lure):'')+'</span></span></div>').join('')+'</div>';
+    $('frFeed').innerHTML=h;
+  }catch(e){ $('frFeed').innerHTML='<p class="snap">Could not load feed.</p>'; }
+}
+function wireFriends(){
+  const p=$('p-friends'); if(!p)return;
+  $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup; $('spShare').onclick=shareSpot; $('caShare').onclick=shareCatch;
+  $('spGps').onclick=()=>gpsInto('spLat','spLon');
+  $('spVis').onchange=()=>{$('spGroup').hidden=$('spVis').value!=='group';};
+  $('caVis').onchange=()=>{$('caGroup').hidden=$('caVis').value!=='group';};
+  p.addEventListener('click',e=>{
+    const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]');
+    if(acc)apiFetch('/api/friends/'+acc.dataset.acc+'/accept',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
+    else if(dec)apiFetch('/api/friends/'+dec.dataset.dec+'/decline',{method:'POST'}).then(refreshFriends);
+    else if(rem)apiFetch('/api/friends/'+rem.dataset.rem+'/decline',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
+    else if(dg)apiFetch('/api/groups/'+dg.dataset.delgrp,{method:'DELETE'}).then(refreshGroups);
+    else if(del){const parts=del.dataset.del.split(':'); apiFetch('/api/'+(parts[0]==='spot'?'spots':'catches')+'/'+parts[1],{method:'DELETE'}).then(loadMyShared);}
+  });
+  p.addEventListener('change',e=>{ const a=e.target.closest('[data-addto]'); if(a&&a.value){ apiFetch('/api/groups/'+a.dataset.addto+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:a.value})}).then(refreshGroups); } });
+}
 async function migrateLocalUp(){
   // one-time seed: push local data for keys the server doesn't have yet
   try{
@@ -3108,7 +3241,7 @@ function setMode(m){
 }
 $('mEater').onclick=function(){setMode('eater')};
 $('mTrophy').onclick=function(){setMode('trophy')};
-const VIEWS=['best','plan','weeks','water','spots','season','species','rigs','scope','log'];
+const VIEWS=['best','plan','weeks','water','spots','season','species','rigs','scope','log','friends'];
 document.querySelectorAll('.tab').forEach(function(t){
   t.onclick=function(){
     document.querySelectorAll('.tab').forEach(function(x){x.setAttribute('aria-selected',x===t)});
@@ -3117,6 +3250,7 @@ document.querySelectorAll('.tab').forEach(function(t){
     pn.classList.remove('panel-in'); void pn.offsetWidth; pn.classList.add('panel-in');
     if(t.dataset.v==='log'){ initMap(); setTimeout(function(){ if(map)map.invalidateSize(); },80); }
     if(t.dataset.v==='plan'){ drawBrief(); }
+    if(t.dataset.v==='friends'){ loadFriends(); }
   };
 });
 
@@ -3435,6 +3569,8 @@ drawTrips();
   await checkAi(); populateAiSpecies();
   const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
   drawLakeGuide();
+  wireFriends();
+  if(!isNaN(ACTIVE.lat)){ $('spLat').value=ACTIVE.lat.toFixed(5); $('spLon').value=ACTIVE.lon.toFixed(5); }
   const tp=await stGet(LK('theme'));
   if(tp==='dark'||tp==='light'||tp==='auto')themePref=tp;
   applyTheme();

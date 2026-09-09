@@ -247,6 +247,7 @@ model Trip {
   notes      String?    @db.Text
   weather    Json?
   visibility Visibility @default(private)
+  groupId    String? // when visibility = group
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
@@ -265,6 +266,7 @@ model Spot {
   lon        Float
   notes      String?    @db.Text
   visibility Visibility @default(private)
+  groupId    String? // when visibility = group
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 

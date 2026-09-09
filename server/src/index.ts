@@ -11,6 +11,7 @@ import { kvRoutes } from './routes/kv';
 import { lakeRoutes } from './routes/lakes';
 import { aiRoutes } from './routes/ai';
 import { adminRoutes } from './routes/admin';
+import { socialRoutes } from './routes/social';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
 import { sweepRateLimits } from './lib/rateLimit';
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   await app.register(lakeRoutes);
   await app.register(aiRoutes);
   await app.register(adminRoutes);
+  await app.register(socialRoutes);
 
   // The planner app lives at /app; the marketing landing is the front door at /.
   app.get('/app', (_req, reply) => reply.sendFile('index.html'));
