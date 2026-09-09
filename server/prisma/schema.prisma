@@ -161,9 +161,29 @@ model Lake {
   trips         Trip[]
   spots         Spot[]
   waypoints     Waypoint[]
+  dayPlans      DayPlan[]
   contributions ProfileContribution[]
 
   @@index([name])
+}
+
+// Cached AI day plans, keyed per (lake, date, species). Shared across users
+// (conditions are lake+date specific, not user specific). Regenerated as the
+// fishing day approaches and the forecast firms up — `daysOutAtGen` records how
+// far out the forecast was when generated.
+model DayPlan {
+  id           String   @id @default(cuid())
+  lakeId       String
+  lake         Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  date         String // YYYY-MM-DD (the fishing day)
+  species      String
+  content      Json // { summary, timeline:[{time,advice}], lures:[], notes }
+  daysOutAtGen Int // days between generation and the fishing day
+  model        String?
+  generatedAt  DateTime @default(now())
+
+  @@unique([lakeId, date, species])
+  @@index([lakeId])
 }
 
 // One cached profile per lake. Granbury is seeded `hand_verified` and never

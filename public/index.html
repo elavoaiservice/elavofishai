@@ -825,6 +825,17 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div id="checkOut"></div>
   <div class="formfoot"><button class="btn ghost" id="ckReset">Clear all ticks</button>
     <span class="snap" id="ckMsg"></span></div>
+
+  <div id="aiPlanBox" style="margin-top:22px;border:1px solid var(--border);border-radius:16px;padding:18px;background:var(--surface)">
+    <h3 style="margin:0 0 4px">🧠 AI day plan</h3>
+    <p class="lede" style="margin:0 0 12px">Pick your target and get an hour-by-hour game plan for this day — tuned to the conditions, and it sharpens as the day gets closer.</p>
+    <div class="formfoot" style="flex-wrap:wrap;gap:10px">
+      <select id="aiSpecies" aria-label="Target species" style="min-height:38px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--ink);font-family:Inter,sans-serif"></select>
+      <button class="btn" id="aiPlanBtn">Generate plan</button>
+      <span class="snap" id="aiPlanMsg" style="color:var(--muted)"></span>
+    </div>
+    <div id="aiPlanOut" style="margin-top:14px"></div>
+  </div>
 </section>
 
 <section class="panel" id="p-season" hidden>
@@ -920,6 +931,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-species" hidden>
+  <div id="aiGuideBox" style="margin-bottom:18px"></div>
   <p class="lede">Where to go, how to fish it, what to use. Tactics change with the goal — flip the switch above.</p>
   <div class="species" id="species"></div>
 </section>
@@ -2544,6 +2556,89 @@ async function addLakeAndGo(x){
   }catch(e){$('lkMsg').textContent='Server not reachable.';}
 }
 async function switchHome(id){ try{ await apiFetch('/api/me/lakes/'+id+'/home',{method:'POST'}); location.reload(); }catch(e){} }
+/* ---- AI: day planner + lake guide ---- */
+let AI_ON=false;
+async function checkAi(){ try{ const r=await apiFetch('/api/ai/status'); const d=await r.json(); AI_ON=!!d.configured; }catch(e){} }
+function ymd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+function populateAiSpecies(){
+  const sel=$('aiSpecies'); if(!sel)return;
+  const names=(typeof FISH!=='undefined'?FISH.map(f=>f.n):['Largemouth Bass','Crappie','Catfish','White Bass']);
+  sel.innerHTML=names.map(n=>'<option>'+escHtml(n)+'</option>').join('');
+}
+function condSummary(){
+  if(typeof FORECAST==='undefined'||!FORECAST.length)return null;
+  const d=FORECAST[selDay]||FORECAST[0];
+  let moon=null; try{ const mp=moonPhase(new Date(d.start.valueOf()+12*3600000)); moon={pct:Math.round(mp.frac*100),phase:phaseName(mp.phase)}; }catch(e){}
+  let score=null; try{ score=scoreDay(d); }catch(e){}
+  return { lake:ACTIVE.name, date:ymd(d.start),
+    hi:Math.round(d.hi), lo:Math.round(d.lo),
+    sunrise:(typeof ampm==='function'?ampm(d.sunrise):''), sunset:(typeof ampm==='function'?ampm(d.sunset):''),
+    moon, waterTempF:(typeof waterTemp!=='undefined'?waterTemp:null), score, weather:d };
+}
+async function genAiPlan(force){
+  if(!AUTH.user){ $('aiPlanMsg').textContent='Sign in to use the AI planner.'; return; }
+  const cond=condSummary();
+  if(!cond){ $('aiPlanMsg').textContent='Open Day plan with a live forecast first.'; return; }
+  const species=$('aiSpecies').value||'fish';
+  $('aiPlanMsg').textContent='Thinking…'; $('aiPlanBtn').disabled=true;
+  try{
+    const r=await apiFetch('/api/ai/day-plan',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lakeId:ACTIVE.id,date:cond.date,species:species,conditions:cond,force:!!force})});
+    const d=await r.json();
+    if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
+    else { $('aiPlanMsg').textContent=''; renderAiPlan(d,species); }
+  }catch(e){ $('aiPlanMsg').textContent='Server not reachable.'; }
+  $('aiPlanBtn').disabled=false;
+}
+function renderAiPlan(d,species){
+  const c=d.content||{};
+  const out=d.daysOutAtGen;
+  const fresh=out!=null?(out===0?'for today':(out+' day'+(out===1?'':'s')+' out')):'';
+  let h='<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface-alt)">';
+  h+='<div style="font-weight:800;font-size:15px;margin-bottom:6px">'+escHtml(species)+' — game plan</div>';
+  if(c.summary)h+='<p style="margin:0 0 12px">'+escHtml(c.summary)+'</p>';
+  if(Array.isArray(c.timeline)&&c.timeline.length)
+    h+='<div style="display:grid;gap:9px">'+c.timeline.map(t=>'<div style="display:flex;gap:12px"><div style="min-width:90px;font-weight:700;color:var(--primary-dark)">'+escHtml(t.time||'')+'</div><div style="color:var(--muted)">'+escHtml(t.advice||'')+'</div></div>').join('')+'</div>';
+  if(Array.isArray(c.lures)&&c.lures.length)
+    h+='<div style="margin-top:12px"><b>Throw:</b> '+c.lures.map(escHtml).join(' · ')+'</div>';
+  if(c.notes)h+='<p style="margin:12px 0 0;color:var(--muted);font-size:13px">'+escHtml(c.notes)+'</p>';
+  h+='<div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="snap" style="color:var(--muted)">'+(d.source==='cache'?'Saved plan':'Fresh plan')+' · '+fresh+'</span><button class="btn ghost" id="aiPlanRefresh" style="min-height:30px;padding:0 12px">Refresh as day nears</button></div></div>';
+  $('aiPlanOut').innerHTML=h;
+  const rb=$('aiPlanRefresh'); if(rb)rb.onclick=()=>genAiPlan(true);
+}
+async function drawLakeGuide(){
+  const box=$('aiGuideBox'); if(!box)return;
+  if(!AUTH.user||!ACTIVE.id||ACTIVE.key==='granbury'){ box.innerHTML=''; return; } // Granbury has deep built-in content
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id));
+    if(!r.ok){ box.innerHTML=''; return; }
+    const d=await r.json();
+    if(!d.profile){
+      box.innerHTML='<div style="border:1px dashed var(--border);border-radius:14px;padding:16px;background:var(--surface)"><b>AI lake guide</b><p class="lede" style="margin:6px 0 10px">No guide yet for '+escHtml(ACTIVE.name)+'.</p>'+(AI_ON?'<button class="btn" id="aiGuideGen">Generate AI guide</button>':'<span class="snap" style="color:var(--muted)">AI isn’t configured yet.</span>')+'</div>';
+      const g=$('aiGuideGen'); if(g)g.onclick=genLakeGuide;
+    } else renderLakeGuide(d.profile);
+  }catch(e){ box.innerHTML=''; }
+}
+function renderLakeGuide(p){
+  const c=p.content||{}; const box=$('aiGuideBox');
+  const badge=p.source==='hand_verified'?'Verified guide':'AI guide';
+  let h='<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b>'+escHtml(ACTIVE.name)+' — lake guide</b><span class="snap" style="color:var(--primary-dark);background:var(--accent-soft,#E8F5FC);padding:3px 8px;border-radius:6px;font-size:11px">'+badge+'</span></div>';
+  if(c.summary)h+='<p style="margin:8px 0 0;color:var(--muted)">'+escHtml(c.summary)+'</p>';
+  const sp=Array.isArray(c.species)?c.species.map(s=>escHtml(typeof s==='string'?s:(s&&s.name||''))).filter(Boolean):[];
+  if(sp.length)h+='<div style="margin-top:10px"><b>Species:</b> '+sp.join(' · ')+'</div>';
+  if(c.regsUrl)h+='<div style="margin-top:8px"><a href="'+escHtml(c.regsUrl)+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">Local regulations →</a></div>';
+  if(p.source!=='hand_verified')h+='<div class="snap" style="margin-top:10px;color:var(--muted);font-size:11px">AI starter guide — verify local regs.</div>';
+  h+='</div>'; box.innerHTML=h;
+}
+async function genLakeGuide(){
+  const box=$('aiGuideBox'); box.innerHTML='<span class="snap">Generating guide…</span>';
+  try{ const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/profile/regenerate',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok){ box.innerHTML='<span class="snap">'+(d.needsKey?'AI isn’t configured yet.':(d.error||'Could not generate.'))+'</span>'; return; }
+    if(d.profile)renderLakeGuide(d.profile); else drawLakeGuide();
+  }catch(e){ box.innerHTML='<span class="snap">Server not reachable.</span>'; }
+}
 async function migrateLocalUp(){
   // one-time seed: push local data for keys the server doesn't have yet
   try{
@@ -3337,6 +3432,9 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
+  await checkAi(); populateAiSpecies();
+  const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
+  drawLakeGuide();
   const tp=await stGet(LK('theme'));
   if(tp==='dark'||tp==='light'||tp==='auto')themePref=tp;
   applyTheme();

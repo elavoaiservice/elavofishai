@@ -9,6 +9,7 @@ import { meRoutes } from './routes/me';
 import { authRoutes } from './routes/auth';
 import { kvRoutes } from './routes/kv';
 import { lakeRoutes } from './routes/lakes';
+import { aiRoutes } from './routes/ai';
 import { sweepRateLimits } from './lib/rateLimit';
 import { sweepAuthTokens } from './services/magicLink';
 import { seedGranbury } from './services/seed';
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   await app.register(authRoutes);
   await app.register(kvRoutes);
   await app.register(lakeRoutes);
+  await app.register(aiRoutes);
 
   // The planner app lives at /app; the marketing landing is the front door at /.
   app.get('/app', (_req, reply) => reply.sendFile('index.html'));
