@@ -10,6 +10,9 @@ import { authRoutes } from './routes/auth';
 import { kvRoutes } from './routes/kv';
 import { lakeRoutes } from './routes/lakes';
 import { aiRoutes } from './routes/ai';
+import { adminRoutes } from './routes/admin';
+import { loadOverlay } from './config-store';
+import { bootstrapAdmin } from './lib/admin-auth';
 import { sweepRateLimits } from './lib/rateLimit';
 import { sweepAuthTokens } from './services/magicLink';
 import { seedGranbury } from './services/seed';
@@ -45,10 +48,14 @@ async function main(): Promise<void> {
   await app.register(kvRoutes);
   await app.register(lakeRoutes);
   await app.register(aiRoutes);
+  await app.register(adminRoutes);
 
   // The planner app lives at /app; the marketing landing is the front door at /.
   app.get('/app', (_req, reply) => reply.sendFile('index.html'));
   app.get('/app/', (_req, reply) => reply.sendFile('index.html'));
+  // Admin Command Center.
+  app.get('/admin', (_req, reply) => reply.sendFile('admin.html'));
+  app.get('/admin/', (_req, reply) => reply.sendFile('admin.html'));
 
   // Static assets (icons, manifest, sw, landing) — landing.html is the index at /.
   await app.register(fastifyStatic, {
@@ -69,6 +76,9 @@ async function main(): Promise<void> {
 
   // Seed the flagship lake (idempotent). Best-effort — never blocks startup.
   await seedGranbury().catch((e) => app.log.warn({ err: e }, 'granbury seed skipped'));
+  // Overlay admin-managed config onto process.env, then seed the admin from env.
+  await loadOverlay().catch((e) => app.log.warn({ err: e }, 'config overlay skipped'));
+  await bootstrapAdmin().catch((e) => app.log.warn({ err: e }, 'admin bootstrap skipped'));
 
   // Periodic bounded-table sweeps.
   const hour = 3600000;

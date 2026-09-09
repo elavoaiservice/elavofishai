@@ -46,7 +46,9 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     }
   }
 
-  if (!env.anthropicApiKey) {
+  const apiKey = process.env.ANTHROPIC_API_KEY || "";
+  const model = process.env.AI_PROFILE_MODEL || "claude-opus-4-8";
+  if (!apiKey) {
     // No key yet — hand back the cached plan if we have one, else signal needsKey.
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, needsKey: true, error: 'AI is not configured yet (no API key).' };
@@ -75,9 +77,9 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
 
   let text = '';
   try {
-    const client = new Anthropic({ apiKey: env.anthropicApiKey });
+    const client = new Anthropic({ apiKey });
     const stream = client.messages.stream({
-      model: env.aiProfileModel,
+      model,
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     } as Anthropic.MessageCreateParamsStreaming);
@@ -99,8 +101,8 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
 
   const saved = await prisma.dayPlan.upsert({
     where: { lakeId_date_species: { lakeId, date, species } },
-    create: { lakeId, date, species, content: content as object, daysOutAtGen: out, model: env.aiProfileModel },
-    update: { content: content as object, daysOutAtGen: out, model: env.aiProfileModel, generatedAt: new Date() },
+    create: { lakeId, date, species, content: content as object, daysOutAtGen: out, model },
+    update: { content: content as object, daysOutAtGen: out, model, generatedAt: new Date() },
   });
   return { ok: true, content: saved.content, generatedAt: saved.generatedAt, daysOutAtGen: out, source: 'ai' };
 }

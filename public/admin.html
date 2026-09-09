@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElavoFishAI — Command Center</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--primary:#29ABE2;--primary-hover:#1F96C8;--primary-dark:#1882AE;--ink:#10233F;--muted:#5F708A;--border:#E5E7EB;--bg:#F9FAFB;--surface:#FFFFFF;--sky:#EAF6FF;--bull:#16A34A;--bear:#DC2626}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#111827;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--primary-hover)}
+.wrap{width:min(100% - 32px,1100px);margin:0 auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:13px;border-radius:9px;padding:9px 16px;cursor:pointer;border:1px solid transparent;transition:.15s}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-hover)}
+.btn-ghost{background:#fff;border-color:var(--border);color:#111827}.btn-ghost:hover{background:var(--sky)}
+.btn-sm{padding:6px 11px;font-size:12px;border-radius:8px}
+input,select{font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:#fff;color:#111827;width:100%}
+input:focus,select:focus{outline:none;border-color:var(--primary)}
+label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 8px 22px rgba(16,35,63,.05)}
+.muted{color:var(--muted)}.snap{font-size:12px;color:var(--muted)}
+/* header */
+header.top{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+.top-inner{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:14px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px}
+.brand img{height:34px;width:34px;border-radius:9px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{padding:8px 14px;border-radius:9px;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer;border:1px solid transparent}
+.tab.active{background:var(--sky);color:var(--primary-dark);border-color:var(--border)}
+.tab:hover{color:#111827}
+/* login */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{width:100%;max-width:380px}
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+.metric .n{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.metric .k{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-top:2px}
+.metric .s{font-size:11px;color:var(--muted);margin-top:6px}
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:8px 10px;border-bottom:1px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border)}
+.pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+.pill.active{background:#e7f6ee;color:var(--bull)}.pill.suspended{background:#fdeaea;color:var(--bear)}
+.pill.role{background:var(--sky);color:var(--primary-dark)}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:0 0 14px}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+pre{background:#0B1B33;color:#dbeafe;border-radius:12px;padding:14px;font-size:12px;overflow:auto;max-height:50vh;white-space:pre-wrap}
+.hidden{display:none}
+.msg{font-size:13px;margin-top:8px}.msg.ok{color:var(--bull)}.msg.err{color:var(--bear)}
+.grp{margin-bottom:22px}.grp h3{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 10px}
+.set{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;margin-bottom:12px}
+@media(max-width:640px){.set{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginView">
+  <div class="card login-card">
+    <div class="brand" style="justify-content:center;margin-bottom:6px"><img src="/icon-512.png" alt="">Command Center</div>
+    <p class="snap" style="text-align:center;margin:0 0 18px">ElavoFishAI admin — restricted access.</p>
+    <div id="step1">
+      <div style="margin-bottom:12px"><label for="au">Username</label><input id="au" autocomplete="username"></div>
+      <div style="margin-bottom:16px"><label for="ap">Password</label><input id="ap" type="password" autocomplete="current-password"></div>
+      <button class="btn btn-primary" id="loginBtn" style="width:100%">Continue</button>
+    </div>
+    <div id="step2" class="hidden">
+      <p class="snap" style="margin:0 0 12px">We sent a 6-digit code to your email.</p>
+      <div style="margin-bottom:16px"><label for="ac">Verification code</label><input id="ac" inputmode="numeric" autocomplete="one-time-code" placeholder="123456"></div>
+      <button class="btn btn-primary" id="mfaBtn" style="width:100%">Verify &amp; sign in</button>
+    </div>
+    <p class="msg" id="loginMsg"></p>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashView" class="hidden">
+  <header class="top"><div class="wrap top-inner">
+    <div class="brand"><img src="/icon-512.png" alt="">ElavoFishAI <span class="snap" style="font-weight:500">Command Center</span></div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-t="overview">Overview</div>
+      <div class="tab" data-t="users">Users</div>
+      <div class="tab" data-t="settings">Settings</div>
+      <div class="tab" data-t="upgrade">Upgrade</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="logoutBtn">Sign out</button>
+  </div></header>
+
+  <main class="wrap" style="padding:26px 0 60px">
+    <section id="p-overview">
+      <h1>Overview</h1><p class="muted" style="margin:0 0 20px">Live platform metrics.</p>
+      <div class="metrics" id="metrics"></div>
+    </section>
+
+    <section id="p-users" class="hidden">
+      <h1>Users</h1>
+      <div class="row" style="margin:8px 0 16px"><input id="userSearch" placeholder="Search email or name…" style="max-width:280px"><button class="btn btn-ghost btn-sm" id="userReload">Refresh</button></div>
+      <div class="card" style="padding:6px 10px;overflow:auto"><table id="userTable"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Lakes</th><th>Joined</th><th>Last seen</th><th></th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="p-settings" class="hidden">
+      <h1>Settings</h1><p class="muted" style="margin:0 0 18px">Runtime configuration. Secrets are encrypted at rest and applied live — no restart.</p>
+      <div class="card"><div id="settings"></div>
+        <div class="row" style="margin-top:8px"><button class="btn btn-ghost btn-sm" id="reloadCfg">Reload all</button><span class="msg" id="cfgMsg"></span></div>
+      </div>
+    </section>
+
+    <section id="p-upgrade" class="hidden">
+      <h1>Upgrade</h1><p class="muted" style="margin:0 0 16px">Pull the latest code, rebuild, and restart — from here.</p>
+      <div class="card">
+        <div class="row" style="margin-bottom:14px"><button class="btn btn-primary" id="upgradeBtn">Upgrade now</button><span class="msg" id="upMsg"></span></div>
+        <pre id="upLog">No upgrade has run yet.</pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,opt){ return fetch(path,Object.assign({credentials:'same-origin',headers:{'Content-Type':'application/json'}},opt)); }
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let USERNAME='';
+
+/* ---- auth ---- */
+async function boot(){
+  const r=await api('/api/admin/me'); const d=await r.json();
+  if(d.admin){ showDash(); } else { $('loginView').classList.remove('hidden'); }
+}
+$('loginBtn').onclick=async()=>{
+  USERNAME=$('au').value.trim();
+  $('loginMsg').textContent='';
+  const r=await api('/api/admin/login',{method:'POST',body:JSON.stringify({username:USERNAME,password:$('ap').value})});
+  const d=await r.json();
+  if(!r.ok){ $('loginMsg').className='msg err'; $('loginMsg').textContent=d.error||'Login failed.'; return; }
+  $('step1').classList.add('hidden'); $('step2').classList.remove('hidden');
+  if(d.devCode){ $('ac').value=d.devCode; $('loginMsg').className='msg'; $('loginMsg').textContent='Dev mode: code '+d.devCode+' (email not configured yet).'; }
+};
+$('mfaBtn').onclick=async()=>{
+  const r=await api('/api/admin/mfa',{method:'POST',body:JSON.stringify({username:USERNAME,code:$('ac').value.trim()})});
+  const d=await r.json();
+  if(!r.ok){ $('loginMsg').className='msg err'; $('loginMsg').textContent=d.error||'Bad code.'; return; }
+  location.reload();
+};
+$('logoutBtn').onclick=async()=>{ await api('/api/admin/logout',{method:'POST'}); location.reload(); };
+
+function showDash(){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden'); loadMetrics(); loadUsers(); loadConfig(); loadUpgrade(); }
+
+/* ---- tabs ---- */
+$('tabs').addEventListener('click',e=>{ const t=e.target.closest('.tab'); if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));
+  ['overview','users','settings','upgrade'].forEach(n=>$('p-'+n).classList.toggle('hidden',n!==t.dataset.t));
+});
+
+/* ---- metrics ---- */
+async function loadMetrics(){
+  const r=await api('/api/admin/metrics'); if(!r.ok)return; const m=await r.json();
+  const cards=[
+    ['Users',m.users,m.new7+' new this week'],['Active (7d)',m.active7,m.active30+' in 30d'],
+    ['Lakes',m.lakes,m.userLakes+' saved by users'],['Trip logs',m.tripLogs,''],
+    ['AI profiles',m.profiles,''],['Day plans',m.dayPlans,''],['KV entries',m.kvTotal,''],['Admins',m.admins,'']
+  ];
+  $('metrics').innerHTML=cards.map(c=>'<div class="metric"><div class="n">'+c[1]+'</div><div class="k">'+c[0]+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('');
+}
+
+/* ---- users ---- */
+async function loadUsers(){
+  const q=$('userSearch').value.trim();
+  const r=await api('/api/admin/users'+(q?('?q='+encodeURIComponent(q)):'')); if(!r.ok)return; const d=await r.json();
+  $('userTable').querySelector('tbody').innerHTML=(d.users||[]).map(u=>{
+    const dt=x=>x?new Date(x).toLocaleDateString():'—';
+    return '<tr><td><b>'+esc(u.displayName||'')+'</b><br><span class="snap">'+esc(u.email)+'</span></td>'+
+      '<td><select class="role" data-id="'+u.id+'" style="width:auto;padding:4px 8px;font-size:12px">'+['user','pro','guide','admin'].map(r=>'<option'+(r===u.role?' selected':'')+'>'+r+'</option>').join('')+'</select></td>'+
+      '<td><span class="pill '+u.status+'">'+u.status+'</span></td><td>'+u.lakes+'</td><td>'+dt(u.createdAt)+'</td><td>'+dt(u.lastLoginAt)+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm us" data-id="'+u.id+'" data-s="'+(u.status==='active'?'suspended':'active')+'">'+(u.status==='active'?'Suspend':'Reactivate')+'</button></td></tr>';
+  }).join('')||'<tr><td colspan="7" class="muted">No users.</td></tr>';
+}
+$('userReload').onclick=loadUsers; $('userSearch').addEventListener('keydown',e=>{if(e.key==='Enter')loadUsers();});
+$('userTable').addEventListener('click',async e=>{ const b=e.target.closest('.us'); if(!b)return;
+  await api('/api/admin/users/'+b.dataset.id+'/status',{method:'POST',body:JSON.stringify({status:b.dataset.s})}); loadUsers();
+});
+$('userTable').addEventListener('change',async e=>{ const s=e.target.closest('.role'); if(!s)return;
+  await api('/api/admin/users/'+s.dataset.id+'/role',{method:'POST',body:JSON.stringify({role:s.value})});
+});
+
+/* ---- settings ---- */
+async function loadConfig(){
+  const r=await api('/api/admin/config'); if(!r.ok)return; const d=await r.json();
+  $('settings').innerHTML=d.groups.map(g=>{
+    const items=d.items.filter(i=>i.group===g);
+    return '<div class="grp"><h3>'+esc(g)+'</h3>'+items.map(i=>
+      '<div class="set"><div><label>'+esc(i.label)+(i.set?' <span class="snap" style="color:var(--bull)">· set</span>':'')+'</label>'+
+      '<input data-k="'+i.key+'" '+(i.secret?'type="password"':'')+' placeholder="'+esc(i.placeholder||'')+'" value="'+esc(i.value||'')+'">'+
+      (i.help?'<div class="snap" style="margin-top:4px">'+esc(i.help)+'</div>':'')+'</div>'+
+      '<button class="btn btn-ghost btn-sm save" data-k="'+i.key+'">Save</button>'+
+      (i.test?'<button class="btn btn-ghost btn-sm test" data-k="'+i.key+'">Test</button>':'<span></span>')+'</div>').join('')+'</div>';
+  }).join('');
+}
+$('settings').addEventListener('click',async e=>{
+  const save=e.target.closest('.save'), test=e.target.closest('.test');
+  if(save){ const k=save.dataset.k; const v=$('settings').querySelector('input[data-k="'+k+'"]').value;
+    save.textContent='Saving…'; const r=await api('/api/admin/config',{method:'PUT',body:JSON.stringify({key:k,value:v})});
+    save.textContent=r.ok?'Saved ✓':'Failed'; setTimeout(()=>save.textContent='Save',1400); }
+  if(test){ const k=test.dataset.k; const v=$('settings').querySelector('input[data-k="'+k+'"]').value;
+    test.textContent='Testing…'; const r=await api('/api/admin/config/test',{method:'POST',body:JSON.stringify({key:k,value:v})}); const d=await r.json();
+    $('cfgMsg').className='msg '+(d.ok?'ok':'err'); $('cfgMsg').textContent=(d.ok?'✓ ':'✗ ')+d.message; test.textContent='Test'; }
+});
+$('reloadCfg').onclick=async()=>{ await api('/api/admin/config/reload',{method:'POST'}); $('cfgMsg').className='msg ok'; $('cfgMsg').textContent='Reloaded into the running app.'; loadConfig(); };
+
+/* ---- upgrade ---- */
+async function loadUpgrade(){
+  const r=await api('/api/admin/upgrade/status'); if(!r.ok)return; const d=await r.json();
+  $('upLog').textContent=d.log||'No upgrade has run yet.';
+  $('upgradeBtn').disabled=d.running||!d.configured;
+  if(!d.configured)$('upMsg').innerHTML='<span class="muted">Host upgrade agent not configured on this deployment.</span>';
+}
+$('upgradeBtn').onclick=async()=>{
+  if(!confirm('Pull latest code, rebuild, and restart? The app may be briefly unavailable.'))return;
+  const r=await api('/api/admin/upgrade',{method:'POST'}); const d=await r.json();
+  $('upMsg').className='msg '+(d.ok?'ok':'err'); $('upMsg').textContent=d.ok?'Upgrade started — watch the log.':(d.error||'Could not start.');
+};
+setInterval(()=>{ if(!$('p-upgrade').classList.contains('hidden'))loadUpgrade(); },3000);
+
+boot();
+</script>
+</body>
+</html>

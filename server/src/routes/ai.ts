@@ -8,7 +8,7 @@ import { generateLakeProfile } from '../services/aiProfile';
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   // Is the AI configured? Lets the UI show the right state.
-  app.get('/api/ai/status', async () => ({ configured: !!env.anthropicApiKey }));
+  app.get('/api/ai/status', async () => ({ configured: !!process.env.ANTHROPIC_API_KEY }));
 
   // AI day planner: day + lake + target species -> hour-by-hour plan (cached,
   // regenerates as the day nears).
@@ -36,7 +36,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/lakes/:id/profile/regenerate', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    if (!env.anthropicApiKey) return reply.code(503).send({ error: 'AI is not configured yet.', needsKey: true });
+    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send({ error: 'AI is not configured yet.', needsKey: true });
     const id = String((req.params as { id: string }).id);
     const lake = await prisma.lake.findUnique({ where: { id }, include: { profile: true } });
     if (!lake) return reply.code(404).send({ error: 'Lake not found.' });

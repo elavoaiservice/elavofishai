@@ -7,7 +7,9 @@ import { env } from '../env';
 // overwrites a hand-verified profile (e.g. Granbury). No API key → no-op: the
 // generic engine (timing/weather/water/map) still works without a profile.
 export async function generateLakeProfile(lakeId: string): Promise<void> {
-  if (!env.anthropicApiKey) return;
+  const apiKey = process.env.ANTHROPIC_API_KEY || '';
+  const model = process.env.AI_PROFILE_MODEL || 'claude-opus-4-8';
+  if (!apiKey) return;
   const lake = await prisma.lake.findUnique({ where: { id: lakeId }, include: { profile: true } });
   if (!lake) return;
   if (lake.profile && lake.profile.source === 'hand_verified') return;
@@ -29,10 +31,10 @@ export async function generateLakeProfile(lakeId: string): Promise<void> {
 
   let text = '';
   try {
-    const client = new Anthropic({ apiKey: env.anthropicApiKey });
+    const client = new Anthropic({ apiKey });
     // Streamed to avoid request timeouts on longer generations.
     const stream = client.messages.stream({
-      model: env.aiProfileModel,
+      model,
       max_tokens: 2500,
       messages: [{ role: 'user', content: prompt }],
     } as Anthropic.MessageCreateParamsStreaming);
@@ -50,8 +52,8 @@ export async function generateLakeProfile(lakeId: string): Promise<void> {
 
   await prisma.lakeProfile.upsert({
     where: { lakeId },
-    create: { lakeId, content, source: 'ai', model: env.aiProfileModel },
-    update: { content, source: 'ai', model: env.aiProfileModel, generatedAt: new Date() },
+    create: { lakeId, content, source: 'ai', model },
+    update: { content, source: 'ai', model, generatedAt: new Date() },
   });
 }
 
