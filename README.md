@@ -158,14 +158,25 @@ Same-origin under `/api/*`, all `Cache-Control: no-store`.
   `GET /api/lakes/:id/feed` (friends' shared), `GET/PUT /api/kv/:key`
 - **AI:** `POST /api/ai/day-plan`, `POST /api/ai/identify-catch`,
   `POST /api/lakes/:id/profile/regenerate`, `GET /api/ai/status`
-- **Social:** friends request/accept/decline, groups + membership, direct messages,
-  `GET/PUT /api/me/sharing` (default scope per data type)
+- **Social:** friends request/accept/decline, `POST/DELETE /api/friends/:id/block`,
+  groups + membership, direct messages, `GET/PUT /api/me/sharing`
 - **Admin:** login/MFA, metrics, users, admins, config, upgrade, lakes, health, audit,
   changelog, `GET /api/admin/magic-links`, `POST /api/admin/signin-link`
 - **Ops:** `GET /health`, `GET /health/ready`
 
 External data, all free and keyless: Open-Meteo (weather), USGS Water Services
 (lake level), OSM Nominatim (lake search).
+
+## Blocking
+
+An angler can block another from the Friends tab. A block replaces whatever
+relationship existed and cuts both ways: the pair vanish from each other's lake
+feed, friend lists, profiles, search and messages, existing conversations drop
+out of the thread list (history stays in the database, just out of sight), and
+friend requests between them are refused. Only the person who blocked can lift
+it. Probing responses stay deliberately vague — a blocked profile is "not found"
+and a refused message reads the same in both directions, so a block can't be
+detected by poking at the API.
 
 ## Sharing model
 

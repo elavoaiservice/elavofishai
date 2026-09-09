@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { currentUser, requireUser } from '../lib/auth';
-import { areFriends } from '../lib/social';
+import { areFriends, blockState } from '../lib/social';
 import { MESSAGE_PRIVACY_CHOICES } from '../config-store';
 
 // Max size of a stored avatar data URL (client resizes to a small square first).
@@ -98,6 +98,11 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     if (!u) return reply.code(404).send({ error: 'Angler not found.' });
+    // Either direction of a block hides the profile, and says no more than
+    // "not found" so a block can't be probed for.
+    if ((await blockState(me.id, u.id)) !== 'none') {
+      return reply.code(404).send({ error: 'Angler not found.' });
+    }
     const friends = await areFriends(me.id, u.id);
     const canMessage = me.id !== u.id &&
       (u.messagePrivacy === 'everyone' || (u.messagePrivacy !== 'nobody' && friends));

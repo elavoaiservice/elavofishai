@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
-import { canMessage } from '../lib/social';
+import { blockedUserIds, canMessage } from '../lib/social';
 import { overLimit } from '../lib/rateLimit';
 
 const MAX_BODY = 4000;
@@ -16,7 +16,10 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/messages/unread-count', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
-    const count = await prisma.message.count({ where: { recipientId: me.id, readAt: null } });
+    const blocked = await blockedUserIds(me.id);
+    const count = await prisma.message.count({
+      where: { recipientId: me.id, readAt: null, senderId: { notIn: blocked } },
+    });
     return { count };
   });
 
@@ -38,7 +41,10 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       if (!t) { t = { lastAt: m.createdAt, last: m.body, lastMine: m.senderId === me.id, unread: 0 }; byOther.set(other, t); }
       if (m.recipientId === me.id && !m.readAt) t.unread++;
     }
-    const ids = [...byOther.keys()];
+    // Conversations with a blocked angler (either direction) drop out of the
+    // list entirely — the history stays in the database, just out of sight.
+    const blocked = await blockedUserIds(me.id);
+    const ids = [...byOther.keys()].filter((id) => !blocked.includes(id));
     const users = ids.length
       ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, displayName: true, avatarUrl: true } })
       : [];
@@ -71,6 +77,9 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       select: { id: true, displayName: true, avatarUrl: true, messagePrivacy: true },
     });
     if (!other) return reply.code(404).send({ error: 'Angler not found.' });
+    if ((await blockedUserIds(me.id)).includes(otherId)) {
+      return reply.code(404).send({ error: 'Angler not found.' });
+    }
 
     const rows = await prisma.message.findMany({
       where: {

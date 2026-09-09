@@ -1101,6 +1101,7 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
     <div id="frRequests" style="margin-top:12px"></div>
     <div id="frList" style="margin-top:6px"></div>
+    <div id="frBlocked"></div>
 
     <h3 style="margin-top:24px">Groups</h3>
     <p class="lede" style="margin-top:2px">Group friends so you can share with just one crew.</p>
@@ -2877,7 +2878,11 @@ async function loadFriends(){
 async function refreshFriends(){
   try{ const r=await apiFetch('/api/friends'); const d=await r.json(); FRIENDS=d.friends||[];
     $('frRequests').innerHTML=(d.incoming||[]).map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">wants to be friends</span></span><span><button class="btn btn-sm" data-acc="'+f.friendshipId+'">Accept</button> <button class="btn ghost btn-sm" data-dec="'+f.friendshipId+'">Decline</button></span></div>').join('');
-    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
+    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button> <button class="btn ghost btn-sm" data-block="'+f.id+'" data-blockname="'+escHtml(f.displayName)+'">Block</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
+    // Blocked anglers: hidden from your feed, spots and messages until unblocked.
+    const bl=d.blocked||[];
+    $('frBlocked').innerHTML=bl.length?('<h3 style="margin-top:24px">Blocked</h3><p class="lede" style="margin-top:2px">They can\'t message you, see your shared spots, or send you requests — and you won\'t see theirs.</p>'
+      +bl.map(b=>'<div class="fr-row"><span>'+escHtml(b.displayName)+'</span><button class="btn ghost btn-sm" data-unblock="'+b.id+'">Unblock</button></div>').join('')):'';
   }catch(e){}
 }
 async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)return; $('frMsg').textContent='Sending…';
@@ -2990,6 +2995,13 @@ function wireFriends(){
   $('wsVis').onchange=()=>{$('wsGroup').hidden=$('wsVis').value!=='group';};
   p.addEventListener('click',e=>{
     const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]'),msg=e.target.closest('[data-msg]');
+    const blk=e.target.closest('[data-block]'), unb=e.target.closest('[data-unblock]');
+    if(blk){
+      if(!confirm('Block '+blk.dataset.blockname+'? They will no longer see your shared spots and catches, or be able to message you.'))return;
+      apiFetch('/api/friends/'+blk.dataset.block+'/block',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
+      return;
+    }
+    if(unb){ apiFetch('/api/friends/'+unb.dataset.unblock+'/block',{method:'DELETE'}).then(refreshFriends); return; }
     if(msg){ goToMessages(msg.dataset.msg,msg.dataset.msgname); return; }
     if(acc)apiFetch('/api/friends/'+acc.dataset.acc+'/accept',{method:'POST'}).then(()=>{refreshFriends();refreshGroups();loadFeed();});
     else if(dec)apiFetch('/api/friends/'+dec.dataset.dec+'/decline',{method:'POST'}).then(refreshFriends);

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
+import { blockedUserIds, blockState } from '../lib/social';
 import {
   DATA_TYPES,
   type DataType,
@@ -30,16 +31,19 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
       include: { user: { select: { id: true, displayName: true, email: true } }, friend: { select: { id: true, displayName: true, email: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    const friends: unknown[] = [], incoming: unknown[] = [], outgoing: unknown[] = [];
+    const friends: unknown[] = [], incoming: unknown[] = [], outgoing: unknown[] = [], blocked: unknown[] = [];
     for (const r of rows) {
       const other = r.userId === me.id ? r.friend : r.user;
       if (r.status === 'accepted') friends.push({ friendshipId: r.id, ...other });
       else if (r.status === 'pending') {
         if (r.requestedBy === me.id) outgoing.push({ friendshipId: r.id, ...other });
         else incoming.push({ friendshipId: r.id, ...other });
+      } else if (r.status === 'blocked' && r.requestedBy === me.id) {
+        // Only show the blocks this user made. Being blocked is not announced.
+        blocked.push({ friendshipId: r.id, id: other.id, displayName: other.displayName });
       }
     }
-    return { friends, incoming, outgoing };
+    return { friends, incoming, outgoing, blocked };
   });
 
   app.post('/api/friends/request', async (req, reply) => {
@@ -53,6 +57,14 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const existing = await prisma.friendship.findFirst({
       where: { OR: [{ userId: me.id, friendId: target.id }, { userId: target.id, friendId: me.id }] },
     });
+    if (existing?.status === 'blocked') {
+      // Same message whichever way the block runs — see canMessage().
+      return reply.code(403).send({
+        error: existing.requestedBy === me.id
+          ? 'You have blocked this angler. Unblock them first.'
+          : 'You cannot send this angler a request.',
+      });
+    }
     if (existing) return reply.code(409).send({ error: existing.status === 'accepted' ? 'Already friends.' : 'Request already pending.' });
     await prisma.friendship.create({ data: { userId: me.id, friendId: target.id, requestedBy: me.id, status: 'pending' } });
     return reply.send({ ok: true });
@@ -76,6 +88,53 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!f || (f.friendId !== me.id && f.userId !== me.id)) return reply.code(404).send({ error: 'No such request.' });
     await prisma.friendship.delete({ where: { id } });
     return reply.send({ ok: true });
+  });
+
+  // ---------- blocking ----------
+  // Blocking replaces whatever relationship existed: an accepted friendship or
+  // a pending request becomes a block, and the pair disappears from each
+  // other's feed, friend lists and messages until it is lifted.
+  app.post('/api/friends/:userId/block', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const otherId = String((req.params as { userId: string }).userId);
+    if (otherId === me.id) return reply.code(400).send({ error: "You can't block yourself." });
+    const other = await prisma.user.findUnique({ where: { id: otherId }, select: { id: true } });
+    if (!other) return reply.code(404).send({ error: 'Angler not found.' });
+
+    const existing = await prisma.friendship.findFirst({
+      where: { OR: [{ userId: me.id, friendId: otherId }, { userId: otherId, friendId: me.id }] },
+    });
+    if (existing) {
+      if (existing.status === 'blocked' && existing.requestedBy !== me.id) {
+        // They blocked us first; leave their row alone rather than hijacking it.
+        return reply.send({ ok: true, blocked: true });
+      }
+      await prisma.friendship.update({
+        where: { id: existing.id },
+        data: { status: 'blocked', requestedBy: me.id },
+      });
+    } else {
+      await prisma.friendship.create({
+        data: { userId: me.id, friendId: otherId, status: 'blocked', requestedBy: me.id },
+      });
+    }
+    return reply.send({ ok: true, blocked: true });
+  });
+
+  app.delete('/api/friends/:userId/block', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const otherId = String((req.params as { userId: string }).userId);
+    // Only the person who blocked can lift it.
+    await prisma.friendship.deleteMany({
+      where: {
+        status: 'blocked',
+        requestedBy: me.id,
+        OR: [{ userId: me.id, friendId: otherId }, { userId: otherId, friendId: me.id }],
+      },
+    });
+    return reply.send({ ok: true, blocked: false });
   });
 
   // ---------- groups ----------
@@ -114,6 +173,7 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const g = await prisma.friendGroup.findFirst({ where: { id: groupId, ownerId: me.id } });
     if (!g) return reply.code(404).send({ error: 'No such group.' });
     if (!(await friendIds(me.id)).includes(userId)) return reply.code(400).send({ error: 'You can only add friends.' });
+    if ((await blockState(me.id, userId)) !== 'none') return reply.code(403).send({ error: 'You cannot add this angler.' });
     await prisma.friendGroupMember.upsert({ where: { groupId_memberId: { groupId, memberId: userId } }, create: { groupId, memberId: userId }, update: {} });
     return reply.send({ ok: true });
   });
@@ -246,7 +306,12 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const lakeId = String((req.params as { id: string }).id);
-    const [friends, groups] = await Promise.all([friendIds(me.id), myGroupIds(me.id)]);
+    const [allFriends, groups, blocked] = await Promise.all([
+      friendIds(me.id), myGroupIds(me.id), blockedUserIds(me.id),
+    ]);
+    // friendIds is accepted-only so a block already drops out, but filter
+    // explicitly: a blocked angler's data must never surface here.
+    const friends = allFriends.filter((id) => !blocked.includes(id));
     if (!friends.length) return reply.send({ spots: [], catches: [], waypoints: [] });
     const visClause = { OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, { visibility: 'group' as const, groupId: { in: groups } }] };
     const [spots, catches, waypoints] = await Promise.all([
