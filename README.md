@@ -24,6 +24,7 @@ Stack: TypeScript + Fastify + Prisma + Postgres (Node 22), serving the PWA and
                          catch photo ID, Granbury seed
       src/lib/           sessions, admin auth, crypto, rate limits, sharing rules
       prisma/schema.prisma + migrations/
+      tools/             bake-changelog.js (history baked into the image)
       test/              node:test suites (auth, sharing/visibility, unit)
       Dockerfile, docker-start.sh
     scripts/             test.sh, backup.sh, upgrade-agent.sh + launchd plist
@@ -102,8 +103,17 @@ ever returned to a caller on a private network (127.0.0.0/8, 10/8, 192.168/16,
 
 `/admin` — separate from user magic-link sign-in: username + password + a
 one-time code emailed on login. Covers metrics, user and admin management,
-lakes and profiles, recent activity, audit log, system health, the Settings GUI,
-and upgrade-from-git.
+lakes and profiles, recent activity, audit log, changelog, system health, the
+Settings GUI, and upgrade-from-git.
+
+**Changelog** (`/api/admin/changelog`) is the shipped history of the app, the
+same feature ElavoAI has: every commit behind the running build, classified by
+conventional-commit type (feature / fix / perf / refactor / …), searchable
+across subject, body, scope, sha and changed files, and grouped by day in
+Central Time. Commits pushed but not yet in the running build appear on top
+marked "not deployed". The container has no `.git`, so the history is baked
+into `dist/changelog.json` at image build time (like `build-info.json`) and the
+service falls back to live `git log` when running from a checkout.
 
 **Upgrade from Git** signals a host-side agent rather than touching git or
 Docker itself: the API writes `/deploy/trigger` (compose mounts `./deploy`

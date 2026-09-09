@@ -3,7 +3,7 @@
    then refreshes the cache in the background. Live data (weather, lake
    level, map tiles) goes network-only; the app already degrades honestly
    when those are unreachable. */
-const CACHE = 'elavofishai-v11';
+const CACHE = 'elavofishai-v12';
 // NOTE: the planner (/app, index.html) is intentionally NOT cached — it's an
 // account-gated page and must always hit the server so the auth gate runs. The
 // public marketing/login pages + static assets are safe to cache.

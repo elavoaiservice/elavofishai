@@ -17,7 +17,16 @@ async function audit(by: string, action: string, target?: string, meta?: Record<
   } catch { /* never block on audit */ }
 }
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
-import { versionStatus } from '../version';
+import { buildInfo, incomingCommits, targetVersion, versionStatus } from '../version';
+import {
+  classifyCommits,
+  COMMIT_TYPE_META,
+  groupCommitsByDay,
+  loadHistory,
+  matchesQuery,
+  MAX_SCAN,
+  type RawCommit,
+} from '../services/changelog';
 
 const DEPLOY_DIR = '/deploy';
 const TRIGGER = path.join(DEPLOY_DIR, 'trigger');
@@ -297,6 +306,76 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       ai: !!process.env.ANTHROPIC_API_KEY,
       email: !!process.env.RESEND_API_KEY,
       mode: process.env.NODE_ENV || 'development',
+    };
+  });
+
+  // ---- changelog ----
+  // Every update, fix and change that has shipped, newest first: the commit
+  // history of the running build, classified by conventional-commit type,
+  // searchable and grouped by day. Commits that exist on the branch but aren't
+  // in this build yet are shown on top as "not deployed".
+  const DEFAULT_LIMIT = 50;
+  const MAX_LIMIT = 200;
+
+  app.get('/api/admin/changelog', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const q = String((req.query as { q?: string }).q || '').trim();
+    const offset = Math.max(0, Number((req.query as { offset?: string }).offset || 0) || 0);
+    const limit = Math.min(
+      MAX_LIMIT,
+      Math.max(1, Number((req.query as { limit?: string }).limit || DEFAULT_LIMIT) || DEFAULT_LIMIT)
+    );
+
+    let history;
+    try {
+      history = await loadHistory(!!q);
+    } catch (e) {
+      req.log.error({ err: e }, 'changelog history unavailable');
+      return reply.code(503).send({ error: 'No commit history available in this build.' });
+    }
+
+    const build = buildInfo();
+    // Everything in the baked history is, by definition, what is running — so
+    // it all went live when this image was built.
+    const shaToDeployedAt = new Map<string, string>();
+    if (build.builtAt) for (const c of history.commits) shaToDeployedAt.set(c.sha, build.builtAt);
+
+    // Commits pushed since this image was built: real rows, marked pending.
+    let pending: RawCommit[] = [];
+    try {
+      const target = await targetVersion();
+      if (build.commit && target.commit && build.commit !== target.commit) {
+        const incoming = await incomingCommits(build.commit, target.commit);
+        pending = incoming.map((c) => ({
+          sha: c.fullSha || c.sha,
+          authoredAt: c.committedAt || new Date().toISOString(),
+          committedAt: c.committedAt || new Date().toISOString(),
+          subject: c.subject,
+          body: c.body || '',
+          files: [],
+        }));
+      }
+    } catch {
+      /* GitHub unreachable — the deployed history still renders */
+    }
+
+    const classified = classifyCommits([...pending, ...history.commits], shaToDeployedAt);
+    const filtered = q ? classified.filter((c) => matchesQuery(c, q)) : classified;
+    const page = filtered.slice(offset, offset + limit);
+
+    return {
+      total: filtered.length,
+      offset,
+      limit,
+      hasMore: offset + limit < filtered.length,
+      scanned: history.commits.length,
+      scanCapped: history.commits.length >= MAX_SCAN,
+      source: history.source,
+      pendingCount: pending.length,
+      latestDeploy: build.builtAt ? { deployedAt: build.builtAt, toSha: build.commitShort || '' } : null,
+      types: COMMIT_TYPE_META,
+      groups: groupCommitsByDay(page),
     };
   });
 

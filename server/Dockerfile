@@ -10,6 +10,9 @@ RUN npx prisma generate && npm run build
 # Stamp the built image with the git commit it came from → dist/build-info.json
 # (read at runtime as the "current version"). .git is in the build context.
 COPY .git /app/.git
+# Bake the commit history too — the admin Changelog tab reads this in the
+# container, where there is no .git to run `git log` against.
+RUN node tools/bake-changelog.js /app/.git ./dist/changelog.json
 RUN node -e "const cp=require('child_process'),fs=require('fs');const g=a=>cp.execSync(\"git -c safe.directory='*' --git-dir=/app/.git \"+a).toString().trim();let i={};try{i={commit:g('rev-parse HEAD'),commitShort:g('rev-parse --short HEAD'),subject:g('log -1 --pretty=%s'),committedAt:g('log -1 --pretty=%cI'),branch:g('rev-parse --abbrev-ref HEAD')};}catch(e){}try{i.version=require('./package.json').version;}catch(e){}i.builtAt=new Date().toISOString();fs.writeFileSync('./dist/build-info.json',JSON.stringify(i));console.log('build-info:',JSON.stringify(i));"
 
 FROM node:22-slim AS runtime

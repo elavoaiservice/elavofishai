@@ -243,6 +243,13 @@ Five items taken off the list before any wider exposure:
 5. **Tests**: `node:test` suites over sign-in/session lifecycle and the whole
    visibility scale, run against a throwaway Postgres by `scripts/test.sh`.
 
+**Changelog tab (2026-09-09).** Ported from ElavoAI: `/api/admin/changelog` +
+an admin tab showing every update/fix/change behind the running build —
+conventional-commit classification, search (subject/body/scope/sha/files),
+day-grouped in Central Time, with "not deployed" rows for commits that are
+pushed but not yet live. History is baked into the image at build time since
+the container has no `.git`.
+
 ## Open items for later
 - AI model for profiles: Opus (default) vs Sonnet (cheaper at bulk).
 - Public exposure (Cloudflare Tunnel) vs LAN-only — LAN-only to start, like AlphaGasIQ.

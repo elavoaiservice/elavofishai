@@ -56,6 +56,20 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:8px 10px;border-bottom:1px solid var(--border)}
 td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
 .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+/* changelog */
+.cl-day{font-size:13px;font-weight:700;color:var(--muted);margin:18px 0 8px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}
+.cl-day:first-child{margin-top:0}
+.cl-row{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;gap:14px;justify-content:space-between;align-items:flex-start}
+.cl-main{min-width:0;flex:1}
+.cl-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cl-sum{margin-top:6px;font-size:14px;color:#111827;overflow-wrap:anywhere}
+.cl-side{flex-shrink:0;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.cl-sha{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#c3ccd8}
+.cl-more{background:none;border:none;padding:0;margin-top:6px;font-size:11px;font-weight:600;color:var(--primary);cursor:pointer}
+.cl-body{margin-top:8px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.55;color:var(--muted)}
+.t-feat{background:#e7f6ee;color:#127a4b}.t-fix{background:#fdeaea;color:#b3261e}.t-perf{background:#fff4e5;color:#b7791f}
+.t-refactor{background:#e8f4fd;color:#1F96C8}.t-docs{background:#f0ebfd;color:#6d4bd8}.t-test{background:#e6f6f5;color:#0f766e}
+.t-build,.t-ci,.t-chore,.t-style,.t-other,.t-revert{background:#eef1f5;color:#5f708a}
 .pill.active{background:#e7f6ee;color:var(--bull)}.pill.suspended{background:#fdeaea;color:var(--bear)}
 .pill.ok{background:#e7f6ee;color:var(--bull)}.pill.down{background:#fdeaea;color:var(--bear)}
 .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
@@ -113,6 +127,10 @@ async function api(path,opt){
   if(opt.body!=null && !headers['Content-Type']) headers['Content-Type']='application/json';
   return fetch(path,Object.assign({credentials:'same-origin'},opt,{headers}));
 }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-clbody]'); if(!b)return;
+  const el=document.getElementById('clb-'+b.dataset.clbody); if(!el)return;
+  el.classList.toggle('hidden'); b.textContent=el.classList.contains('hidden')?'Details':'Hide details';
+});
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function ago(x){ if(!x)return '—'; const s=(Date.now()-new Date(x))/1000; if(s<60)return 'just now'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
 function dt(x){ return x?new Date(x).toLocaleDateString():'—'; }
@@ -139,10 +157,10 @@ const NAV=[
   {h:'Content',items:[['lakes','🗺️ Lakes']]},
   {h:'Growth',items:[['analytics','📈 Analytics']]},
   {h:'Security',items:[['admins','🛡️ Admins'],['audit','📜 Audit log']]},
-  {h:'Operations',items:[['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
+  {h:'Operations',items:[['changelog','🧾 Changelog'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
   {h:'Settings',items:[['environment','⚙️ Environment']]},
 ];
-const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],analytics:['Analytics','Growth and engagement.'],admins:['Admins','Manage Command Center accounts.'],audit:['Audit log','Every admin action.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
+const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],analytics:['Analytics','Growth and engagement.'],admins:['Admins','Manage Command Center accounts.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
 function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden'); $('whoami').textContent='Signed in as '+admin.username;
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
   $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
@@ -151,10 +169,85 @@ function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').
 function go(tab){
   document.querySelectorAll('.nav-i[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $('pageTitle').textContent=(TITLES[tab]||[tab])[0]; $('pageSub').textContent=(TITLES[tab]||['',''])[1];
-  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,analytics:tAnalytics,admins:tAdmins,audit:tAudit,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
+  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,analytics:tAnalytics,admins:tAdmins,audit:tAudit,changelog:tChangelog,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
 }
 
 /* ---- panels ---- */
+/* Changelog — the shipped history of the app: every commit behind the running
+   build, classified, searchable and grouped by day (Central Time). Commits
+   pushed but not yet deployed appear on top marked "Not deployed". */
+const CL={q:'',offset:0,limit:50,groups:[],meta:null,timer:null,req:0};
+const CL_TYPE={feat:['Feature','✨'],fix:['Fix','🐛'],perf:['Perf','⚡'],refactor:['Refactor','♻️'],docs:['Docs','📝'],test:['Tests','🧪'],build:['Build','📦'],ci:['CI','🔧'],style:['Style','💅'],chore:['Chore','🧹'],revert:['Revert','⏪'],other:['Other','•']};
+function clTime(iso){ try{ return new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'numeric',minute:'2-digit'}).format(new Date(iso))+' CT'; }catch(e){ return ''; } }
+function clDateTime(iso){ try{ return new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(iso))+' CT'; }catch(e){ return ''; } }
+async function tChangelog(){
+  $('content').innerHTML=
+    '<div class="row" style="margin:0 0 6px;align-items:center">'
+    + '<input id="clQ" placeholder="Search updates — feature, fix, scope, file, sha…" style="max-width:420px" value="'+esc(CL.q)+'">'
+    + '<button class="btn btn-ghost btn-sm" id="clReload">Refresh</button>'
+    + '</div>'
+    + '<div class="snap" id="clMeta" style="margin-bottom:12px"></div>'
+    + '<div id="clFeed"><p class="muted">Loading…</p></div>'
+    + '<div style="text-align:center;margin-top:14px"><button class="btn btn-ghost btn-sm hidden" id="clMore">Load more</button></div>';
+  $('clReload').onclick=()=>clLoad(CL.q,0);
+  // Debounced search — a keystroke shouldn't fire a request.
+  $('clQ').addEventListener('input',e=>{ clearTimeout(CL.timer); const v=e.target.value.trim(); CL.timer=setTimeout(()=>clLoad(v,0),300); });
+  $('clMore').onclick=()=>clLoad(CL.q,CL.groups.reduce((n,g)=>n+g.commits.length,0));
+  clLoad(CL.q,0);
+}
+async function clLoad(q,offset){
+  const mine=++CL.req;
+  CL.q=q;
+  if(!offset) $('clFeed').innerHTML='<p class="muted">Loading…</p>';
+  try{
+    const r=await api('/api/admin/changelog?q='+encodeURIComponent(q)+'&offset='+offset+'&limit='+CL.limit);
+    const d=await r.json();
+    if(mine!==CL.req) return;               // a newer request won
+    if(!r.ok){ $('clFeed').innerHTML='<p class="msg err">'+esc(d.error||'Could not load the changelog.')+'</p>'; return; }
+    CL.meta=d;
+    if(offset===0) CL.groups=d.groups||[];
+    else {
+      // Merge a day split across pages so it stays one block.
+      (d.groups||[]).forEach(g=>{ const last=CL.groups[CL.groups.length-1];
+        if(last&&last.date===g.date) last.commits=last.commits.concat(g.commits); else CL.groups.push(g); });
+    }
+    clRender();
+  }catch(e){ if(mine===CL.req) $('clFeed').innerHTML='<p class="msg err">Server not reachable.</p>'; }
+}
+function clRender(){
+  const d=CL.meta||{};
+  let meta=CL.q?('<b>'+d.total+'</b> match'+(d.total===1?'':'es')+' for “'+esc(CL.q)+'”'):('<b>'+d.total+'</b> update'+(d.total===1?'':'s'));
+  if(d.latestDeploy) meta+=' &nbsp;·&nbsp; 🚀 Live build shipped '+clDateTime(d.latestDeploy.deployedAt);
+  if(d.pendingCount) meta+=' &nbsp;·&nbsp; <span style="color:#b7791f">⏱ '+d.pendingCount+' commit'+(d.pendingCount===1?'':'s')+' not deployed — see Upgrade</span>';
+  if(d.scanCapped) meta+=' &nbsp;·&nbsp; showing the most recent '+d.scanned+' commits';
+  $('clMeta').innerHTML=meta;
+
+  if(!CL.groups.length){ $('clFeed').innerHTML='<p class="muted">'+(CL.q?'No updates match “'+esc(CL.q)+'”.':'No history available in this build.')+'</p>'; }
+  else $('clFeed').innerHTML=CL.groups.map(g=>
+    '<div class="cl-day">'+esc(g.label)+'</div>'+g.commits.map(clRow).join('')
+  ).join('');
+
+  const shown=CL.groups.reduce((n,g)=>n+g.commits.length,0);
+  $('clMore').classList.toggle('hidden',!d.hasMore);
+  $('clMore').textContent='Load more ('+(d.total-shown)+' older)';
+}
+function clRow(c){
+  const t=CL_TYPE[c.type]||CL_TYPE.other;
+  const tags='<span class="pill t-'+esc(c.type)+'">'+t[1]+' '+t[0]+'</span>'
+    + (c.scope?'<span class="pill" style="background:#eef1f5;color:#5f708a">'+esc(c.scope)+'</span>':'')
+    + (c.breaking?'<span class="pill" style="background:#fdeaea;color:#b3261e">BREAKING</span>':'');
+  const when = c.deployPending
+    ? '<span class="pill" style="background:#fff4e5;color:#b7791f" title="Committed but not in the running build">⏱ Not deployed</span>'
+    : c.deployedAt
+      ? '<span class="snap" style="color:var(--bull)" title="Went live with this build">🚀 '+clTime(c.deployedAt)+'</span>'
+      : '<span class="snap" title="Commit time">'+clTime(c.committedAt)+'</span>';
+  const body=(c.body||'').trim();
+  return '<div class="cl-row"><div class="cl-main"><div class="cl-tags">'+tags+'</div>'
+    + '<div class="cl-sum">'+esc(c.summary)+'</div>'
+    + (body?'<button class="cl-more" data-clbody="'+esc(c.sha)+'">Details</button><div class="cl-body hidden" id="clb-'+esc(c.sha)+'">'+esc(body)+'</div>':'')
+    + '</div><div class="cl-side">'+when+'<span class="cl-sha">'+esc(c.shortSha)+'</span></div></div>';
+}
+
 async function tDashboard(){ const m=await (await api('/api/admin/metrics')).json();
   const cards=[['Users',m.users,m.new7+' new this week'],['Active (7d)',m.active7,m.active30+' in 30d'],['Lakes',m.lakes,m.userLakes+' saved'],['Trip logs',m.tripLogs,''],['AI profiles',m.profiles,''],['Day plans',m.dayPlans,''],['KV entries',m.kvTotal,''],['Admins',m.admins,'']];
   $('content').innerHTML='<div class="metrics">'+cards.map(c=>'<div class="metric"><div class="n">'+c[1]+'</div><div class="k">'+c[0]+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('')+'</div>';

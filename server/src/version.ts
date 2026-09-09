@@ -86,9 +86,19 @@ function ghHeaders(): Record<string, string> {
   return h;
 }
 
+export interface IncomingCommit {
+  sha: string; // short
+  subject: string;
+  /** Full sha, ISO commit time and message body — used by the changelog feed,
+   *  which shows these as "not deployed" rows. */
+  fullSha?: string;
+  committedAt?: string;
+  body?: string;
+}
+
 // The commits on the branch that the running build doesn't have yet (base..head),
 // newest first — this is the "Incoming" list shown before an upgrade.
-export async function incomingCommits(baseSha: string, headSha: string): Promise<{ sha: string; subject: string }[]> {
+export async function incomingCommits(baseSha: string, headSha: string): Promise<IncomingCommit[]> {
   if (!baseSha || !headSha || baseSha === headSha) return [];
   try {
     const r = await fetch(`https://api.github.com/repos/${REPO}/compare/${baseSha}...${headSha}`, {
@@ -96,9 +106,21 @@ export async function incomingCommits(baseSha: string, headSha: string): Promise
       signal: AbortSignal.timeout(6000),
     });
     if (!r.ok) return [];
-    const j = (await r.json()) as { commits?: { sha?: string; commit?: { message?: string } }[] };
+    const j = (await r.json()) as {
+      commits?: { sha?: string; commit?: { message?: string; committer?: { date?: string } } }[];
+    };
     return (j.commits || [])
-      .map((c) => ({ sha: (c.sha || '').slice(0, 7), subject: (c.commit?.message || '').split('\n')[0] }))
+      .map((c) => {
+        const message = c.commit?.message || '';
+        const nl = message.indexOf('\n');
+        return {
+          sha: (c.sha || '').slice(0, 7),
+          fullSha: c.sha || '',
+          subject: nl === -1 ? message : message.slice(0, nl),
+          body: nl === -1 ? '' : message.slice(nl + 1).trim(),
+          committedAt: c.commit?.committer?.date,
+        };
+      })
       .reverse(); // newest first
   } catch {
     return [];
@@ -111,7 +133,7 @@ export interface VersionStatus {
   current: BuildInfo;
   target: TargetInfo;
   upToDate: boolean;
-  incoming: { sha: string; subject: string }[];
+  incoming: IncomingCommit[];
 }
 
 export async function versionStatus(): Promise<VersionStatus> {
