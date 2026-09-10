@@ -19,6 +19,7 @@ async function audit(by: string, action: string, target?: string, meta?: Record<
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
 import { buildInfo, incomingCommits, targetVersion, versionStatus } from '../version';
 import { emailStatus } from '../services/email';
+import { rateFor } from '../services/aiUsage';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
 import {
@@ -303,6 +304,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       // record belongs on the health page.
       emailHealth: emailStatus(),
       clientErrors24h: await prisma.clientError.count({ where: { createdAt: { gt: new Date(Date.now() - 86400000) } } }).catch(() => 0),
+      aiCost30d: (await prisma.aiUsage.aggregate({ where: { createdAt: { gte: new Date(Date.now() - 30 * 86400000) } }, _sum: { costUsd: true } }).catch(() => null))?._sum.costUsd || 0,
       magicLinkDev: env.devShowMagicLink,
       uptimeSec: Math.round(process.uptime()),
       hostUptimeSec: Math.round(os.uptime()),
@@ -315,6 +317,79 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       ai: !!process.env.ANTHROPIC_API_KEY,
       email: !!process.env.RESEND_API_KEY,
       mode: process.env.NODE_ENV || 'development',
+    };
+  });
+
+  // ---- AI usage + cost ----
+  // What the model calls actually cost, by day and by feature. Cost is stored
+  // per call at the price in force then, so these totals never drift when
+  // pricing changes.
+  app.get('/api/admin/ai-usage', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const days = Math.min(90, Math.max(1, Number((req.query as { days?: string }).days || 30) || 30));
+    const since = new Date(Date.now() - days * 86400000);
+
+    const [byFeature, byModel, byDay, totals, recent] = await Promise.all([
+      prisma.aiUsage.groupBy({
+        by: ['feature'],
+        where: { createdAt: { gte: since } },
+        _sum: { costUsd: true, inputTokens: true, outputTokens: true, cacheReadTokens: true },
+        _count: { _all: true },
+      }),
+      prisma.aiUsage.groupBy({
+        by: ['model'],
+        where: { createdAt: { gte: since } },
+        _sum: { costUsd: true, inputTokens: true, outputTokens: true },
+        _count: { _all: true },
+      }),
+      prisma.$queryRaw<{ day: Date; cost: number; calls: bigint }[]>`
+        SELECT date_trunc('day', "createdAt") AS day,
+               SUM("costUsd")::float8 AS cost,
+               COUNT(*) AS calls
+        FROM "AiUsage" WHERE "createdAt" >= ${since}
+        GROUP BY 1 ORDER BY 1 DESC LIMIT 30`,
+      prisma.aiUsage.aggregate({
+        where: { createdAt: { gte: since } },
+        _sum: { costUsd: true, inputTokens: true, outputTokens: true, cacheReadTokens: true },
+        _count: { _all: true },
+        _avg: { ms: true },
+      }),
+      prisma.aiUsage.findMany({
+        where: { createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        select: { feature: true, model: true, inputTokens: true, outputTokens: true, costUsd: true, ms: true, ok: true, createdAt: true },
+      }),
+    ]);
+
+    // Flag any model we have no price for, so a 0 never reads as "free".
+    const unpriced = [...new Set(byModel.map((m) => m.model))].filter((m) => !rateFor(m));
+    const failures = await prisma.aiUsage.count({ where: { createdAt: { gte: since }, ok: false } });
+
+    return {
+      days,
+      totals: {
+        calls: totals._count._all,
+        costUsd: totals._sum.costUsd || 0,
+        inputTokens: totals._sum.inputTokens || 0,
+        outputTokens: totals._sum.outputTokens || 0,
+        cacheReadTokens: totals._sum.cacheReadTokens || 0,
+        avgMs: Math.round(totals._avg.ms || 0),
+        failures,
+      },
+      byFeature: byFeature.map((f) => ({
+        feature: f.feature, calls: f._count._all, costUsd: f._sum.costUsd || 0,
+        inputTokens: f._sum.inputTokens || 0, outputTokens: f._sum.outputTokens || 0,
+      })).sort((a, b) => b.costUsd - a.costUsd),
+      byModel: byModel.map((m) => ({
+        model: m.model, calls: m._count._all, costUsd: m._sum.costUsd || 0,
+        inputTokens: m._sum.inputTokens || 0, outputTokens: m._sum.outputTokens || 0,
+        priced: !!rateFor(m.model),
+      })).sort((a, b) => b.costUsd - a.costUsd),
+      byDay: byDay.map((d) => ({ day: d.day, cost: Number(d.cost) || 0, calls: Number(d.calls) })),
+      unpriced,
+      recent,
     };
   });
 

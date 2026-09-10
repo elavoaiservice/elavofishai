@@ -401,6 +401,28 @@ model ClientError {
   @@index([createdAt])
 }
 
+// Every model call, with what it cost. Without this, AI spend is invisible
+// until the bill arrives — and there is no way to tell which feature is
+// expensive. Cost is computed at call time from the rate table, so a later
+// price change never rewrites history.
+model AiUsage {
+  id           String   @id @default(cuid())
+  feature      String // day_plan | lake_profile | identify_catch
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  cacheReadTokens Int   @default(0)
+  costUsd      Float    @default(0)
+  userId       String? // who triggered it, when known
+  lakeId       String?
+  ok           Boolean  @default(true)
+  ms           Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([feature, createdAt])
+}
+
 // ---- P3 admin / community ----
 
 model AuditLog {

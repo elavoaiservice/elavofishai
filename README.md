@@ -303,6 +303,17 @@ typo in the nav model ships silently and blanks the page for everyone. The app
 stamps `data-js-error` on `<html>` from its own error handler, which is what the
 smoke test reads. It skips cleanly when no Chrome is installed.
 
+## AI usage and cost
+
+Every model call is recorded with its token counts and what it cost, priced at
+call time from the rate table in `server/src/services/aiUsage.ts` — storing the
+dollar figure rather than recomputing it means a later price change can't
+rewrite last month's numbers. Admin → **AI usage & cost** breaks it down by
+feature (day plans / lake guides / catch photos), by model, and by day, with a
+7/30/90-day window and the most recent calls; System health carries the 30-day
+total. A model with no rate on file is shown as *unpriced* rather than free, so
+a zero is never mistaken for cheap.
+
 ## Client errors
 
 The app reports its own JavaScript failures to `POST /api/client-error`

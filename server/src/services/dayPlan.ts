@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../db';
+import { recordUsage } from './aiUsage';
 import { env } from '../env';
 
 export interface DayPlanRequest {
@@ -8,6 +9,7 @@ export interface DayPlanRequest {
   species: string;
   conditions?: unknown; // client-computed: weather, solunar windows, moon, water temp, best hours
   force?: boolean;
+  userId?: string; // who asked — for usage accounting
 }
 
 export interface DayPlanResult {
@@ -82,6 +84,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     `If conditions look tough, say so honestly. Do not invent regulations.`;
 
   let text = '';
+  const startedAt = Date.now();
   try {
     // A hung call must fail rather than hold the HTTP request open forever.
     const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
@@ -95,6 +98,14 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
       .join('');
+    await recordUsage({
+      feature: 'day_plan', model,
+      inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens,
+      // Prompt caching isn't in this SDK version's Usage type yet, but the API
+      // sends it — read it defensively rather than dropping the cheapest tokens.
+      cacheReadTokens: (msg.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
+      userId: req.userId ?? null, lakeId, ms: Date.now() - startedAt,
+    });
     if (msg.stop_reason === 'max_tokens') {
       // eslint-disable-next-line no-console
       console.error(`[dayplan] ${model} hit the token ceiling for ${species} — JSON will be truncated`);
@@ -104,6 +115,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     // logs: the request 400'd and nothing said why.
     // eslint-disable-next-line no-console
     console.error(`[dayplan] ${model} call failed:`, (e as Error).message);
+    await recordUsage({ feature: 'day_plan', model, userId: req.userId ?? null, lakeId, ok: false, ms: Date.now() - startedAt });
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
   }

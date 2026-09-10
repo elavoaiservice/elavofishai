@@ -48,6 +48,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       species: String(b.species || ''),
       conditions: b.conditions,
       force: !!b.force,
+      userId: user.id,
     });
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);

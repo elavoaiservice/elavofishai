@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { recordUsage } from './aiUsage';
 
 // Claude-vision fish identification. Takes a catch photo (base64 data URL) and
 // returns a best-effort species + size estimate the angler can then edit.
@@ -43,8 +44,10 @@ export async function identifyCatch(dataUrl: string, hint?: { lake?: string }): 
   let text = '';
   try {
     const client = new Anthropic({ apiKey });
+    const startedAt = Date.now();
+    const model = process.env.AI_VISION_MODEL || process.env.AI_PROFILE_MODEL || 'claude-opus-4-8';
     const msg = await client.messages.create({
-      model: process.env.AI_PROFILE_MODEL || 'claude-opus-4-8',
+      model,
       max_tokens: 400,
       messages: [
         {
@@ -61,6 +64,14 @@ export async function identifyCatch(dataUrl: string, hint?: { lake?: string }): 
       .map((b) => b.text)
       .join('')
       .trim();
+    await recordUsage({
+      feature: 'identify_catch', model,
+      inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens,
+      // Prompt caching isn't in this SDK version's Usage type yet, but the API
+      // sends it — read it defensively rather than dropping the cheapest tokens.
+      cacheReadTokens: (msg.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
+      ms: Date.now() - startedAt,
+    });
   } catch {
     return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
   }
