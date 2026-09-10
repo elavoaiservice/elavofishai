@@ -413,6 +413,21 @@ Measured cost of one real day plan (1,780 in / 791 out) and one lake guide
 | gpt-5-mini | $0.0020 | $0.0046 | $2.03 |
 | gpt-4o-mini | $0.0007 | $0.0014 | $0.70 |
 
+## Dam releases and generation
+
+On a regulated lake, moving water beats almost everything else — fish set up on
+current, and the bite turns on and off with the gates. USACE publishes this
+through the CWMS Data API (free, keyless): the nearest Corps project to a lake
+is found once and cached, then its hourly outflow is read — turbine flow where
+there's hydropower, total gated flow otherwise. The day planner gets a plain
+summary ("water is moving now: 5,100 cfs… released in 9 of the last 24 hours —
+an on-and-off pattern") and is told to work it into the timeline.
+
+Not every lake is a Corps lake: Granbury is Brazos River Authority, and BRA is a
+different publisher. A lake with no Corps project within 25 miles gets nothing
+here rather than a wrong number, and the empty result is cached so we don't
+search every district again.
+
 ## Fishing reports
 
 Reports feed the day planner, weighted above the model's own knowledge when

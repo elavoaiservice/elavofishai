@@ -182,6 +182,8 @@ model Lake {
   bbox        String? // JSON [w,s,e,n]
   rampsJson   String? @db.Text // cached OSM boat ramps for this lake
   rampsAt     DateTime? // when that cache was filled
+  corpsProject String? // "SWF:WTYT2" — nearest USACE project, "" = none nearby
+  corpsAt      DateTime?
   osmRef      String?     @unique // e.g. "way/12345678"
   addedById   String?
   addedBy     User?       @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)

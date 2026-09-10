@@ -12,6 +12,7 @@
 import { prisma } from '../db';
 import { generateLakeProfile } from './aiProfile';
 import { rampsForLake } from './ramps';
+import { releaseFor } from './corps';
 
 /**
  * Nearest USGS monitoring location that reports water level.
@@ -97,6 +98,7 @@ export async function findGauge(lat: number, lon: number, radiusDeg = 0.3): Prom
 export interface EnrichResult {
   gauge?: string | null;
   ramps?: number;
+  corps?: string | null;
   profile?: boolean;
   errors: string[];
 }
@@ -136,7 +138,17 @@ export async function enrichLake(lakeId: string): Promise<EnrichResult> {
     result.errors.push(`ramps: ${(e as Error).message}`);
   }
 
-  // 3. The written guide — species, seasons, patterns, regulations link.
+  // 3. Dam releases, if this is a Corps project. The lookup is heavy (a
+  //    district's location list is ~800KB) so it caches on the lake row and
+  //    an empty result means "looked, nothing near" rather than "not tried".
+  try {
+    const rel = await releaseFor(lake.id);
+    result.corps = rel ? `${rel.office}:${rel.project}` : null;
+  } catch (e) {
+    result.errors.push(`corps: ${(e as Error).message}`);
+  }
+
+  // 4. The written guide — species, seasons, patterns, regulations link.
   try {
     await generateLakeProfile(lake.id);
     const p = await prisma.lakeProfile.findUnique({ where: { lakeId: lake.id }, select: { id: true } });

@@ -1,5 +1,6 @@
 import { complete } from './llm';
 import { recentReports, reportsForPrompt } from './reports';
+import { releaseFor, summarizeRelease } from './corps';
 import { prisma } from '../db';
 import { env } from '../env';
 
@@ -119,12 +120,23 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   // it, dated and attributed.
   const reports = reportsForPrompt(await recentReports(lakeId).catch(() => []));
 
+  // On a regulated lake, moving water beats almost everything else — fish set
+  // up on current. Empty for lakes with no Corps project nearby.
+  const release = await releaseFor(lakeId).catch(() => null);
+  const releaseLine = release ? summarizeRelease(release) : '';
+
   const prompt =
     `You are a veteran fishing guide building an hour-by-hour game plan.\n` +
     `Lake: ${where} (${lake.lat.toFixed(4)}, ${lake.lon.toFixed(4)}). Date: ${date} (${out} days out).\n` +
     `Target: ${target}\n${goalLine}\n${platform}\n${hours}\n${launch}\n` +
     `Lake profile (JSON, may be empty): ${profileText}\n` +
     `Conditions for the day (JSON: weather/solunar/moon/water temp/best hours, may be sparse): ${condText}\n\n` +
+    (releaseLine
+      ? `Dam release / hydropower generation (USACE, last 24h): ${releaseLine}\n` +
+        `On a regulated lake this drives where fish are: current pulls bait, and the bite often turns on and ` +
+        `off with the water. Work it into the timeline, and say plainly in "notes" if the generation pattern ` +
+        `matters more than the weather that day.\n\n`
+      : '') +
     (reports
       ? `Recent reports about THIS lake — dated, newest first. An angler report is someone who was actually ` +
         `there; an agency report is official. Weigh these ABOVE your own general knowledge, and above ` +
