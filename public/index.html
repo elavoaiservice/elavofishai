@@ -2983,14 +2983,19 @@ async function checkPhotos(){
   try{ const r=await apiFetch('/api/photos/status'); if(r.ok)PHOTOS_ON=!!(await r.json()).configured; }catch(e){}
 }
 async function uploadPendingPhoto(){
-  if(!PHOTOS_ON||!pendingCatchPhoto||pendingPhotoId)return pendingPhotoId;
+  // No storage configured, no photo, or already uploaded: nothing to do, and
+  // that is not a failure.
+  if(!PHOTOS_ON||!pendingCatchPhoto||pendingPhotoId)return {id:pendingPhotoId,ok:true};
   try{
     const r=await apiFetch('/api/photos',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({image:pendingCatchPhoto,lakeId:ACTIVE.id})});
-    if(!r.ok)return null;
+    if(!r.ok){
+      const d=await r.json().catch(()=>({}));
+      return {id:null,ok:false,error:d.error||'Could not upload that photo.'};
+    }
     pendingPhotoId=((await r.json()).photo||{}).id||null;
-    return pendingPhotoId;
-  }catch(e){ return null; }
+    return {id:pendingPhotoId,ok:true};
+  }catch(e){ return {id:null,ok:false,error:'Could not upload that photo.'}; }
 }
 function wireCatchAi(){
   if(!$('catchPhotoBtn'))return;
@@ -3932,9 +3937,10 @@ async function shareThing(){
     if(!name){ $('shMsg').textContent='What did you catch?'; return; }
     const w=parseFloat($('shWeight').value);
     url='/api/lakes/'+ACTIVE.id+'/catches';
-    const photoId=await uploadPendingPhoto();
+    const up=await uploadPendingPhoto();
+    if(!up.ok){ $('shMsg').textContent=up.error+' The catch was not shared — try again without the photo.'; return; }
     body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId,
-      photoIds:photoId?[photoId]:undefined};
+      photoIds:up.id?[up.id]:undefined};
   }else{
     if(!name||isNaN(lat)||isNaN(lon)){ $('shMsg').textContent='Needs a name and a pin — tap “Use GPS”.'; return; }
     url='/api/lakes/'+ACTIVE.id+'/'+(SH_TYPE==='spot'?'spots':'waypoints');
@@ -4893,12 +4899,15 @@ function bindPhotoPicker(inputId,previewId,set){
   };
 }
 async function uploadDataUrl(dataUrl){
-  if(!dataUrl)return null;
+  if(!dataUrl)return {id:null,ok:true};
   try{
     const r=await apiFetch('/api/photos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})});
-    if(!r.ok)return null;
-    return ((await r.json()).photo||{}).id||null;
-  }catch(e){ return null; }
+    if(!r.ok){
+      const d=await r.json().catch(()=>({}));
+      return {id:null,ok:false,error:d.error||'Could not upload that photo.'};
+    }
+    return {id:((await r.json()).photo||{}).id||null,ok:true};
+  }catch(e){ return {id:null,ok:false,error:'Could not upload that photo.'}; }
 }
 
 /* ---- the feed ---- */
@@ -4925,7 +4934,9 @@ async function submitPost(){
   const body=$('fdBody').value.trim();
   if(!body&&!fdPhoto){ $('fdMsg').textContent='Write something first.'; return; }
   $('fdMsg').textContent='Posting…';
-  const photoId=await uploadDataUrl(fdPhoto);
+  const up=await uploadDataUrl(fdPhoto);
+  if(!up.ok){ $('fdMsg').textContent=up.error+' The post was not sent — try again without it.'; return; }
+  const photoId=up.id;
   try{
     const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({body:body,visibility:$('fdVis').value,photoIds:photoId?[photoId]:undefined})});
@@ -5070,7 +5081,9 @@ async function submitListing(){
   const title=$('mkTitle').value.trim();
   if(!title){ $('mkMsg').textContent='Give it a title.'; return; }
   $('mkMsg').textContent='Posting…';
-  const photoId=await uploadDataUrl(mkPhotoData);
+  const mup=await uploadDataUrl(mkPhotoData);
+  if(!mup.ok){ $('mkMsg').textContent=mup.error+' The listing was not posted — try again without it.'; return; }
+  const photoId=mup.id;
   try{
     const r=await apiFetch('/api/market',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       title:title, body:$('mkBody').value.trim(), price:$('mkPrice').value.trim(),
@@ -5144,7 +5157,9 @@ document.addEventListener('click',async function(e){
     const body=$('gpBodyIn').value.trim();
     if(!body&&!gpPhoto){ $('gpPostMsg').textContent='Write something first.'; return; }
     $('gpPostMsg').textContent='Posting…';
-    const photoId=await uploadDataUrl(gpPhoto);
+    const gup=await uploadDataUrl(gpPhoto);
+    if(!gup.ok){ $('gpPostMsg').textContent=gup.error+' The post was not sent — try again without it.'; return; }
+    const photoId=gup.id;
     const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({body:body,groupId:GROUP_ID,photoIds:photoId?[photoId]:undefined})});
     const d=await r.json();
