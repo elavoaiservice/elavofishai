@@ -447,6 +447,14 @@ they disagree about what's biting. Three kinds:
   a lake the item actually names.
 - **web** — the optional in-plan web search described above.
 
+**Official pages attach themselves.** When a Texas lake is added, the app finds
+its TPWD page (`/fishboat/fish/recreational/lakes/<slug>/`) and attaches it as a
+source — verifying first that the page loads, isn't a soft 404, and actually
+names that lake, because a URL that merely resolves proves nothing. Other states
+need their own resolver: the URL patterns have nothing in common, and pretending
+otherwise just produces confident 404s. Admin → Report sources has a button to
+backfill lakes added before this existed.
+
 In the app, **Lake guide → Reports** shows what's been posted and fetched for
 the active lake, with a box to post your own; Today carries the latest one as a
 card. In admin, **Report sources** manages the feeds: add one and it's fetched

@@ -13,6 +13,7 @@ import { prisma } from '../db';
 import { generateLakeProfile } from './aiProfile';
 import { rampsForLake } from './ramps';
 import { releaseFor } from './corps';
+import { attachOfficialSource } from './agencySources';
 
 /**
  * Nearest USGS monitoring location that reports water level.
@@ -99,6 +100,7 @@ export interface EnrichResult {
   gauge?: string | null;
   ramps?: number;
   corps?: string | null;
+  officialSource?: string | null;
   profile?: boolean;
   errors: string[];
 }
@@ -148,7 +150,15 @@ export async function enrichLake(lakeId: string): Promise<EnrichResult> {
     result.errors.push(`corps: ${(e as Error).message}`);
   }
 
-  // 4. The written guide — species, seasons, patterns, regulations link.
+  // 4. The state's own page for this lake, as a report source.
+  try {
+    const r = await attachOfficialSource(lake.id);
+    result.officialSource = r.added ? r.url || null : null;
+  } catch (e) {
+    result.errors.push(`official source: ${(e as Error).message}`);
+  }
+
+  // 5. The written guide — species, seasons, patterns, regulations link.
   try {
     await generateLakeProfile(lake.id);
     const p = await prisma.lakeProfile.findUnique({ where: { lakeId: lake.id }, select: { id: true } });

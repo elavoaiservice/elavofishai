@@ -22,6 +22,7 @@ import { emailStatus } from '../services/email';
 import { rateFor, recalculateCosts } from '../services/aiUsage';
 import { fetchSource, refreshAllSources } from '../services/reports';
 import { buildIndex } from '../services/corps';
+import { attachOfficialSourcesForAll } from '../services/agencySources';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
 import {
@@ -369,6 +370,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await prisma.reportSource.deleteMany({ where: { id } });
     await audit(admin.username, 'admin.report_source_remove', id);
     return reply.send({ ok: true });
+  });
+
+  // Attach each lake's official state page, where we have a resolver for that
+  // state. Safe to re-run: a lake that already has one is skipped.
+  app.post('/api/admin/report-sources/official', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const r = await attachOfficialSourcesForAll().catch((e) => ({ checked: 0, added: 0, urls: [], error: (e as Error).message }));
+    await audit(admin.username, 'admin.official_sources_attach', undefined, { added: r.added });
+    return reply.send(r);
   });
 
   app.post('/api/admin/report-sources/refresh', async (req, reply) => {
