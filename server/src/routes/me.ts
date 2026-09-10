@@ -4,6 +4,9 @@ import { currentUser, requireUser } from '../lib/auth';
 import { areFriends, blockState } from '../lib/social';
 import { MESSAGE_PRIVACY_CHOICES } from '../config-store';
 
+// Bump when the terms change materially, so acceptance records stay meaningful.
+export const TERMS_VERSION = '2026-09-09';
+
 // Max size of a stored avatar data URL (client resizes to a small square first).
 const MAX_AVATAR_CHARS = 400_000; // ~300KB binary
 
@@ -32,6 +35,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         location: true, bio: true, favoriteSpecies: true, favoriteLakeId: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
         plotterBrand: true, ffsBrand: true, discoverability: true,
+        termsAcceptedAt: true, termsVersion: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         messagePrivacy: true, createdAt: true,
       },
@@ -60,7 +64,13 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
     if ('hasBoat' in b) data.hasBoat = b.hasBoat == null ? null : !!b.hasBoat;
     if ('boatType' in b) data.boatType = String(b.boatType || '').trim().slice(0, 40) || null;
     // Set once, when the first-run flow finishes — never unset from the client.
-    if (b.onboarded === true) data.onboardedAt = new Date();
+    if (b.onboarded === true) {
+      data.onboardedAt = new Date();
+      // The sign-up screen states the terms; completing first run records that
+      // acceptance against a version, so "they agreed" can be evidenced.
+      data.termsAcceptedAt = new Date();
+      data.termsVersion = TERMS_VERSION;
+    }
 
     if ('favoriteLakeId' in b) {
       const id = b.favoriteLakeId ? String(b.favoriteLakeId) : null;
@@ -113,6 +123,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         location: true, bio: true, favoriteSpecies: true, messagePrivacy: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
         plotterBrand: true, ffsBrand: true, discoverability: true,
+        termsAcceptedAt: true, termsVersion: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         createdAt: true,
       },

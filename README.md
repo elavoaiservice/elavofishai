@@ -468,6 +468,30 @@ licence and reputation risk, and the indexed web plus your own anglers is
 better material anyway. Sources refresh every six hours; fetched reports are
 swept after 120 days, angler reports are kept.
 
+## Was the plan any good?
+
+Everything else the app measures is an *input* — conditions, reports, releases,
+tokens, cost. Plan feedback is the only measurement of the **output**. Each plan
+carries thumbs up/down; a thumbs-down asks one optional line about what it
+missed, which is worth more than the vote. Feedback is per angler (one cached
+plan is served to several people) and stamped with the model that wrote it, so
+admin → AI usage shows a 👍 rate per model beside its cost — which turns "is the
+cheap model good enough" into a question with an answer instead of a guess.
+
+## Terms and privacy
+
+`/terms.html` and `/privacy.html`, linked from the landing footer, the sign-in
+and sign-up screens, and the app. They describe **this** app rather than
+boilerplate: what is collected and why, that catch photos are sent to the AI
+provider and **not stored**, exactly which processors receive what, the
+retention windows the sweeps actually enforce, and the visibility model. The
+sign-up screen carries the clickwrap line, and completing first run records the
+acceptance with a version — "they agreed" only means something if you can say
+what they agreed to.
+
+**These are a solid, accurate draft, not legal advice.** They should be reviewed
+by a lawyer before the marketplace ships or money changes hands.
+
 ## AI usage and cost
 
 Every model call is recorded with its token counts and what it cost, priced at

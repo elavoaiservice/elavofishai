@@ -432,6 +432,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       }),
     ]);
 
+    // Was it any good? Cost without quality is half the decision.
+    const votes = await prisma.planFeedback.groupBy({
+      by: ['model', 'helpful'],
+      _count: { _all: true },
+    });
+    const quality = new Map<string, { up: number; down: number }>();
+    for (const v of votes) {
+      const key = v.model || 'unknown';
+      const q = quality.get(key) || { up: 0, down: 0 };
+      if (v.helpful) q.up += v._count._all; else q.down += v._count._all;
+      quality.set(key, q);
+    }
+    const recentNotes = await prisma.planFeedback.findMany({
+      where: { note: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { helpful: true, note: true, model: true, createdAt: true },
+    });
+
     // Flag any model we have no price for, so a 0 never reads as "free".
     const unpriced = [...new Set(byModel.map((m) => m.model))].filter((m) => !rateFor(m));
     const failures = await prisma.aiUsage.count({ where: { createdAt: { gte: since }, ok: false } });
@@ -456,7 +475,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         model: m.model, calls: m._count._all, costUsd: m._sum.costUsd || 0,
         inputTokens: m._sum.inputTokens || 0, outputTokens: m._sum.outputTokens || 0,
         priced: !!rateFor(m.model),
+        up: quality.get(m.model)?.up || 0,
+        down: quality.get(m.model)?.down || 0,
       })).sort((a, b) => b.costUsd - a.costUsd),
+      notes: recentNotes,
       byDay: byDay.map((d) => ({ day: d.day, cost: Number(d.cost) || 0, calls: Number(d.calls) })),
       unpriced,
       recent,

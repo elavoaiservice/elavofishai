@@ -30,8 +30,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!cached) return reply.send({ ok: false, pending: true });
     return reply.send({
-      ok: true, content: cached.content, generatedAt: cached.generatedAt,
-      daysOutAtGen: cached.daysOutAtGen, source: 'cache',
+      ok: true, id: cached.id, model: cached.model, content: cached.content,
+      generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache',
     });
   });
 
@@ -61,6 +61,24 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);
+  });
+
+  // Was that plan any good? One row per angler per plan, so a cached plan
+  // served to several people collects several opinions.
+  app.post('/api/ai/day-plan/:id/feedback', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const planId = String((req.params as { id: string }).id);
+    const b = (req.body || {}) as { helpful?: boolean; note?: string };
+    if (typeof b.helpful !== 'boolean') return reply.code(400).send({ error: 'Say whether it helped.' });
+    const plan = await prisma.dayPlan.findUnique({ where: { id: planId }, select: { id: true, model: true } });
+    if (!plan) return reply.code(404).send({ error: 'No such plan.' });
+    await prisma.planFeedback.upsert({
+      where: { planId_userId: { planId, userId: user.id } },
+      create: { planId, userId: user.id, helpful: b.helpful, note: b.note?.slice(0, 500) || null, model: plan.model },
+      update: { helpful: b.helpful, note: b.note?.slice(0, 500) || null },
+    });
+    return reply.send({ ok: true });
   });
 
   // Identify a fish from a catch photo → species + size estimate (editable).

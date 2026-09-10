@@ -103,3 +103,32 @@ describe('client errors', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run
     assert.equal(res.statusCode, 400);
   });
 });
+
+/**
+ * Terms acceptance. "They agreed" is only meaningful if you can say when, and
+ * to what — so completing first run stamps both.
+ */
+describe('terms acceptance', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('finishing first run records acceptance and the version', async () => {
+    await resetDb();
+    const u = await signIn('terms@example.com');
+    let row = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    assert.equal(row.termsAcceptedAt, null, 'not accepted before they finish');
+
+    await as(u, { method: 'PATCH', url: '/api/me/profile', payload: { onboarded: true } });
+    row = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    assert.ok(row.termsAcceptedAt, 'accepted at first run');
+    assert.match(String(row.termsVersion), /^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test('an ordinary profile save does not silently record acceptance', async () => {
+    await resetDb();
+    const u = await signIn('nudge@example.com');
+    await as(u, { method: 'PATCH', url: '/api/me/profile', payload: { location: 'Granbury, TX' } });
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    assert.equal(row.termsAcceptedAt, null);
+  });
+});

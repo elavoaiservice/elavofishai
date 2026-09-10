@@ -95,6 +95,8 @@ model User {
   boatType        String? // bass boat | pontoon | kayak | jon boat | bank & wade ...
   yearsFishing    String? // free text band, e.g. "10+ years"
   onboardedAt     DateTime? // completed the first-run flow
+  termsAcceptedAt DateTime? // when they accepted, and which version
+  termsVersion    String?
   favoriteLakeId  String?
   favoriteLake    Lake?   @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
 
@@ -125,6 +127,7 @@ model User {
   auditLogs            AuditLog[]
   profileContributions ProfileContribution[]
   reports              LakeReport[]
+  planFeedback         PlanFeedback[]
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -233,6 +236,7 @@ model DayPlan {
   daysOutAtGen Int // days between generation and the fishing day
   model        String?
   generatedAt  DateTime @default(now())
+  feedback     PlanFeedback[]
 
   @@unique([lakeId, date, species, goal])
   @@index([lakeId])
@@ -492,6 +496,25 @@ model CorpsLocation {
 
   @@unique([office, name])
   @@index([lat, lon])
+}
+
+// Was the plan any good? The only measurement of output quality the app has —
+// everything else measures inputs. Kept per user because one cached plan is
+// served to several anglers, and stamped with the model that wrote it so
+// "is the cheap model good enough" becomes a question with an answer.
+model PlanFeedback {
+  id        String   @id @default(cuid())
+  planId    String
+  plan      DayPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  helpful   Boolean
+  note      String?  @db.Text
+  model     String? // whichever model produced the plan being rated
+  createdAt DateTime @default(now())
+
+  @@unique([planId, userId])
+  @@index([model, helpful])
 }
 
 // ---- P3 admin / community ----

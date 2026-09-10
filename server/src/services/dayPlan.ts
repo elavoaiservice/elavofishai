@@ -18,6 +18,8 @@ export interface DayPlanRequest {
 }
 
 export interface DayPlanResult {
+  id?: string; // so the client can rate this exact plan
+  model?: string;
   ok: boolean;
   needsKey?: boolean;
   content?: unknown;
@@ -66,7 +68,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     const stale = Date.now() - cached.generatedAt.getTime() > 12 * 3600000;
     const closer = out < cached.daysOutAtGen;
     if (!stale && !closer) {
-      return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
+      return { ok: true, id: cached.id, model: cached.model || undefined, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     }
   }
 
@@ -81,7 +83,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const model = process.env.AI_PLAN_MODEL || "claude-sonnet-5";
   if (!apiKey) {
     // No key yet — hand back the cached plan if we have one, else signal needsKey.
-    if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
+    if (cached) return { ok: true, id: cached.id, model: cached.model || undefined, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, needsKey: true, error: 'AI is not configured yet (no API key).' };
   }
 
@@ -188,7 +190,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(`[dayplan] generation failed:`, (e as Error).message);
-    if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
+    if (cached) return { ok: true, id: cached.id, model: cached.model || undefined, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, error: 'Could not build a plan just now — try again shortly.' };
   }
 
@@ -197,7 +199,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   if (!content) {
     // eslint-disable-next-line no-console
     console.error(`[dayplan] could not parse ${text.length} chars from ${model}: ${text.slice(0, 200)}`);
-    if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
+    if (cached) return { ok: true, id: cached.id, model: cached.model || undefined, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, error: 'The AI response came back unreadable — try again.' };
   }
 
@@ -206,7 +208,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     create: { lakeId, date, species, goal, content: content as object, daysOutAtGen: out, model },
     update: { content: content as object, daysOutAtGen: out, model, generatedAt: new Date() },
   });
-  return { ok: true, content: saved.content, generatedAt: saved.generatedAt, daysOutAtGen: out, source: 'ai' };
+  return { ok: true, id: saved.id, model, content: saved.content, generatedAt: saved.generatedAt, daysOutAtGen: out, source: 'ai' };
 }
 
 /**

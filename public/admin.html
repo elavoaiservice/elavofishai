@@ -281,9 +281,18 @@ async function tAiCost(){
     +'<div class="card" style="flex:1;min-width:280px"><h2>By feature</h2><table><thead><tr><th>Feature</th><th>Calls</th><th>In</th><th>Out</th><th style="text-align:right">Cost</th></tr></thead><tbody>'
     +((d.byFeature||[]).map(f=>'<tr><td>'+esc(FEAT[f.feature]||f.feature)+'</td><td>'+f.calls+'</td><td class="muted">'+tok(f.inputTokens)+'</td><td class="muted">'+tok(f.outputTokens)+'</td><td style="text-align:right;font-weight:700">'+money(f.costUsd)+'</td></tr>').join('')||'<tr><td colspan="5" class="muted">No calls yet.</td></tr>')
     +'</tbody></table></div>'
-    +'<div class="card" style="flex:1;min-width:280px"><h2>By model</h2><table><thead><tr><th>Model</th><th>Calls</th><th style="text-align:right">Cost</th></tr></thead><tbody>'
-    +((d.byModel||[]).map(m=>'<tr><td>'+esc(m.model)+(m.priced?'':' <span class="pill" style="background:#fff4e5;color:#b7791f">unpriced</span>')+'</td><td>'+m.calls+'</td><td style="text-align:right;font-weight:700">'+money(m.costUsd)+'</td></tr>').join('')||'<tr><td colspan="3" class="muted">No calls yet.</td></tr>')
-    +'</tbody></table></div></div>';
+    +'<div class="card" style="flex:1;min-width:280px"><h2>By model</h2><table><thead><tr><th>Model</th><th>Calls</th><th title="Angler feedback on plans this model wrote">Rated</th><th style="text-align:right">Cost</th></tr></thead><tbody>'
+    +((d.byModel||[]).map(m=>{
+        const votes=(m.up||0)+(m.down||0);
+        const rated=votes?('<span class="pill '+(m.up>=m.down?'ok':'down')+'">'+Math.round((m.up/votes)*100)+'% 👍</span> <span class="snap">'+votes+'</span>'):'<span class="snap">—</span>';
+        return '<tr><td>'+esc(m.model)+(m.priced?'':' <span class="pill" style="background:#fff4e5;color:#b7791f">unpriced</span>')+'</td><td>'+m.calls+'</td><td>'+rated+'</td><td style="text-align:right;font-weight:700">'+money(m.costUsd)+'</td></tr>';
+      }).join('')||'<tr><td colspan="4" class="muted">No calls yet.</td></tr>')
+    +'</tbody></table></div></div>'
+    +((d.notes||[]).length?'<div class="card" style="margin-top:16px"><h2>What anglers said</h2>'
+      +d.notes.map(n=>'<div class="fr-row" style="border-bottom:1px solid var(--border);padding:8px 0">'
+        +(n.helpful?'👍':'👎')+' <span style="margin-left:8px">'+esc(n.note||'')+'</span>'
+        +'<span class="snap" style="margin-left:auto">'+esc(n.model||'')+' · '+ago(n.createdAt)+'</span></div>').join('')
+      +'</div>':'');
 
   const days=d.byDay||[];
   if(days.length){

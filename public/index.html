@@ -1733,7 +1733,9 @@ body.feed-loading .stat-v *{visibility:hidden}
 <footer>
   <span id="ratingsNote">Ratings synthesize TPWD's Lake Granbury profile, TPWD's last published lake report, and North Texas seasonal patterns.</span><br>
   Informed judgment, not measured catch data. Forecast via Open-Meteo. Sun and moon computed locally.<br>
-  TPWD has paused weekly fishing reports — local bait shops are the best real-time source.
+  TPWD has paused weekly fishing reports — local bait shops are the best real-time source.<br>
+  <a href="/terms.html" style="color:var(--primary-dark)">Terms</a> ·
+  <a href="/privacy.html" style="color:var(--primary-dark)">Privacy</a>
 </footer>
 </section>
   </main>
@@ -2831,7 +2833,7 @@ function runCatchAi(file){
       const d=await r.json();
       if(!r.ok){ res.innerHTML='<span style="color:var(--danger)">'+escHtml(d.error||'Could not identify that.')+'</span>'; msg.textContent=''; return; }
       const c=d.result||{}; pendingCatchAi=c;
-      if(!c.species){ res.innerHTML='<b>No fish spotted in that photo.</b> <span class="snap">Fill the log in below, or try a clearer shot. Your photo is still attached.</span>'; msg.textContent=''; return; }
+      if(!c.species){ res.innerHTML='<b>No fish spotted in that photo.</b> <span class="snap">Fill the log in below, or try a clearer shot. (Photos are used to identify the fish and aren\u2019t saved \u2014 keep yours on your phone.)</span>'; msg.textContent=''; return; }
       if(!$('lgDate').value)$('lgDate').value=new Date(now.valueOf()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
       setLgSpecies(c.species);
       const size=[]; if(c.lengthInches)size.push(c.lengthInches+' in'); if(c.weightLbs)size.push(c.weightLbs+' lb');
@@ -3588,7 +3590,16 @@ function renderAiPlan(d,species){
     h+='<div style="margin-top:12px"><div class="snap" style="font-weight:700">What it read</div>'
       +c.sources.slice(0,4).map(x=>'<div class="snap"><a href="'+escHtml(x.url||'#')+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">'
         +escHtml(x.title||x.url||'source')+'</a>'+(x.asOf?' <span style="color:var(--muted)">· '+escHtml(x.asOf)+'</span>':'')+'</div>').join('')+'</div>';
-  h+='<div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="snap" style="color:var(--muted)">'+(d.source==='cache'?'Saved plan':'Fresh plan')+' · '+fresh+'</span><button class="btn ghost" id="aiPlanRefresh" style="min-height:30px;padding:0 12px">Refresh as day nears</button></div></div>';
+  h+='<div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+    +'<span class="snap" style="color:var(--muted)">'+(d.source==='cache'?'Saved plan':'Fresh plan')+' · '+fresh+'</span>'
+    +'<button class="btn ghost" id="aiPlanRefresh" style="min-height:30px;padding:0 12px">Refresh as day nears</button>'
+    // Whether the plan was any good is the one thing the app can't infer.
+    +(d.id?'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
+      +'<span class="snap" style="color:var(--muted)">Any use?</span>'
+      +'<button class="btn ghost" data-planvote="up" data-planid="'+escHtml(d.id)+'" style="min-height:30px;padding:0 10px" title="This plan was useful">👍</button>'
+      +'<button class="btn ghost" data-planvote="down" data-planid="'+escHtml(d.id)+'" style="min-height:30px;padding:0 10px" title="This plan missed">👎</button>'
+      +'<span class="snap" id="planVoteMsg" style="color:var(--muted)"></span></span>':'')
+    +'</div></div>';
   $('aiPlanOut').innerHTML=h;
   const rb=$('aiPlanRefresh'); if(rb)rb.onclick=()=>genAiPlan(true);
 }
@@ -4685,7 +4696,22 @@ async function postReport(){
     loadReports();
   }catch(e){ $('rpMsg').textContent='Server not reachable.'; }
 }
-document.addEventListener('click',function(e){
+document.addEventListener('click',async function(e){
+  const vote=e.target.closest('[data-planvote]');
+  if(vote){
+    const helpful=vote.dataset.planvote==='up';
+    const msg=$('planVoteMsg'); if(msg)msg.textContent='Saving…';
+    try{
+      // A thumbs-down asks why — one line, optional. That note is worth more
+      // than the vote itself when deciding what to change.
+      let note;
+      if(!helpful){ note=prompt('What did it miss? (optional)')||undefined; }
+      const r=await apiFetch('/api/ai/day-plan/'+encodeURIComponent(vote.dataset.planid)+'/feedback',
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({helpful:helpful,note:note})});
+      if(msg)msg.textContent=r.ok?(helpful?'Thanks — noted.':'Thanks, that helps.'):'Could not save that.';
+    }catch(err){ if(msg)msg.textContent='Server not reachable.'; }
+    return;
+  }
   const post=e.target.closest('#rpPost'); if(post){ postReport(); return; }
   const del=e.target.closest('[data-delrp]');
   if(del){ apiFetch('/api/reports/'+del.dataset.delrp,{method:'DELETE'}).then(loadReports); }
