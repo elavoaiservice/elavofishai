@@ -128,6 +128,7 @@ model User {
   profileContributions ProfileContribution[]
   reports              LakeReport[]
   planFeedback         PlanFeedback[]
+  photos               Photo[]
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -304,6 +305,7 @@ model Trip {
   weather    Json?
   visibility Visibility @default(private)
   groupId    String? // when visibility = group
+  photos     Photo[]
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
@@ -515,6 +517,28 @@ model PlanFeedback {
 
   @@unique([planId, userId])
   @@index([model, helpful])
+}
+
+// A photo of a catch. The bytes live in object storage; this row is the
+// permission record. Photos inherit the visibility of the catch they belong to,
+// and are served through the app rather than by a public URL — a link, once
+// created, cannot be un-shared, which is exactly wrong for "friends only".
+model Photo {
+  id        String   @id @default(cuid())
+  key       String   @unique // object key in the bucket
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId    String? // the catch it belongs to, once attached
+  trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  lakeId    String?
+  mediaType String
+  bytes     Int
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
+  @@index([userId, createdAt])
 }
 
 // ---- P3 admin / community ----

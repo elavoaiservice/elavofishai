@@ -33,7 +33,7 @@ export async function closeApp(): Promise<void> {
 // profile with it. Re-seed the demo lake afterwards, the way boot would.
 export async function resetDb(): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "Waypoint","Spot","Trip","SharingPref","FriendGroupMember","FriendGroup",' +
+    'TRUNCATE TABLE "Photo","Waypoint","Spot","Trip","SharingPref","FriendGroupMember","FriendGroup",' +
       '"Friendship","Message","Session","AuthToken","RateLimit","Kv","UserLake","User" CASCADE'
   );
   const { seedGranbury } = await import('../src/services/seed');

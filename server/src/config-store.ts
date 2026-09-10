@@ -54,6 +54,14 @@ export const CATALOG: ConfigItem[] = [
   { key: 'RESEND_API_KEY', label: 'Resend API key', group: 'Email', secret: true, test: true, placeholder: 're_...', help: 'Sends magic-link + admin MFA emails (replaces dev/console mode).' },
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
   { key: 'PUBLIC_BASE_URL', label: 'Public base URL', group: 'App', test: true, placeholder: 'https://elavofishai.elavoai.com' },
+  // ---- object storage (Cloudflare R2 or any S3-compatible service) ----
+  { key: 'R2_ACCOUNT_ID', label: 'R2 account ID', group: 'Storage', placeholder: 'a1b2c3…', help: 'From the Cloudflare dashboard. The endpoint is built from this; or set S3_ENDPOINT for a non-R2 service.' },
+  { key: 'R2_BUCKET', label: 'Bucket name', group: 'Storage', placeholder: 'elavofishai', help: 'Keep it PRIVATE — photos are served through the app so sharing rules are enforced.' },
+  { key: 'R2_ACCESS_KEY_ID', label: 'Access key ID', group: 'Storage', secret: true, placeholder: '…' },
+  { key: 'R2_SECRET_ACCESS_KEY', label: 'Secret access key', group: 'Storage', secret: true, test: true, placeholder: '…', help: 'Test writes, reads back and deletes a small object.' },
+  { key: 'S3_ENDPOINT', label: 'Custom endpoint', group: 'Storage', placeholder: '(optional — for S3, B2, MinIO…)' },
+  { key: 'BACKUP_TO_STORAGE', label: 'Copy backups to storage', group: 'Storage', choices: ['0', '1'], placeholder: '1', help: 'Nightly dumps are uploaded to the bucket. Without this they only exist on the Mini — the machine they are backing up.' },
+
   { key: 'DEFAULT_MESSAGE_PRIVACY', label: 'Default message privacy', group: 'Social', choices: MESSAGE_PRIVACY_CHOICES, placeholder: 'friends', help: 'Who can DM a NEW user by default: everyone, friends (recommended), or nobody. Each user can change their own setting in the app.' },
 ];
 
@@ -140,6 +148,11 @@ export async function testValue(key: string, value: string): Promise<TestResult>
       const client = new Anthropic({ apiKey: v });
       await client.messages.create({ model: process.env.AI_PROFILE_MODEL || 'claude-opus-4-8', max_tokens: 4, messages: [{ role: 'user', content: 'ping' }] } as Anthropic.MessageCreateParamsNonStreaming);
       return { ok: true, message: 'Anthropic key works.' };
+    }
+    if (key === 'R2_SECRET_ACCESS_KEY') {
+      // Prove the whole path, not just the key: write, read back, delete.
+      const { testStorage } = await import('./services/storage');
+      return testStorage();
     }
     if (key === 'OPENAI_API_KEY') {
       const r = await fetch('https://api.openai.com/v1/models', {

@@ -2847,7 +2847,30 @@ function runCatchAi(file){
     }catch(e){ res.innerHTML='<span style="color:var(--danger)">Server not reachable.</span>'; msg.textContent=''; }
   });
 }
-function resetCatchAi(){ pendingCatchPhoto=null; pendingCatchGeo=null; pendingCatchAi=null; if($('catchPreview'))$('catchPreview').hidden=true; if($('catchResult'))$('catchResult').innerHTML=''; }
+function resetCatchAi(){ pendingCatchPhoto=null; pendingCatchGeo=null; pendingCatchAi=null; pendingPhotoId=null; if($('catchPreview'))$('catchPreview').hidden=true; if($('catchResult'))$('catchResult').innerHTML=''; }
+
+/* ---- keeping the photo ----
+   The catch photo used to be sent to the AI and thrown away. It is the trophy,
+   and it is what makes a shared catch worth looking at, so it is stored — but
+   only once, and only when storage is configured. The resize above re-encodes
+   through a canvas, which strips EXIF; that matters because phone photos carry
+   GPS and a shared picture must not leak a spot the visibility settings are
+   protecting. */
+let pendingPhotoId=null, PHOTOS_ON=false;
+async function checkPhotos(){
+  if(!AUTH.user)return;
+  try{ const r=await apiFetch('/api/photos/status'); if(r.ok)PHOTOS_ON=!!(await r.json()).configured; }catch(e){}
+}
+async function uploadPendingPhoto(){
+  if(!PHOTOS_ON||!pendingCatchPhoto||pendingPhotoId)return pendingPhotoId;
+  try{
+    const r=await apiFetch('/api/photos',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:pendingCatchPhoto,lakeId:ACTIVE.id})});
+    if(!r.ok)return null;
+    pendingPhotoId=((await r.json()).photo||{}).id||null;
+    return pendingPhotoId;
+  }catch(e){ return null; }
+}
 function wireCatchAi(){
   if(!$('catchPhotoBtn'))return;
   $('catchPhotoBtn').onclick=()=>$('catchPhoto').click();
@@ -3783,7 +3806,9 @@ async function shareThing(){
     if(!name){ $('shMsg').textContent='What did you catch?'; return; }
     const w=parseFloat($('shWeight').value);
     url='/api/lakes/'+ACTIVE.id+'/catches';
-    body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId};
+    const photoId=await uploadPendingPhoto();
+    body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId,
+      photoIds:photoId?[photoId]:undefined};
   }else{
     if(!name||isNaN(lat)||isNaN(lon)){ $('shMsg').textContent='Needs a name and a pin — tap “Use GPS”.'; return; }
     url='/api/lakes/'+ACTIVE.id+'/'+(SH_TYPE==='spot'?'spots':'waypoints');
@@ -3802,8 +3827,8 @@ async function shareThing(){
 }
 async function loadMyShared(){
   try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/mine'); const d=await r.json();
-    const items=[].concat((d.spots||[]).map(s=>({t:'spot',id:s.id,txt:'📍 '+s.name})),(d.catches||[]).map(c=>({t:'catch',id:c.id,txt:'🐟 '+c.species+(c.weight?' '+c.weight+'lb':'')})),(d.waypoints||[]).map(w=>({t:'waypoint',id:w.id,txt:'🧭 '+w.name+(w.kind?' — '+w.kind:'')})));
-    $('myShared').innerHTML=items.length?('<div class="snap" style="font-weight:600;margin:6px 0 2px">You’ve shared here</div>'+items.map(i=>'<div class="fr-row"><span>'+escHtml(i.txt)+'</span><button class="btn ghost btn-sm" data-del="'+i.t+':'+i.id+'">Remove</button></div>').join('')):'';
+    const items=[].concat((d.spots||[]).map(s=>({t:'spot',id:s.id,txt:'📍 '+s.name})),(d.catches||[]).map(c=>({t:'catch',id:c.id,txt:(c.photos&&c.photos.length?'':'🐟 ')+c.species+(c.weight?' '+c.weight+'lb':''),photo:(c.photos&&c.photos.length)?c.photos[0]:null})),(d.waypoints||[]).map(w=>({t:'waypoint',id:w.id,txt:'🧭 '+w.name+(w.kind?' — '+w.kind:'')})));
+    $('myShared').innerHTML=items.length?('<div class="snap" style="font-weight:600;margin:6px 0 2px">You’ve shared here</div>'+items.map(i=>'<div class="fr-row"><span>'+(i.photo?'<img src="/api/photos/'+escHtml(i.photo)+'" alt="" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:8px;vertical-align:middle;margin-right:8px">':'')+escHtml(i.txt)+'</span><button class="btn ghost btn-sm" data-del="'+i.t+':'+i.id+'">Remove</button></div>').join('')):'';
   }catch(e){}
 }
 async function loadFeed(){
@@ -3813,7 +3838,9 @@ async function loadFeed(){
     let h='';
     if(spots.length)h+='<div style="margin-bottom:10px"><b>Spots</b>'+spots.map(s=>'<div class="fr-row"><span>📍 '+escHtml(s.name)+' <span class="snap">by '+escHtml(s.by)+(s.notes?' — '+escHtml(s.notes):'')+'</span></span></div>').join('')+'</div>';
     if(waypoints.length)h+='<div style="margin-bottom:10px"><b>Waypoints</b>'+waypoints.map(w=>'<div class="fr-row"><span>🧭 '+escHtml(w.name)+' <span class="snap">by '+escHtml(w.by)+(w.kind?' — '+escHtml(w.kind):'')+'</span></span></div>').join('')+'</div>';
-    if(catches.length)h+='<div><b>Catches</b>'+catches.map(c=>'<div class="fr-row"><span>🐟 '+escHtml(c.species)+(c.weight?' '+c.weight+'lb':'')+' <span class="snap">by '+escHtml(c.by)+(c.lure?' on '+escHtml(c.lure):'')+'</span></span></div>').join('')+'</div>';
+    if(catches.length)h+='<div><b>Catches</b>'+catches.map(c=>'<div class="fr-row"><span>'
+      +((c.photos&&c.photos.length)?'<img src="/api/photos/'+escHtml(c.photos[0])+'" alt="" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:10px;vertical-align:middle;margin-right:10px">':'🐟 ')
+      +escHtml(c.species)+(c.weight?' '+c.weight+'lb':'')+' <span class="snap">by '+escHtml(c.by)+(c.lure?' on '+escHtml(c.lure):'')+'</span></span></div>').join('')+'</div>';
     $('frFeed').innerHTML=h;
   }catch(e){ $('frFeed').innerHTML='<p class="snap">Could not load feed.</p>'; }
 }
@@ -5108,7 +5135,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); populateAiSpecies(); populateAiLaunch(); loadRamps();
+  await checkAi(); checkPhotos(); populateAiSpecies(); populateAiLaunch(); loadRamps();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){

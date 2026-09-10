@@ -36,3 +36,9 @@ fi
 
 find "$DEST" -name 'elavofish-*.sql.gz' -mtime "+$KEEP_DAYS" -print -delete
 echo "[backup] ok (${SIZE} bytes), kept ${KEEP_DAYS} days"
+
+# Offsite copy. A backup that lives on the machine it is backing up survives
+# nothing worth surviving — a dead disk takes both. Uploaded through the app
+# container, which holds the credentials and the signing code.
+docker compose exec -T app node tools/upload-backup.js "$(basename "$OUT")" < "$OUT" || \
+  echo "[backup] WARNING: offsite copy failed — the local dump is still good"

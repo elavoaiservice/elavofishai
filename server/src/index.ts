@@ -14,6 +14,7 @@ import { adminRoutes } from './routes/admin';
 import { socialRoutes } from './routes/social';
 import { messageRoutes } from './routes/messages';
 import { clientErrorRoutes, sweepClientErrors } from './routes/clientErrors';
+import { photoRoutes, sweepOrphanPhotos } from './routes/photos';
 import { refreshAllSources, sweepReports } from './services/reports';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
@@ -58,6 +59,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(socialRoutes);
   await app.register(messageRoutes);
   await app.register(clientErrorRoutes);
+  await app.register(photoRoutes);
 
   // The planner app lives at /app — GATED: the Granbury (and all lake) data is
   // account-only. Anonymous visitors are sent to the login screen; the HTML is
@@ -120,6 +122,7 @@ async function main(): Promise<void> {
     await sweepRateLimits(24 * hour).catch(() => {});
     await sweepClientErrors().catch(() => {});
     await sweepReports().catch(() => {});
+    await sweepOrphanPhotos().catch(() => {});
     // Pull fishing reports on the same cadence as the sweeps (every 6h).
     await refreshAllSources()
       .then((r) => r.stored && app.log.info(r, 'fishing reports refreshed'))

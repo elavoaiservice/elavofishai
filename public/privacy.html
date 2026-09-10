@@ -21,7 +21,7 @@
   <b>The short version.</b> We keep what you give us and what the app needs to work: your email, your
   profile, your fishing log, and the spots you mark. <b>Your spots and catches are private by default</b> —
   they go to other anglers only when you choose to share them. We don't sell anything to advertisers.
-  Catch photos are sent to an AI provider to identify the fish and are <b>not stored by us</b>.
+  Catch photos are stored so they stay with your catch, and are shared exactly as that catch is shared.
 </div>
 
 <h2>Who we are</h2>
@@ -42,6 +42,7 @@
   <tr><td>Fishing reports you post</td><td>Shown to other anglers on that lake and used by the day planner.</td></tr>
   <tr><td>Messages you send other anglers</td><td>Delivered to them. Stored so the conversation persists.</td></tr>
   <tr><td>Profile photo, if you add one</td><td>Stored with your account and shown to anglers you connect with.</td></tr>
+  <tr><td>Catch photos</td><td>Stored with the catch and shared exactly as that catch is shared. EXIF (including GPS) is stripped before upload.</td></tr>
   <tr><td>IP address, browser and device string, sign-in times</td>
       <td>Security: sessions, rate limits, and blocking abuse. Also attached to error reports.</td></tr>
   <tr><td>JavaScript errors the app hits</td><td>So a broken release is visible to us rather than only to you.</td></tr>
@@ -49,8 +50,15 @@
 
 <h3>Catch photos</h3>
 <p>When you photograph a catch, the image is sent to our AI provider so it can identify the species and
-   estimate the size. <b>We do not keep the photo.</b> It is not saved to your log, not stored on our
-   servers, and not shared with other anglers. If you want the photo, keep it on your phone.</p>
+   estimate the size, and — when you save the catch — <b>stored with it</b>, so the photo stays with the
+   record and appears alongside it for anyone you shared that catch with.</p>
+<p>Two things we do deliberately. The photo is resized in your browser before it leaves your device, which
+   also <b>removes the EXIF data</b> — including the GPS coordinates most phones write into a photo — so a
+   shared picture cannot give away a spot your sharing settings are protecting. And photos are served
+   through the app rather than by a public link, so a photo shared with friends stays that way; a public
+   link, once created, cannot be taken back.</p>
+<p>Delete a photo and it is removed from our storage. Photos uploaded but never attached to a catch are
+   deleted automatically within a day.</p>
 
 <h3>Location</h3>
 <p>The app asks for your device location only when you tap something that needs it — “Find me”, “Use my
@@ -77,6 +85,7 @@
   <tr><td>Anthropic (and OpenAI, if enabled)</td>
       <td>The text of a plan request — lake, date, conditions, your target and goal — plus catch photos for
           identification. Not your email, name, or the coordinates of your private spots.</td></tr>
+  <tr><td>Cloudflare R2 (object storage)</td><td>Holds catch photos and our encrypted database backups.</td></tr>
   <tr><td>Resend</td><td>Your email address and the sign-in link, so it can be delivered.</td></tr>
   <tr><td>Open-Meteo, USGS, USACE, OpenStreetMap</td>
       <td>Lake coordinates only, to fetch weather, water levels, dam releases and boat ramps. They receive

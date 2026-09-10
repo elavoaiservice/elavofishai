@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { deleteObject } from '../services/storage';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
 import { blockedUserIds, blockState } from '../lib/social';
@@ -396,7 +397,17 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     let vis;
     try { vis = await resolveVisibility(me.id, 'trips', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
     const date = b.date && !Number.isNaN(Date.parse(b.date)) ? new Date(b.date) : new Date();
+    const photoIds = Array.isArray((b as { photoIds?: string[] }).photoIds)
+      ? (b as { photoIds: string[] }).photoIds.slice(0, 4).map(String)
+      : [];
     const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId } });
+    // Attach only photos this angler uploaded and hasn't already attached.
+    if (photoIds.length) {
+      await prisma.photo.updateMany({
+        where: { id: { in: photoIds }, userId: me.id, tripId: null },
+        data: { tripId: trip.id },
+      });
+    }
     return reply.send({ catch: { id: trip.id } });
   });
 
@@ -431,10 +442,10 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const lakeId = String((req.params as { id: string }).id);
     const [spots, catches, waypoints] = await Promise.all([
       prisma.spot.findMany({ where: { userId: me.id, lakeId }, orderBy: { createdAt: 'desc' } }),
-      prisma.trip.findMany({ where: { userId: me.id, lakeId }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.trip.findMany({ where: { userId: me.id, lakeId }, orderBy: { date: 'desc' }, take: 50, include: { photos: { select: { id: true } } } }),
       prisma.waypoint.findMany({ where: { userId: me.id, lakeId }, orderBy: { createdAt: 'desc' } }),
     ]);
-    return { spots, catches, waypoints };
+    return { spots, catches: catches.map((c) => ({ ...c, photos: c.photos.map((p) => p.id) })), waypoints };
   });
 
   app.delete('/api/spots/:id', async (req, reply) => {
@@ -446,7 +457,12 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/catches/:id', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
-    await prisma.trip.deleteMany({ where: { id: String((req.params as { id: string }).id), userId: me.id } });
+    const id = String((req.params as { id: string }).id);
+    // The Photo row cascades away with the trip, and it holds the only pointer to
+    // the object in the bucket — so drop the object first or it is orphaned there.
+    const photos = await prisma.photo.findMany({ where: { tripId: id, userId: me.id }, select: { key: true } });
+    for (const p of photos) await deleteObject(p.key).catch(() => {});
+    await prisma.trip.deleteMany({ where: { id, userId: me.id } });
     return reply.send({ ok: true });
   });
   app.delete('/api/waypoints/:id', async (req, reply) => {
@@ -471,12 +487,12 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const visClause = { OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, { visibility: 'group' as const, groupId: { in: groups } }] };
     const [spots, catches, waypoints] = await Promise.all([
       prisma.spot.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } }, photos: { select: { id: true } } }, orderBy: { date: 'desc' }, take: 50 }),
       prisma.waypoint.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
     ]);
     return {
       spots: spots.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, notes: s.notes, by: s.user.displayName, at: s.createdAt })),
-      catches: catches.map((c) => ({ id: c.id, species: c.species, weight: c.weight, length: c.length, lure: c.lure, notes: c.notes, lat: c.lat, lon: c.lon, by: c.user.displayName, date: c.date })),
+      catches: catches.map((c) => ({ id: c.id, species: c.species, weight: c.weight, length: c.length, lure: c.lure, notes: c.notes, lat: c.lat, lon: c.lon, by: c.user.displayName, date: c.date, photos: c.photos.map((p) => p.id) })),
       waypoints: waypoints.map((w) => ({ id: w.id, name: w.name, lat: w.lat, lon: w.lon, kind: w.kind, by: w.user.displayName, at: w.createdAt })),
     };
   });
