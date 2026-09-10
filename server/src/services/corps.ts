@@ -100,6 +100,48 @@ export async function buildIndex(): Promise<{ offices: number; projects: number 
   return { offices: offices.length, projects };
 }
 
+/**
+ * Score a location by how likely it is to be a dam that moves water.
+ * Nearest-wins alone is not enough: live testing matched Granbury to
+ * "GRANBURY RAWS" (a weather station 2.9 miles away) and Table Rock to a
+ * dissolved-oxygen monitor below the dam. Higher is better. Exported for tests.
+ */
+export function damScore(name: string, publicName: string): number {
+  const t = `${name} ${publicName}`.toLowerCase();
+  let score = 0;
+  if (/\bdam\b/.test(t)) score += 3;
+  if (/\b(lake|lk|reservoir|res)\b/.test(t)) score += 2;
+  if (/\bpool\b/.test(t)) score += 1;
+  // Instruments, weather stations and navigation structures don't release water.
+  if (/\braws\b|weather|\bmet\b/.test(t)) score -= 4;
+  if (/\bdo\b|dissolved|\btemp\b|\bwq\b/.test(t)) score -= 3;
+  if (/\block\b|\bharbor\b|\bmarina\b/.test(t)) score -= 2;
+  if (/\btw\b|tailwater|below /.test(t)) score -= 1;
+  if (/\bgage\b|\bgauge\b|\bsensor\b/.test(t)) score -= 1;
+  return score;
+}
+
+/** Ranked candidates near a lake — best guess first. */
+export async function findCandidates(lat: number, lon: number): Promise<CorpsProject[]> {
+  if ((await prisma.corpsLocation.count()) === 0) await buildIndex().catch(() => ({ offices: 0, projects: 0 }));
+  const pad = MAX_MILES / 69 + 0.05;
+  const rows = await prisma.corpsLocation.findMany({
+    where: { lat: { gte: lat - pad, lte: lat + pad }, lon: { gte: lon - pad * 1.4, lte: lon + pad * 1.4 } },
+    take: 300,
+  });
+  return rows
+    .map((r) => ({
+      office: r.office, name: r.name, publicName: r.publicName, lat: r.lat, lon: r.lon,
+      miles: milesBetween(lat, lon, r.lat, r.lon),
+    }))
+    .filter((r) => r.miles <= MAX_MILES)
+    .sort((a, b) => {
+      const d = damScore(b.name, b.publicName) - damScore(a.name, a.publicName);
+      return d !== 0 ? d : a.miles - b.miles;
+    })
+    .slice(0, 6);
+}
+
 /** The Corps project nearest this lake, from the index. */
 export async function findProject(lat: number, lon: number): Promise<CorpsProject | null> {
   if ((await prisma.corpsLocation.count()) === 0) await buildIndex().catch(() => ({ offices: 0, projects: 0 }));
@@ -187,23 +229,34 @@ async function readSeries(office: string, name: string, hoursBack = 24): Promise
 export async function releaseFor(lakeId: string): Promise<ReleaseSummary | null> {
   const lake = await prisma.lake.findUnique({
     where: { id: lakeId },
-    select: { id: true, lat: true, lon: true, region: true, corpsProject: true, corpsAt: true },
+    select: { id: true, lat: true, lon: true, corpsProject: true, corpsAt: true },
   });
   if (!lake) return null;
 
-  let project = lake.corpsProject;
   const stale = !lake.corpsAt || Date.now() - lake.corpsAt.getTime() > CACHE_DAYS * 86400000;
-  if (!project && stale) {
-    const found = await findProject(lake.lat, lake.lon).catch(() => null);
-    project = found ? `${found.office}:${found.name}` : '';
-    await prisma.lake.update({
-      where: { id: lake.id },
-      data: { corpsProject: project, corpsAt: new Date() },
-    }).catch(() => {});
-  }
-  if (!project) return null;
+  // A cached project (or a cached "nothing here") is used until it goes stale.
+  if (lake.corpsProject && !stale) return readAnySeries(lake.corpsProject);
+  if (lake.corpsProject === '' && !stale) return null;
 
-  const [office, loc] = project.split(':');
+  // Otherwise: walk the ranked candidates and keep the first that actually
+  // publishes outflow. Proximity and a promising name are guesses; a series
+  // with numbers in it is the only proof that a location moves water.
+  const candidates = await findCandidates(lake.lat, lake.lon).catch(() => []);
+  for (const c of candidates) {
+    const key = `${c.office}:${c.name}`;
+    const s = await readAnySeries(key);
+    if (s) {
+      await prisma.lake.update({ where: { id: lake.id }, data: { corpsProject: key, corpsAt: new Date() } }).catch(() => {});
+      return s;
+    }
+  }
+  await prisma.lake.update({ where: { id: lake.id }, data: { corpsProject: '', corpsAt: new Date() } }).catch(() => {});
+  return null;
+}
+
+/** Try the known outflow series shapes for one "OFFICE:LOCATION". */
+async function readAnySeries(key: string): Promise<ReleaseSummary | null> {
+  const [office, loc] = key.split(':');
   if (!office || !loc) return null;
   const base = loc.split('-')[0];
   // Turbine flow is generation; gated total is the whole release; the daily
@@ -214,7 +267,6 @@ export async function releaseFor(lakeId: string): Promise<ReleaseSummary | null>
     `${base}.Flow-Out.Inst.1Hour.0.Rev-${office}-REGI`,
     `${base}-Turbine.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
     `${base}-Gated_Total.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
-    `${base}-Pump.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
   ]) {
     const s = await readSeries(office, series).catch(() => null);
     if (s) return s;

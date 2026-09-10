@@ -51,3 +51,31 @@ describe('summarizeRelease', () => {
     assert.equal(summarizeRelease({ ...hours([0]), readings: [] }), '');
   });
 });
+
+/**
+ * Ranking candidates. Nearest-wins matched Granbury to a weather station 2.9
+ * miles away and Table Rock to a dissolved-oxygen monitor — neither of which
+ * releases any water. The score exists to put dams first; the data check that
+ * follows it is what actually proves the choice.
+ */
+import { damScore } from '../src/services/corps';
+
+describe('damScore', () => {
+  const better = (a: [string, string], b: [string, string]) =>
+    assert.ok(damScore(...a) > damScore(...b), `${a[1]} should outrank ${b[1]}`);
+
+  test('a dam or lake outranks an instrument at the same distance', () => {
+    better(['WTYT2', 'Whitney Lake'], ['GRYT2', 'GRANBURY RAWS']);
+    better(['Table_Rock_Dam', 'Table Rock Dam'], ['TabRock_TW_DO', 'Wht R - Below Table Rock Dam DO']);
+    better(['BENT2', 'Benbrook Lake'], ['CHI_LOCK', 'Chicago Harbor Lock']);
+  });
+
+  test('weather stations score negatively — they never release water', () => {
+    assert.ok(damScore('GRYT2', 'GRANBURY RAWS') < 0);
+    assert.ok(damScore('X', 'Something WQ sensor') < 0);
+  });
+
+  test('a plain dam scores above a plain lake gauge', () => {
+    assert.ok(damScore('D', 'Somewhere Dam') > damScore('G', 'Somewhere Gage'));
+  });
+});
