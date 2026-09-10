@@ -768,6 +768,8 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .v{font-size:34px}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.sec-t{font-size:15px;margin:26px 0 10px;padding-top:18px;border-top:1px solid var(--border);color:var(--ink)}
+.sec-t:first-of-type{border-top:none;padding-top:0}
 
 /* ================= first run ================= */
 .onboard{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;
@@ -931,6 +933,22 @@ body.feed-loading .stat-v *{visibility:hidden}
         <input id="obSpecies" maxlength="60" placeholder="e.g. Largemouth Bass"></div>
       <div class="ob-f"><label for="obLure">Go-to lure or bait</label>
         <input id="obLure" maxlength="80" placeholder="e.g. 1/16 oz chartreuse jig"></div>
+      <div class="ob-f"><label>Chartplotter / fish finder</label>
+        <div class="ob-chips" id="obPlotter">
+          <button type="button" data-p="garmin">Garmin</button>
+          <button type="button" data-p="lowrance">Lowrance</button>
+          <button type="button" data-p="humminbird">Humminbird</button>
+          <button type="button" data-p="other">Something else</button>
+          <button type="button" data-p="none">No electronics</button>
+        </div></div>
+      <div class="ob-f"><label>Forward-facing sonar</label>
+        <div class="ob-chips" id="obFfs">
+          <button type="button" data-f="livescope">Garmin LiveScope</button>
+          <button type="button" data-f="activetarget">Lowrance ActiveTarget</button>
+          <button type="button" data-f="megalive">Humminbird MEGA Live</button>
+          <button type="button" data-f="none">None</button>
+        </div>
+        <p class="snap" style="margin:6px 0 0">We'll only show the live-sonar guidance if you run it.</p></div>
       <div class="ob-f"><label for="obYears">How long have you fished?</label>
         <select id="obYears">
           <option value="">Prefer not to say</option>
@@ -1005,6 +1023,16 @@ body.feed-loading .stat-v *{visibility:hidden}
     <button class="btn ghost" data-goto="friends">&#127907; Friends' activity</button>
   </div>
   <div class="today-grid" id="todayCards"></div>
+
+  <h3 class="sec-t">The next 7 days</h3>
+  <p class="lede">Tap a day for the reasoning.</p>
+  <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
+  <div class="note" id="bestNote" hidden></div>
+
+  <h3 class="sec-t">Windows worth booking time off for</h3>
+  <p class="lede">The windows worth taking time off for, in the order they arrive.</p>
+  <div id="weeksOut"></div>
+  <div class="note"><b>These are the peaks, not the only good days.</b> Dates shift with the weather — a warm February pulls the crappie window forward two weeks, a cold one pushes it back. Watch water temperature rather than the calendar and treat these as the window to be watching, not a guarantee.</div>
   <div class="live">
     <div class="live-top"><span class="dot"></span><span id="stamp">Loading conditions…</span></div>
     <div class="live-grid">
@@ -1046,12 +1074,6 @@ body.feed-loading .stat-v *{visibility:hidden}
       </div>
     </div>
   </div>
-</section>
-
-<section class="panel" id="p-best" hidden>
-  <p class="lede">Tap a day for the reasoning.</p>
-  <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
-  <div class="note" id="bestNote" hidden></div>
 </section>
 
 <section class="panel" id="p-plan" hidden>
@@ -1128,12 +1150,6 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div class="mpick" id="mpick"></div>
   <div id="monthOut"></div>
 </div>
-</section>
-
-<section class="panel" id="p-weeks" hidden>
-  <p class="lede">The windows worth taking time off for, in the order they arrive.</p>
-  <div id="weeksOut"></div>
-  <div class="note"><b>These are the peaks, not the only good days.</b> Dates shift with the weather — a warm February pulls the crappie window forward two weeks, a cold one pushes it back. Watch water temperature rather than the calendar and treat these as the window to be watching, not a guarantee.</div>
 </section>
 
 <section class="panel" id="p-water" hidden>
@@ -1352,6 +1368,53 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-friends" hidden>
+<div class="tabs subtabs" role="tablist" id="crewTabs">
+  <button class="tab" role="tab" aria-selected="true" data-c="people">Your crew</button>
+  <button class="tab" role="tab" aria-selected="false" data-c="msgs">Messages<span class="nav-b" data-badge hidden></span></button>
+</div>
+<div id="c-msgs" hidden>
+  <style>
+    .msg-badge{display:inline-block;min-width:8px;padding:0 6px;margin-left:6px;font-size:11px;font-weight:700;line-height:17px;color:#fff;background:#e5484d;border-radius:999px;vertical-align:middle}
+    #c-msgs .mg-wrap{display:grid;grid-template-columns:280px 1fr;gap:0;border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:440px;background:var(--surface)}
+    #c-msgs .mg-list{border-right:1px solid var(--border);overflow-y:auto;max-height:560px}
+    #c-msgs .mg-thread-row{display:flex;gap:10px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer}
+    #c-msgs .mg-thread-row:hover{background:var(--bg)}
+    #c-msgs .mg-thread-row.on{background:var(--bg)}
+    #c-msgs .mg-av{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--bg);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary);border:1px solid var(--border)}
+    #c-msgs .mg-tmeta{min-width:0;flex:1}
+    #c-msgs .mg-tname{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:6px}
+    #c-msgs .mg-tlast{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #c-msgs .mg-unread{min-width:8px;padding:0 6px;font-size:11px;font-weight:700;color:#fff;background:#e5484d;border-radius:999px;line-height:17px}
+    #c-msgs .mg-pane{display:flex;flex-direction:column;min-height:440px;max-height:560px}
+    #c-msgs .mg-head{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;display:flex;align-items:center;gap:10px}
+    #c-msgs .mg-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+    #c-msgs .mg-b{max-width:75%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.35;word-wrap:break-word}
+    #c-msgs .mg-b.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+    #c-msgs .mg-b.them{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-bottom-left-radius:4px}
+    #c-msgs .mg-time{font-size:10px;opacity:.65;margin-top:3px;display:block}
+    #c-msgs .mg-compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+    #c-msgs .mg-compose textarea{flex:1;resize:none;height:40px;max-height:120px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+    #c-msgs .mg-empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);text-align:center;padding:24px}
+    @media(max-width:680px){#c-msgs .mg-wrap{grid-template-columns:1fr}#c-msgs .mg-wrap.on-thread .mg-list{display:none}#c-msgs .mg-wrap:not(.on-thread) .mg-pane{display:none}}
+  </style>
+  <div id="msgsAuth" class="lede">Sign in (top-left) to message other anglers.</div>
+  <div id="msgsMain" hidden>
+    <p class="lede" style="margin-top:0">Private messages with other anglers. <span id="msgsPolicyNote" class="snap"></span></p>
+    <div class="mg-wrap" id="mgWrap">
+      <div class="mg-list" id="mgList"></div>
+      <div class="mg-pane" id="mgPane">
+        <div class="mg-empty" id="mgEmpty">Pick a conversation, or message a friend from the <b style="margin:0 4px">🎣 Friends</b> tab.</div>
+        <div id="mgActive" hidden style="display:flex;flex-direction:column;height:100%">
+          <div class="mg-head"><button class="btn ghost btn-sm" id="mgBack" style="display:none">←</button><span class="mg-av" id="mgHeadAv"></span><span id="mgHeadName"></span></div>
+          <div class="mg-scroll" id="mgScroll"></div>
+          <div id="mgBlocked" class="snap" hidden style="padding:12px 14px;color:var(--muted);border-top:1px solid var(--border)"></div>
+          <div class="mg-compose" id="mgCompose"><textarea id="mgInput" placeholder="Write a message…" maxlength="4000"></textarea><button class="btn" id="mgSend">Send</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="c-people">
   <style>
     #p-friends .fr-in{padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
     #p-friends .fr-card{border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface)}
@@ -1377,36 +1440,37 @@ body.feed-loading .stat-v *{visibility:hidden}
     <div id="grList" style="margin-top:10px"></div>
 
 
-    <h3 style="margin-top:24px">Share on <span id="frLake"></span></h3>
-    <p class="lede" style="margin-top:2px">Private by default — you choose exactly who sees each spot and catch.</p>
-    <div class="shareGrid">
-      <div class="fr-card">
-        <b>📍 Share a spot</b>
-        <input id="spName" class="fr-in" placeholder="Spot name" style="margin-top:10px">
-        <div style="display:flex;gap:8px"><input id="spLat" class="fr-in" placeholder="lat"><input id="spLon" class="fr-in" placeholder="lon"><button class="btn ghost" id="spGps" style="white-space:nowrap">Use GPS</button></div>
-        <input id="spNotes" class="fr-in" placeholder="Notes (optional)">
-        <select id="spVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
-        <select id="spGroup" class="fr-in" hidden></select>
-        <button class="btn" id="spShare" style="width:100%">Share spot</button>
+    <h3 style="margin-top:24px">Share something from <span id="frLake"></span></h3>
+    <p class="lede" style="margin-top:2px">One form. Pick what it is, fill in what you know, choose who sees it.</p>
+    <div class="fr-card share-one">
+      <div class="ob-chips" id="shType" style="margin-bottom:12px">
+        <button type="button" data-t="spot" class="on">📍 A spot</button>
+        <button type="button" data-t="waypoint">🧭 A waypoint</button>
+        <button type="button" data-t="catch">🐟 A catch</button>
       </div>
-      <div class="fr-card">
-        <b>🧭 Share a waypoint</b>
-        <input id="wsName" class="fr-in" placeholder="Waypoint name" style="margin-top:10px">
-        <div style="display:flex;gap:8px"><input id="wsLat" class="fr-in" placeholder="lat"><input id="wsLon" class="fr-in" placeholder="lon"><button class="btn ghost" id="wsGps" style="white-space:nowrap">Use GPS</button></div>
-        <input id="wsKind" class="fr-in" placeholder="What is it? (brush pile, ramp, hump…)">
-        <select id="wsVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
-        <select id="wsGroup" class="fr-in" hidden></select>
-        <button class="btn" id="wsShare" style="width:100%">Share waypoint</button>
+
+      <input id="shName" class="fr-in" placeholder="Name it — “Brush pile off the point”">
+      <div id="shWhere" style="display:flex;gap:8px">
+        <input id="shLat" class="fr-in" placeholder="lat" inputmode="decimal">
+        <input id="shLon" class="fr-in" placeholder="lon" inputmode="decimal">
+        <button class="btn ghost" id="shGps" style="white-space:nowrap">Use GPS</button>
       </div>
-      <div class="fr-card">
-        <b>🐟 Share a catch</b>
-        <input id="caSpecies" class="fr-in" placeholder="Species (e.g. Largemouth)" style="margin-top:10px">
-        <div style="display:flex;gap:8px"><input id="caWeight" class="fr-in" placeholder="lb"><input id="caLure" class="fr-in" placeholder="lure"></div>
-        <input id="caNotes" class="fr-in" placeholder="Notes (optional)">
-        <select id="caVis" class="fr-in"><option value="private">Just me</option><option value="friends">All friends</option><option value="group">A group…</option><option value="public">Everyone</option></select>
-        <select id="caGroup" class="fr-in" hidden></select>
-        <button class="btn" id="caShare" style="width:100%">Share catch</button>
+      <input id="shKind" class="fr-in" placeholder="What is it? (brush pile, ramp, hump…)" hidden>
+      <div id="shCatch" hidden style="display:flex;gap:8px">
+        <input id="shWeight" class="fr-in" placeholder="lb" inputmode="decimal">
+        <input id="shLure" class="fr-in" placeholder="what it hit">
       </div>
+      <input id="shNotes" class="fr-in" placeholder="Notes (optional)">
+
+      <label class="snap" for="shVis" style="display:block;margin:10px 0 4px">Who sees it</label>
+      <select id="shVis" class="fr-in">
+        <option value="private">Just me</option>
+        <option value="friends">All friends</option>
+        <option value="group">A group…</option>
+        <option value="public">Everyone</option>
+      </select>
+      <select id="shGroup" class="fr-in" hidden></select>
+      <button class="btn" id="shShare" style="width:100%;min-height:48px">Share it</button>
     </div>
     <div id="shMsg" class="snap" style="margin-top:8px;color:var(--muted)"></div>
     <div id="myShared" style="margin-top:14px"></div>
@@ -1414,52 +1478,10 @@ body.feed-loading .stat-v *{visibility:hidden}
     <h3 style="margin-top:24px">Friends' activity on <span id="frLake2"></span></h3>
     <div id="frFeed" class="lede">Loading…</div>
   </div>
+</div>
 </section>
 
 <!-- ============ Messages ============ -->
-<section class="panel" id="p-msgs" hidden>
-  <style>
-    .msg-badge{display:inline-block;min-width:8px;padding:0 6px;margin-left:6px;font-size:11px;font-weight:700;line-height:17px;color:#fff;background:#e5484d;border-radius:999px;vertical-align:middle}
-    #p-msgs .mg-wrap{display:grid;grid-template-columns:280px 1fr;gap:0;border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:440px;background:var(--surface)}
-    #p-msgs .mg-list{border-right:1px solid var(--border);overflow-y:auto;max-height:560px}
-    #p-msgs .mg-thread-row{display:flex;gap:10px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer}
-    #p-msgs .mg-thread-row:hover{background:var(--bg)}
-    #p-msgs .mg-thread-row.on{background:var(--bg)}
-    #p-msgs .mg-av{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--bg);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary);border:1px solid var(--border)}
-    #p-msgs .mg-tmeta{min-width:0;flex:1}
-    #p-msgs .mg-tname{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:6px}
-    #p-msgs .mg-tlast{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #p-msgs .mg-unread{min-width:8px;padding:0 6px;font-size:11px;font-weight:700;color:#fff;background:#e5484d;border-radius:999px;line-height:17px}
-    #p-msgs .mg-pane{display:flex;flex-direction:column;min-height:440px;max-height:560px}
-    #p-msgs .mg-head{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;display:flex;align-items:center;gap:10px}
-    #p-msgs .mg-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
-    #p-msgs .mg-b{max-width:75%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.35;word-wrap:break-word}
-    #p-msgs .mg-b.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
-    #p-msgs .mg-b.them{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-bottom-left-radius:4px}
-    #p-msgs .mg-time{font-size:10px;opacity:.65;margin-top:3px;display:block}
-    #p-msgs .mg-compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
-    #p-msgs .mg-compose textarea{flex:1;resize:none;height:40px;max-height:120px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
-    #p-msgs .mg-empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);text-align:center;padding:24px}
-    @media(max-width:680px){#p-msgs .mg-wrap{grid-template-columns:1fr}#p-msgs .mg-wrap.on-thread .mg-list{display:none}#p-msgs .mg-wrap:not(.on-thread) .mg-pane{display:none}}
-  </style>
-  <div id="msgsAuth" class="lede">Sign in (top-left) to message other anglers.</div>
-  <div id="msgsMain" hidden>
-    <p class="lede" style="margin-top:0">Private messages with other anglers. <span id="msgsPolicyNote" class="snap"></span></p>
-    <div class="mg-wrap" id="mgWrap">
-      <div class="mg-list" id="mgList"></div>
-      <div class="mg-pane" id="mgPane">
-        <div class="mg-empty" id="mgEmpty">Pick a conversation, or message a friend from the <b style="margin:0 4px">🎣 Friends</b> tab.</div>
-        <div id="mgActive" hidden style="display:flex;flex-direction:column;height:100%">
-          <div class="mg-head"><button class="btn ghost btn-sm" id="mgBack" style="display:none">←</button><span class="mg-av" id="mgHeadAv"></span><span id="mgHeadName"></span></div>
-          <div class="mg-scroll" id="mgScroll"></div>
-          <div id="mgBlocked" class="snap" hidden style="padding:12px 14px;color:var(--muted);border-top:1px solid var(--border)"></div>
-          <div class="mg-compose" id="mgCompose"><textarea id="mgInput" placeholder="Write a message…" maxlength="4000"></textarea><button class="btn" id="mgSend">Send</button></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ============ Profile ============ -->
 <section class="panel" id="p-profile" hidden>
   <style>
@@ -1498,6 +1520,21 @@ body.feed-loading .stat-v *{visibility:hidden}
         <option value="jon boat">Jon boat</option>
         <option value="kayak">Kayak</option>
         <option value="other boat">Other boat</option>
+      </select></div>
+    </div>
+    <div class="pf-grid">
+      <div><label for="pfPlotter">Chartplotter</label><select id="pfPlotter" class="pf-in">
+        <option value="__unset">— not saying —</option>
+        <option value="garmin">Garmin</option><option value="lowrance">Lowrance</option>
+        <option value="humminbird">Humminbird</option><option value="other">Something else</option>
+        <option value="none">No electronics</option>
+      </select></div>
+      <div><label for="pfFfs">Forward-facing sonar</label><select id="pfFfs" class="pf-in">
+        <option value="__unset">— not saying —</option>
+        <option value="livescope">Garmin LiveScope</option>
+        <option value="activetarget">Lowrance ActiveTarget</option>
+        <option value="megalive">Humminbird MEGA Live</option>
+        <option value="none">None</option>
       </select></div>
     </div>
     <label for="pfYears">How long you've fished</label>
@@ -2056,7 +2093,7 @@ const SCOPE={
        "Find the bait ball first. Stripers hold under it or off to one side, in the open water beside the edge, not inside it.",
        "In summer look for a horizontal haze band \u2014 that is the thermocline, and the fish will be right at it."],
  work:["Watch the follow. Three fish tracking your lure without eating means change speed before you change lures.",
-       "Drop a downline right onto a marked fish and hold it there. This is what LiveScope is genuinely best at.",
+       "Drop a downline right onto a marked fish and hold it there. This is what live sonar is genuinely best at.",
        "Lead the fish by 5-10 ft and bring the bait past it. Casting directly at a mark spooks more than it catches."]},
 "Blue Catfish":{
  read:["Marks sitting right at or 1-2 ft off the bottom, moving slowly. Easy to mistake for a bottom irregularity until it shifts.",
@@ -2065,7 +2102,7 @@ const SCOPE={
        "Watch your sinker land. Knowing your bait is on the edge and not 20 ft up the flat is the whole game."]},
 "Channel Catfish":{
  read:["Similar to blues but usually shallower and closer to timber. Look for marks tucked against the woody cover.",
-       "Stained water does not affect LiveScope \u2014 it is sound, not light. This is a real advantage on Granbury's upper end."],
+       "Stained water does not affect live sonar \u2014 it is sound, not light. This is a real advantage on the upper end."],
  work:["Find the timber, then place the bait at its edge rather than in it.",
        "Confirm depth of the cover before you rig, so the bait sits at the base and not hung in branches."]},
 "Flathead Catfish":{
@@ -2221,15 +2258,15 @@ function bankAdvice(dir,spd){
   const axisName=ACTIVE.axisLabel||null;
   let fetch;
   if(axisDeg===null){
-    fetch=spd>=18?'At this speed the open water will be uncomfortable wherever the lake runs \u2014 pick banks with something upwind of them.':'';
+    fetch=spd>=18?'At this speed the open water will be rough whichever way you go — fish banks with land upwind of them.':'';
   }else{
     // Angle between the wind bearing and the axis line (both mod 180).
     const off=Math.abs((((dir-axisDeg)%180)+180)%180);
     const alongAxis=Math.min(off,180-off)<35;
-    if(alongAxis&&spd>=15) fetch='This wind runs straight down the lake\u0027s long '+axisName+' axis, so it builds the most fetch it possibly can. Expect a real chop on the main lake and look hard for protected water.';
-    else if(alongAxis) fetch='Wind is running along the lake\u0027s '+axisName+' axis, so the main lake will have more chop than the speed suggests.';
-    else if(spd>=18) fetch='Wind is crossing the lake rather than running its length, which limits fetch, but at this speed the open water will still be uncomfortable.';
-    else fetch='Wind is crossing the lake rather than running its length, so fetch stays short and protected water is easy to find.';
+    if(alongAxis&&spd>=15) fetch='The wind is running the long way down the lake, so it has miles to build waves. Expect a real chop out in the middle — find a bank that blocks it.';
+    else if(alongAxis) fetch='The wind is running the long way down the lake, so the middle will be rougher than the speed suggests.';
+    else if(spd>=18) fetch='The wind is cutting across the lake rather than down it, so waves stay smaller — but at this speed the open water is still no fun.';
+    else fetch='The wind is cutting across the lake rather than down it, so the waves stay small and sheltered water is easy to find.';
   }
   let strength;
   if(spd<4) strength='<b>Slick calm.</b> No wind means no bait push and spookier fish. Go lighter on line, longer on casts, and lean on low light.';
@@ -2424,9 +2461,9 @@ function drawSpecies(){
       '<div class="row"><div class="k">Where</div><ul>'+w.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
       '<div class="row"><div class="k">How</div><ul>'+h.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
       '<div class="row"><div class="k">Bait</div><ul>'+b.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
-      (SCOPE[f.n]?'<div class="row"><div class="k">On LiveScope &mdash; what to look for</div><ul>'+
+      (SCOPE[f.n]?'<div class="row"><div class="k">On live sonar &mdash; what to look for</div><ul>'+
         SCOPE[f.n].read.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
-        '<div class="row"><div class="k">On LiveScope &mdash; how to work it</div><ul>'+
+        '<div class="row"><div class="k">On live sonar &mdash; how to work it</div><ul>'+
         SCOPE[f.n].work.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
       '<div class="row"><div class="k">Reality check</div><p>'+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</p></div>'+
       '</div></details>';
@@ -2524,7 +2561,7 @@ function drawDayPlan(){
   }
 
   const sol=solunarTimes(d.start);
-  $('solunar').innerHTML='<div class="sol"><b>Solunar windows:</b> '+
+  $('solunar').innerHTML='<div class="sol"><b>Feeding windows</b> <span class="snap">(moon overhead, underfoot, rise and set)</span>: '+
     [['Major',sol.major1],['Major',sol.major2],['Minor',sol.minor1],['Minor',sol.minor2]]
     .filter(x=>x[1]).sort((a,b)=>a[1].start-b[1].start)
     .map(x=>x[0].toLowerCase()+' <b>'+fmtT(x[1].start)+'–'+fmtT(x[1].end)+'</b>')
@@ -3161,6 +3198,37 @@ async function loadActiveLake(){
   }catch(e){}
 }
 
+/* ---- the angler's electronics ----
+   The app was written around Garmin + LiveScope. GEAR lets it match the boat
+   instead: the GPX export defaults to their plotter, and the forward-facing
+   sonar guide is named for the unit they own — or hidden if they don't run one. */
+let GEAR={plotter:null,ffs:null};
+const FFS_LABEL={livescope:'LiveScope',activetarget:'ActiveTarget',megalive:'MEGA Live'};
+async function loadGear(){
+  if(!AUTH.user)return;
+  try{ const r=await apiFetch('/api/me/profile'); if(!r.ok)return;
+    const p=(await r.json()).profile||{};
+    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null};
+    applyGear();
+  }catch(e){}
+}
+function applyGear(){
+  // GPX export lands on their brand instead of always Garmin.
+  const v=$('wpVendor');
+  if(v&&GEAR.plotter&&['garmin','lowrance','humminbird'].includes(GEAR.plotter)) v.value=GEAR.plotter;
+  // Name the sonar view after the unit they actually own, and drop it from the
+  // nav for anyone who doesn't run forward-facing sonar.
+  const item=VIEW_META['scope'];
+  if(item){
+    const lbl=FFS_LABEL[GEAR.ffs];
+    item.label=lbl||'Live sonar';
+    item.title=lbl?lbl+' on this lake':'Forward-facing sonar';
+    item.hide=(GEAR.ffs==='none');
+  }
+  renderNav();
+  if(CUR==='scope'&&GEAR.ffs==='none'){ /* leave it open if they navigated there deliberately */ }
+}
+
 /* ---- first run ----
    A new account has no lake, so the app has nothing true to show: every number
    on screen would be about someone else's water. Pick one before anything else. */
@@ -3170,7 +3238,7 @@ function hideOnboard(){ const el=$('onboard'); if(el)el.hidden=true; }
 // Step 1 picks the water; 2 and 3 are the angler and their default sharing.
 // Steps 2-3 are pure profile writes, so they can be skipped without leaving
 // the account in a broken state.
-let OB={boatType:undefined,share:'friends'};
+let OB={boatType:undefined,share:'friends',plotter:undefined,ffs:undefined};
 function obStep(n){
   [1,2,3].forEach(function(i){ const el=$('ob'+i); if(el)el.hidden=(i!==n); });
   document.querySelectorAll('.ob-dots span').forEach(function(d,i){ d.classList.toggle('on',i<n); });
@@ -3188,6 +3256,8 @@ async function obFinish(){
   };
   if(!body.displayName)delete body.displayName;
   if(OB.boatType!==undefined){ body.hasBoat=!!OB.boatType; body.boatType=OB.boatType||''; }
+  if(OB.plotter!==undefined) body.plotterBrand=OB.plotter;
+  if(OB.ffs!==undefined) body.ffsBrand=OB.ffs;
   try{
     await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     await apiFetch('/api/me/sharing',{method:'PUT',headers:{'Content-Type':'application/json'},
@@ -3202,6 +3272,16 @@ function wireOnboard(){
     const b=e.target.closest('[data-boat]'); if(!b)return;
     OB.boatType=b.dataset.boat;
     $('obBoat').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  };
+  $('obPlotter').onclick=function(e){
+    const b=e.target.closest('[data-p]'); if(!b)return;
+    OB.plotter=b.dataset.p;
+    $('obPlotter').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  };
+  $('obFfs').onclick=function(e){
+    const b=e.target.closest('[data-f]'); if(!b)return;
+    OB.ffs=b.dataset.f;
+    $('obFfs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
   };
   $('obShare').onclick=function(e){
     const b=e.target.closest('[data-share]'); if(!b)return;
@@ -3411,7 +3491,7 @@ async function refreshGroups(){
   try{ const r=await apiFetch('/api/groups'); const d=await r.json(); GROUPS=d.groups||[];
     $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button></div><div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div><select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select></div>').join('')||'<p class="snap">No groups yet.</p>';
     const opts='<option value="">Pick a group…</option>'+GROUPS.map(g=>'<option value="'+g.id+'">'+escHtml(g.name)+'</option>').join('');
-    $('spGroup').innerHTML=opts; $('caGroup').innerHTML=opts; $('wsGroup').innerHTML=opts;
+    $('shGroup').innerHTML=opts;
     renderSharing();
   }catch(e){}
 }
@@ -3439,7 +3519,9 @@ function renderSharing(){
 }
 // Preselect each share form to the user's default for that data type.
 function applySharingDefaults(){
-  const map={spots:['spVis','spGroup'],trips:['caVis','caGroup'],waypoints:['wsVis','wsGroup']};
+  // The one form takes the default for whichever type is selected.
+  const key={spot:'spots',catch:'trips',waypoint:'waypoints'}[SH_TYPE]||'spots';
+  const map={}; map[key]=['shVis','shGroup'];
   for(const t in map){
     const pref=SHARING[t]; if(!pref)continue;
     const [visId,grpId]=map[t];
@@ -3462,27 +3544,45 @@ async function saveSharing(){
   }catch(e){ $('shDefMsg').textContent='Server not reachable.'; }
 }
 function gpsInto(latId,lonId){ if(!navigator.geolocation){return;} navigator.geolocation.getCurrentPosition(p=>{ $(latId).value=p.coords.latitude.toFixed(5); $(lonId).value=p.coords.longitude.toFixed(5); }); }
-async function shareSpot(){
-  const body={name:$('spName').value.trim(),lat:parseFloat($('spLat').value),lon:parseFloat($('spLon').value),notes:$('spNotes').value.trim(),visibility:$('spVis').value,groupId:$('spGroup').value};
-  if(!body.name||isNaN(body.lat)||isNaN(body.lon)){ $('shMsg').textContent='Spot needs a name + lat/lon (tap “Use GPS”).'; return; }
-  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/spots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
-    $('shMsg').textContent=r.ok?'Spot shared!':(d.error||'Could not share.'); if(r.ok){$('spName').value='';$('spNotes').value='';loadMyShared();}
-  }catch(e){$('shMsg').textContent='Server not reachable.';}
+// One form, three record types. The endpoint and payload follow the chosen
+// type; everything else — where, who sees it, notes — is shared.
+let SH_TYPE='spot';
+function shTypeChange(t){
+  SH_TYPE=t;
+  $('shType').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  $('shName').placeholder = t==='catch' ? 'What did you catch? (e.g. Largemouth)' : 'Name it — “Brush pile off the point”';
+  $('shWhere').hidden = t==='catch';
+  $('shKind').hidden  = t!=='waypoint';
+  $('shCatch').hidden = t!=='catch';
+  $('shShare').textContent = t==='catch' ? 'Share the catch' : (t==='waypoint' ? 'Share the waypoint' : 'Share the spot');
+  applySharingDefaults();
 }
-async function shareCatch(){
-  const w=parseFloat($('caWeight').value);
-  const body={species:$('caSpecies').value.trim(),weight:isNaN(w)?undefined:w,lure:$('caLure').value.trim(),notes:$('caNotes').value.trim(),visibility:$('caVis').value,groupId:$('caGroup').value};
-  if(!body.species){ $('shMsg').textContent='What did you catch?'; return; }
-  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/catches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
-    $('shMsg').textContent=r.ok?'Catch shared!':(d.error||'Could not share.'); if(r.ok){$('caSpecies').value='';$('caNotes').value='';loadMyShared();}
-  }catch(e){$('shMsg').textContent='Server not reachable.';}
-}
-async function shareWaypoint(){
-  const body={name:$('wsName').value.trim(),lat:parseFloat($('wsLat').value),lon:parseFloat($('wsLon').value),kind:$('wsKind').value.trim(),visibility:$('wsVis').value,groupId:$('wsGroup').value};
-  if(!body.name||isNaN(body.lat)||isNaN(body.lon)){ $('shMsg').textContent='Waypoint needs a name + lat/lon (tap “Use GPS”).'; return; }
-  try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/waypoints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
-    $('shMsg').textContent=r.ok?'Waypoint shared!':(d.error||'Could not share.'); if(r.ok){$('wsName').value='';$('wsKind').value='';loadMyShared();}
-  }catch(e){$('shMsg').textContent='Server not reachable.';}
+async function shareThing(){
+  const name=$('shName').value.trim();
+  const vis=$('shVis').value, groupId=$('shGroup').value;
+  const notes=$('shNotes').value.trim();
+  const lat=parseFloat($('shLat').value), lon=parseFloat($('shLon').value);
+  let url, body;
+  if(SH_TYPE==='catch'){
+    if(!name){ $('shMsg').textContent='What did you catch?'; return; }
+    const w=parseFloat($('shWeight').value);
+    url='/api/lakes/'+ACTIVE.id+'/catches';
+    body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId};
+  }else{
+    if(!name||isNaN(lat)||isNaN(lon)){ $('shMsg').textContent='Needs a name and a pin — tap “Use GPS”.'; return; }
+    url='/api/lakes/'+ACTIVE.id+'/'+(SH_TYPE==='spot'?'spots':'waypoints');
+    body={name:name,lat:lat,lon:lon,notes:notes,visibility:vis,groupId:groupId};
+    if(SH_TYPE==='waypoint') body.kind=$('shKind').value.trim();
+  }
+  $('shMsg').textContent='Sharing…';
+  try{
+    const r=await apiFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){ $('shMsg').textContent=d.error||'Could not share that.'; return; }
+    $('shMsg').textContent='Shared ✓';
+    ['shName','shNotes','shKind','shWeight','shLure'].forEach(id=>{ const e=$(id); if(e)e.value=''; });
+    loadMyShared();
+  }catch(e){ $('shMsg').textContent='Server not reachable.'; }
 }
 async function loadMyShared(){
   try{ const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/mine'); const d=await r.json();
@@ -3503,14 +3603,12 @@ async function loadFeed(){
 }
 function wireFriends(){
   const p=$('p-friends'); if(!p)return;
-  $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup; $('spShare').onclick=shareSpot; $('caShare').onclick=shareCatch;
-  $('wsShare').onclick=shareWaypoint;
+  $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup;
+  $('shShare').onclick=shareThing;
+  $('shType').onclick=function(e){ const b=e.target.closest('[data-t]'); if(b)shTypeChange(b.dataset.t); };
   const sd=$('shDefSave'); if(sd)sd.onclick=saveSharing;
-  $('spGps').onclick=()=>gpsInto('spLat','spLon');
-  $('wsGps').onclick=()=>gpsInto('wsLat','wsLon');
-  $('spVis').onchange=()=>{$('spGroup').hidden=$('spVis').value!=='group';};
-  $('caVis').onchange=()=>{$('caGroup').hidden=$('caVis').value!=='group';};
-  $('wsVis').onchange=()=>{$('wsGroup').hidden=$('wsVis').value!=='group';};
+  $('shGps').onclick=()=>gpsInto('shLat','shLon');
+  $('shVis').onchange=()=>{$('shGroup').hidden=$('shVis').value!=='group';};
   p.addEventListener('click',e=>{
     const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]'),msg=e.target.closest('[data-msg]');
     const blk=e.target.closest('[data-block]'), unb=e.target.closest('[data-unblock]');
@@ -3550,6 +3648,8 @@ async function loadProfile(){
     $('pfName').value=p.displayName||''; $('pfLocation').value=p.location||'';
     $('pfSpecies').value=p.favoriteSpecies||''; $('pfBio').value=p.bio||'';
     $('pfLure').value=p.favoriteLure||''; $('pfYears').value=p.yearsFishing||'';
+    $('pfPlotter').value=p.plotterBrand||'__unset'; $('pfFfs').value=p.ffsBrand||'__unset';
+    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null}; applyGear();
     // hasBoat null means never asked — distinct from "no boat".
     $('pfBoat').value = p.hasBoat==null ? '__unset' : (p.hasBoat ? (p.boatType||'other boat') : '');
     $('pfPrivacy').value=p.messagePrivacy||'friends';
@@ -3577,6 +3677,9 @@ async function saveProfile(){
     favoriteLakeId:$('pfLake').value||null, messagePrivacy:$('pfPrivacy').value };
   const bt=$('pfBoat').value;
   if(bt!=='__unset'){ body.hasBoat=!!bt; body.boatType=bt; }
+  const pb=$('pfPlotter').value, fb=$('pfFfs').value;
+  if(pb!=='__unset') body.plotterBrand=pb;
+  if(fb!=='__unset') body.ffsBrand=fb;
   if(PF_PENDING_AVATAR!==undefined) body.avatarUrl=PF_PENDING_AVATAR;
   try{
     const r=await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -3662,8 +3765,8 @@ async function sendMsg(){
   }catch(e){ $('mgInput').value=body; }
 }
 function goToMessages(userId,name){
+  go('friends'); goCrew('msgs');
   MG_PENDING={id:userId,name:name};
-  const tab=document.querySelector('.tab[data-v="msgs"]'); if(tab)tab.click();
 }
 async function refreshUnread(){
   // The badge is rendered into every nav surface, so update them all.
@@ -3960,7 +4063,7 @@ function drawBrief(){
   const st=sunTimes(d.start), mt=moonTimes(d.start), mp=Math.round(moonPhase(new Date(d.start.valueOf()+43200000)).frac*100);
   if(st.set)L.push('Sunset <b>'+fmtT(st.set)+'</b> \u00b7 moon <b>'+mp+'%</b>'+(mt.rise?' \u00b7 moonrise <b>'+fmtT(mt.rise)+'</b>':''));
   const sol=solunarTimes(d.start);
-  if(sol.major1)L.push('Solunar majors: <b>'+fmtT(sol.major1.start)+'\u2013'+fmtT(sol.major1.end)+'</b>'+
+  if(sol.major1)L.push('Best feeding window: <b>'+fmtT(sol.major1.start)+'\u2013'+fmtT(sol.major1.end)+'</b>'+
     (sol.major2?' and <b>'+fmtT(sol.major2.start)+'\u2013'+fmtT(sol.major2.end)+'</b>':''));
   const wt=(typeof waterTemp!=='undefined'&&waterTemp!=null)?waterTemp:null;
   if(wt!=null){const ws=waterState(wt,(new Date().getMonth())<=5);L.push('Water <b>'+wt+'\u00b0</b> \u2014 <b>'+ws.name+'</b>');}
@@ -4049,7 +4152,7 @@ const SEED_WP=[
  {name:"Upper river catfish run",type:"Channel ledge",lat:32.4940,lng:-97.8140,depth:"8-15 ft",
   notes:"TPWD's most consistent catfish water \u2014 the river reach above Hunter Park. Anchor upstream of an outside bend, fresh cut shad on bottom, fan your casts across the channel. Best with a little current moving after rain."},
  {name:"Mid-lake channel bend blues",type:"Channel ledge",lat:32.4040,lng:-97.7480,depth:"20-35 ft",
-  notes:"Outside bend of the old Brazos channel, DeCordova reach. Summer blues ride these edges \u2014 LiveScope along the drop before you commit, then drift or anchor cut shad right on the break."},
+  notes:"Outside bend of the old Brazos channel, DeCordova reach. Summer blues ride these edges \u2014 Scan the drop with live sonar before you commit, then drift or anchor cut shad right on the break."},
  {name:"Indian Harbor flats",type:"Flat",lat:32.4070,lng:-97.7760,depth:"8-15 ft",
   notes:"Shelves and pockets around the big horseshoe bend, right beside deeper channel water. Bait stages here in October \u2014 scope the edges where shelf meets channel."},
  {name:"DeCordova reach drift flats",type:"Flat",lat:32.4015,lng:-97.7455,depth:"10-20 ft",
@@ -4217,20 +4320,17 @@ $('mTrophy').onclick=function(){setMode('trophy')};
    shape. Flat primary items first, collapsible groups underneath; the goal
    toggle (Eaters/Trophy) only appears on views where it changes anything. */
 const NAV=[
-  {id:'today',   ic:'🎯', label:'Today',    title:'Today',            sub:'Conditions, your best window, and what to do about it.'},
-  {id:'plan',    ic:'🧠', label:'Day plan', title:'Day plan',         sub:'Sun, moon, the dark window, and which bank the wind is loading up.'},
-  {id:'best',    ic:'📅', label:'Best days',title:'Best days',        sub:'The next 7 days scored on pressure, wind, cloud, temperature and rain.'},
-  {id:'weeks',   ic:'🗓️', label:'Best weeks', title:'Best weeks', sub:'The strongest stretches of the year on this water.'},
-  {id:'water',   ic:'💧', label:'Water',    title:'Water',            sub:'Temperature, level and what the water column is doing.'},
-  {id:'log',     ic:'📍', label:'My water', title:'My water',         sub:'Your map, your spots and every trip — the water as you know it.'},
-  {id:'msgs',    ic:'💬', label:'Messages', title:'Messages',         sub:'Private messages with your fishing friends.', badge:true},
-  {id:'friends', ic:'🎣', label:'Friends',  title:'Friends',          sub:'Your circle, your groups, and what they are sharing here.'},
+  {id:'today',   ic:'🎯', label:'Today',    title:'Today',    sub:'When to go, and what to do about it.'},
+  {id:'plan',    ic:'🧠', label:'Day plan', title:'Day plan', sub:'Hour by hour for the day you pick.'},
+  {id:'log',     ic:'📍', label:'My water', title:'My water', sub:'Your map, your spots and every trip.'},
+  {id:'friends', ic:'🎣', label:'Crew',     title:'Your crew', sub:'Friends, what they are sharing, and your messages.', badge:true},
   {grp:'guide', ic:'📚', label:'Lake guide', kids:[
-    {id:'season',    ic:'🌿', label:'Season',     title:'Season',          sub:'Month by month on this lake.'},
-    {id:'species',   ic:'🐟', label:'By species', title:'By species',      sub:'Where each species lives through the year.'},
-    {id:'rigs',      ic:'🪝', label:'Rigs',       title:'Rigs',            sub:'What to tie on, and how to fish it.'},
-    {id:'scope',     ic:'📡', label:'LiveScope',  title:'LiveScope',       sub:'Forward-facing sonar on this water.'},
-    {id:'reference', ic:'📖', label:'Reference',  title:'Reference',       sub:'Reading the barometer, and the limits before you keep.'}
+    {id:'water',     ic:'💧', label:'Water',      title:'Water',      sub:'Temperature, level, and what the water column is doing.'},
+    {id:'season',    ic:'🌿', label:'Season',     title:'Season',     sub:'Month by month on this lake.'},
+    {id:'species',   ic:'🐟', label:'By species', title:'By species', sub:'Where each fish lives through the year.'},
+    {id:'rigs',      ic:'🪝', label:'Rigs',       title:'Rigs',       sub:'What to tie on, and how to fish it.'},
+    {id:'scope',     ic:'📡', label:'Live sonar', title:'Forward-facing sonar', sub:'Live sonar on this water — named for the unit you run.'},
+    {id:'reference', ic:'📖', label:'Reference',  title:'Reference',  sub:'Reading the barometer, and the limits before you keep.'}
   ]},
   {grp:'settings', ic:'⚙️', label:'Settings', kids:[
     {id:'profile', ic:'👤', label:'Profile',  title:'Profile',  sub:'How other anglers see you, and who can reach you.'},
@@ -4243,7 +4343,7 @@ const NAV=[
 const VIEWS=[]; (function(){ NAV.forEach(n=>n.kids?n.kids.forEach(k=>VIEWS.push(k.id)):VIEWS.push(n.id)); })();
 const VIEW_META={}; (function(){ const add=n=>{VIEW_META[n.id]=n;}; NAV.forEach(n=>n.kids?n.kids.forEach(add):add(n)); })();
 // The goal toggle only changes these views' output.
-const MODE_VIEWS=['today','plan','best','weeks','water','season','species','rigs','scope'];
+const MODE_VIEWS=['today','plan','water','season','species','rigs','scope'];
 const GRP_KEY='efa:navgrp';
 let NAV_OPEN=(function(){ try{ return JSON.parse(localStorage.getItem(GRP_KEY))||{guide:false,settings:false}; }catch(e){ return {guide:false,settings:false}; } })();
 let CUR='today';
@@ -4255,10 +4355,11 @@ function navHtml(){
         '<span class="ic">'+n.ic+'</span><span class="lbl">'+escHtml(n.label)+'</span>'+
         (n.badge?'<span class="nav-b" data-badge hidden></span>':'')+'</button>';
     }
-    const hasActive=n.kids.some(k=>k.id===CUR), open=NAV_OPEN[n.grp]||hasActive;
+    const kids=n.kids.filter(k=>!k.hide||k.id===CUR);
+    const hasActive=kids.some(k=>k.id===CUR), open=NAV_OPEN[n.grp]||hasActive;
     return '<div class="nav-grp"><button class="nav-gh'+(hasActive?' has-active':'')+'" data-grp="'+n.grp+'" aria-expanded="'+(open?'true':'false')+'">'+
       '<span class="ic">'+n.ic+'</span><span class="lbl">'+escHtml(n.label)+'</span><span class="chev">❯</span></button>'+
-      (open?'<div class="nav-kids">'+n.kids.map(k=>'<button class="nav-i'+(CUR===k.id?' active':'')+'" data-go="'+k.id+'">'+
+      (open?'<div class="nav-kids">'+kids.map(k=>'<button class="nav-i'+(CUR===k.id?' active':'')+'" data-go="'+k.id+'">'+
         '<span class="ic">'+k.ic+'</span><span class="lbl">'+escHtml(k.label)+'</span></button>').join('')+'</div>':'')+
       '</div>';
   }).join('');
@@ -4292,8 +4393,7 @@ function go(id,push){
   if(id==='today'){ renderToday(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
-  if(id==='friends'){ loadFriends(); }
-  if(id==='msgs'){ openMessages(); } else { stopThreadPoll(); }
+  if(id==='friends'){ loadFriends(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
   if(id==='lakes'){ $('lakesAuth').hidden=!!AUTH.user; refreshMyLakes(); }
   if(id==='sharing'){ $('sharingAuth').hidden=!!AUTH.user; $('sharingMain').hidden=!AUTH.user;
@@ -4308,6 +4408,14 @@ function goSub(w){
   document.querySelectorAll('#waterTabs .tab').forEach(function(x){ x.setAttribute('aria-selected',x.dataset.w===w); });
   if(w==='map'){ initMap(); setTimeout(function(){ if(map)map.invalidateSize(); },80); }
 }
+// Crew holds people and messages side by side; the badge lives on the tab.
+let CREW_TAB='people';
+function goCrew(which){
+  CREW_TAB=which||'people';
+  ['people','msgs'].forEach(function(v){ const el=$('c-'+v); if(el)el.hidden=(v!==CREW_TAB); });
+  document.querySelectorAll('#crewTabs .tab').forEach(function(x){ x.setAttribute('aria-selected',x.dataset.c===CREW_TAB); });
+  if(CREW_TAB==='msgs') openMessages(); else stopThreadPoll();
+}
 function openDrawer(){ $('drawer').dataset.open='1'; }
 function closeDrawer(){ $('drawer').dataset.open='0'; }
 document.addEventListener('click',function(e){
@@ -4315,6 +4423,7 @@ document.addEventListener('click',function(e){
         dw=e.target.closest('[data-drawer]'), cl=e.target.closest('[data-close]');
   if(g){ go(g.dataset.go); if(g.dataset.sub)goSub(g.dataset.sub); return; }
   const wt=e.target.closest('#waterTabs .tab'); if(wt){ goSub(wt.dataset.w); return; }
+  const ct=e.target.closest('#crewTabs .tab'); if(ct){ goCrew(ct.dataset.c); return; }
   if(gr){ NAV_OPEN[gr.dataset.grp]=!(NAV_OPEN[gr.dataset.grp]); try{localStorage.setItem(GRP_KEY,JSON.stringify(NAV_OPEN));}catch(e){} renderNav(); return; }
   if(dw){ openDrawer(); return; }
   if(cl){ closeDrawer(); return; }
@@ -4347,7 +4456,7 @@ function renderToday(){
   try{
     const sol=solunarTimes(new Date(new Date().setHours(0,0,0,0)));
     if(sol&&sol.major1) cards.push('<div class="tcard"><div class="k">Best window</div><div class="v" style="font-size:20px">'+
-      fmtT(sol.major1.start)+'–'+fmtT(sol.major1.end)+'</div><div class="s">Solunar major · moon overhead</div></div>');
+      fmtT(sol.major1.start)+'–'+fmtT(sol.major1.end)+'</div><div class="s">Moon overhead — fish feed hardest</div></div>');
   }catch(e){}
   // Water
   const wt=(waterTemp!=null?waterTemp:(typeof estWater==='function'?estWater():null));
@@ -4703,7 +4812,9 @@ drawTrips();
   wireMessages();
   refreshUnread();
   setInterval(refreshUnread,20000);
-  if(!isNaN(ACTIVE.lat)){ $('spLat').value=ACTIVE.lat.toFixed(5); $('spLon').value=ACTIVE.lon.toFixed(5); }
+  // Seed the share form's coordinates with the lake's centre as a starting point.
+  if(!isNaN(ACTIVE.lat)){ const la=$('shLat'), lo=$('shLon');
+    if(la)la.value=ACTIVE.lat.toFixed(5); if(lo)lo.value=ACTIVE.lon.toFixed(5); }
   const tp=await stGet(LK('theme'));
   if(tp==='dark'||tp==='light'||tp==='auto')themePref=tp;
   applyTheme();
@@ -4725,6 +4836,7 @@ drawTrips();
   // Shell last, so every panel it can open is already populated.
   renderNav();
   wireOnboard();
+  loadGear();
   go((location.hash||'').replace('#','')||'today',false);
 })();
 

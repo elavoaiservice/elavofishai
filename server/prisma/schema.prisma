@@ -87,6 +87,10 @@ model User {
   bio             String? @db.Text
   favoriteSpecies String? // e.g. "Largemouth Bass"
   favoriteLure    String? // e.g. "1/16 oz chartreuse jig"
+  // ---- electronics ---- what the angler actually runs, so the app stops
+  // assuming Garmin + LiveScope. null = never asked, "none" = fishes without.
+  plotterBrand    String? // garmin | lowrance | humminbird | other | none
+  ffsBrand        String? // livescope | activetarget | megalive | other | none
   hasBoat         Boolean? // null = never asked
   boatType        String? // bass boat | pontoon | kayak | jon boat | bank & wade ...
   yearsFishing    String? // free text band, e.g. "10+ years"

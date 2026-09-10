@@ -31,6 +31,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, favoriteLakeId: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
+        plotterBrand: true, ffsBrand: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         messagePrivacy: true, createdAt: true,
       },
@@ -53,6 +54,8 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
     if ('bio' in b) data.bio = String(b.bio || '').trim().slice(0, 600) || null;
     if ('favoriteSpecies' in b) data.favoriteSpecies = String(b.favoriteSpecies || '').trim().slice(0, 60) || null;
     if ('favoriteLure' in b) data.favoriteLure = String(b.favoriteLure || '').trim().slice(0, 80) || null;
+    if ('plotterBrand' in b) data.plotterBrand = String(b.plotterBrand || '').trim().slice(0, 20) || null;
+    if ('ffsBrand' in b) data.ffsBrand = String(b.ffsBrand || '').trim().slice(0, 20) || null;
     if ('yearsFishing' in b) data.yearsFishing = String(b.yearsFishing || '').trim().slice(0, 40) || null;
     if ('hasBoat' in b) data.hasBoat = b.hasBoat == null ? null : !!b.hasBoat;
     if ('boatType' in b) data.boatType = String(b.boatType || '').trim().slice(0, 40) || null;
@@ -101,6 +104,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, messagePrivacy: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
+        plotterBrand: true, ffsBrand: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         createdAt: true,
       },
@@ -119,6 +123,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: u.id, displayName: u.displayName, username: u.username, avatarUrl: u.avatarUrl,
         location: u.location, bio: u.bio, favoriteSpecies: u.favoriteSpecies,
         favoriteLure: u.favoriteLure, hasBoat: u.hasBoat, boatType: u.boatType,
+        plotterBrand: u.plotterBrand, ffsBrand: u.ffsBrand,
         yearsFishing: u.yearsFishing,
         favoriteLake: u.favoriteLake, createdAt: u.createdAt,
         email: friends ? u.email : undefined, // email only visible to friends

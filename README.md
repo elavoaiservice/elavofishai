@@ -188,9 +188,27 @@ on desktop with flat primary items over collapsible groups (Lake guide,
 Settings), a four-item bottom nav plus drawer on mobile, and a page
 title/subtitle above each view. Every view has a hash route.
 
-**My water** is one view with three sub-tabs — map & waypoints, spots, trips —
-rather than the separate Spots and Log tabs it grew from; they were the same
-data seen twice.
+The primary nav is four items — **Today**, **Day plan**, **My water**, **Crew** —
+over two groups (Lake guide, Settings). Everything that answers "when should I
+go?" lives on Today: the score for today, the next seven days, and the season's
+best windows, which used to be three separate tabs a new user had to choose
+between. **My water** is one view with three sub-tabs (map & waypoints, spots,
+trips) rather than the separate Spots and Log tabs it grew from, and **Crew**
+holds friends and messages together. Sharing is one form with a type chooser,
+not three near-identical forms.
+
+Copy leads with the answer and puts the mechanism second: "Moon overhead — fish
+feed hardest" rather than "solunar major", "the wind has miles to build waves"
+rather than "fetch".
+
+## Electronics
+
+The app used to assume Garmin and LiveScope throughout. Onboarding and Settings
+→ Profile ask what the angler actually runs (`plotterBrand`, `ffsBrand`), and
+the app follows: GPX export defaults to their plotter brand, the live-sonar view
+is named for their unit (LiveScope / ActiveTarget / MEGA Live), and it drops out
+of the nav entirely for anyone who doesn't run forward-facing sonar. Both fields
+are nullable so "never asked" stays distinct from "none".
 
 Colors come from ElavoAI's dashboard, not an approximation of it: `#29ABE2`
 primary, `#1F96C8` hover, `#1882AE` deep accent, `#10233F` ink, `#DCE7F5`
