@@ -45,6 +45,9 @@
   <tr><td>Catch photos</td><td>Stored with the catch and shared exactly as that catch is shared. EXIF (including GPS) is stripped before upload.</td></tr>
   <tr><td>Posts, comments and likes</td><td>What you write on your page or a group page, shown to that audience.</td></tr>
   <tr><td>Classified listings</td><td>Title, description, price, condition and location you type — visible to every signed-in angler.</td></tr>
+  <tr><td>Notifications</td><td>What happened to you and who did it. Visible only to you; read ones are deleted after two weeks.</td></tr>
+  <tr><td>Reports you file</td><td>Your report, your note, and a copy of the reported content. Seen by admins; the reported angler is not told who filed it.</td></tr>
+  <tr><td>Invites you send</td><td>The email address and note you typed, and whether it was accepted.</td></tr>
   <tr><td>IP address, browser and device string, sign-in times</td>
       <td>Security: sessions, rate limits, and blocking abuse. Also attached to error reports.</td></tr>
   <tr><td>JavaScript errors the app hits</td><td>So a broken release is visible to us rather than only to you.</td></tr>
@@ -90,6 +93,25 @@
 <p>Your page shows your name, photo, the profile details you filled in, your recent catches and your
    posts, each to the audience you gave it. An angler who has set their profile to <b>not searchable</b>
    also keeps their page closed to people outside their crew.</p>
+
+<h3>Notifications</h3>
+<p>When someone comments on your post, likes it, adds you to a group or sends you a friend request, we
+   store a row saying so — who did it, when, and a short preview of what they wrote. It is visible only
+   to you. Notifications you have read are deleted automatically after two weeks.</p>
+
+<h3>Reporting content</h3>
+<p>When you report a post, comment, listing or angler, we store your report, your note, and <b>a copy of
+   what you reported</b>, taken at that moment — the author can delete the original a second later, and
+   then there would be nothing for us to look at. Admins can see who reported what; <b>the person you
+   reported is not told who reported them.</b> Reporting is not the same as blocking, and doing one does
+   not do the other.</p>
+
+<h3>Inviting someone</h3>
+<p>If you invite an angler by email, we store the address you typed, your note, and whether they joined,
+   so the invite can be matched up when they arrive and so you can see what you sent. We email that
+   address <b>once</b>. We do not add it to a mailing list, sell it, or email it again if they never sign
+   up, and you can cancel an unaccepted invite from your crew page. Only invite people who would expect
+   to hear from you.</p>
 
 <h3>Classifieds</h3>
 <p>A listing you post is visible to <b>every signed-in angler</b> — that is the point of a classifieds

@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
 import { blockedUserIds, blockState, friendIds } from '../lib/social';
 import { canManageMembers, canRemoveMember, canSetRole, roleIn, type GroupRole } from '../lib/groups';
+import { notify } from '../services/notify';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
@@ -67,6 +68,7 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     }
     if (existing) return reply.code(409).send({ error: existing.status === 'accepted' ? 'Already friends.' : 'Request already pending.' });
     await prisma.friendship.create({ data: { userId: me.id, friendId: target.id, requestedBy: me.id, status: 'pending' } });
+    await notify({ userId: target.id, actorId: me.id, type: 'friend_request' });
     return reply.send({ ok: true });
   });
 
@@ -77,6 +79,7 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const f = await prisma.friendship.findUnique({ where: { id } });
     if (!f || f.friendId !== me.id || f.status !== 'pending') return reply.code(404).send({ error: 'No such request.' });
     await prisma.friendship.update({ where: { id }, data: { status: 'accepted' } });
+    await notify({ userId: f.userId, actorId: me.id, type: 'friend_accepted' });
     return reply.send({ ok: true });
   });
 
@@ -339,6 +342,7 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
       create: { groupId, memberId: userId, role: newRole },
       update: {},
     });
+    await notify({ userId, actorId: me.id, type: 'group_added', groupId });
     return reply.send({ ok: true });
   });
 

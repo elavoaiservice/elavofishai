@@ -133,6 +133,11 @@ model User {
   comments             PostComment[]
   reactions            PostReaction[]
   listings             Listing[]
+  notifications        Notification[]        @relation("NotifyRecipient")
+  actedNotifications   Notification[]        @relation("NotifyActor")
+  flagsRaised          ContentFlag[]         @relation("FlagReporter")
+  invitesSent          Invite[]              @relation("InviteSender")
+  inviteAccepted       Invite[]              @relation("InviteAcceptor")
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -654,6 +659,9 @@ model Post {
   // the audience.
   visibility String       @default("friends")
   pinned     Boolean      @default(false)
+  // Set the first time a post is edited, so a changed post can say so rather
+  // than quietly rewriting what people already replied to.
+  editedAt   DateTime?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
@@ -719,4 +727,85 @@ model Listing {
   @@index([status, bumpedAt])
   @@index([sellerId])
   @@index([category, status])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications. One row per thing that happened to you. Written by the action
+// that caused them, never derived on read — a feed that has to recompute "what
+// changed since you last looked" gets slower every month.
+// ---------------------------------------------------------------------------
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String // who is being told
+  user      User      @relation("NotifyRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  // who did it. Null for anything the system did on its own.
+  actorId   String?
+  actor     User?     @relation("NotifyActor", fields: [actorId], references: [id], onDelete: Cascade)
+  // comment | like | friend_request | friend_accepted | group_added |
+  // group_role | group_post | invite_accepted
+  type      String
+  postId    String?
+  commentId String?
+  groupId   String?
+  listingId String?
+  // A short piece of the thing itself, captured at write time so the list can
+  // render without joining four tables — and still reads correctly after the
+  // original is deleted.
+  snippet   String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Flags: a user telling us something here is wrong. Deliberately separate from
+// blocking — blocking is "not for me", flagging is "not for anyone".
+// ---------------------------------------------------------------------------
+model ContentFlag {
+  id         String    @id @default(cuid())
+  reporterId String
+  reporter   User      @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType String // post | comment | listing | user
+  targetId   String
+  reason     String // spam | scam | harassment | nudity | illegal | other
+  note       String?   @db.Text
+  // A copy of what was flagged, taken now: the author can delete the original
+  // a second later, and then there is nothing left to review.
+  snapshot   String?   @db.Text
+  status     String    @default("open") // open | actioned | dismissed
+  resolution String?   @db.Text
+  // The reviewer is an admin, and AdminUser is a separate table from User —
+  // so this is the admin's username, recorded plainly, not a foreign key.
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+}
+
+// ---------------------------------------------------------------------------
+// Invites. The one thing the app could not do: reach someone who is not here
+// yet. An invite is an email address plus a code; accepting it makes the two
+// anglers friends, which is the whole point of being invited by a person.
+// ---------------------------------------------------------------------------
+model Invite {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  inviterId    String
+  inviter      User      @relation("InviteSender", fields: [inviterId], references: [id], onDelete: Cascade)
+  email        String
+  note         String?   @db.Text
+  sentAt       DateTime?
+  acceptedAt   DateTime?
+  acceptedById String?
+  acceptedBy   User?     @relation("InviteAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([inviterId, createdAt])
+  @@index([email])
 }

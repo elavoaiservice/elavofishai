@@ -15,6 +15,7 @@ import {
   roleIn,
   type GroupRole,
 } from '../lib/groups';
+import { notify } from '../services/notify';
 
 export async function groupPageRoutes(app: FastifyInstance): Promise<void> {
   /** The page itself: who's in it, what they can do, and the posts. */
@@ -134,6 +135,7 @@ export async function groupPageRoutes(app: FastifyInstance): Promise<void> {
       where: { groupId: p.id, memberId: p.userId },
       data: { role: next },
     });
+    await notify({ userId: p.userId, actorId: me.id, type: 'group_role', groupId: p.id, snippet: next });
     return reply.send({ ok: true, role: next });
   });
 

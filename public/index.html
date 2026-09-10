@@ -998,6 +998,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 <div class="mob-bar">
   <button class="mob-btn" id="mobMenu" aria-label="Menu">&#9776;</button>
   <b id="mobTitle">Today</b>
+  <button class="mob-btn nt-bell" data-go="alerts" aria-label="Notifications">&#128276;<span class="nt-dot" data-ntbadge hidden></span></button>
   <button class="mob-btn" id="mobLake" aria-label="Switch lake">&#9662;</button>
 </div>
 
@@ -1025,6 +1026,7 @@ body.feed-loading .stat-v *{visibility:hidden}
   <main class="main">
     <div class="pagehead">
       <div><h2 id="viewTitle">Today</h2><p id="viewSub"></p></div>
+      <button class="nt-bell nt-desk" data-go="alerts" aria-label="Notifications">&#128276;<span class="nt-dot" data-ntbadge hidden></span></button>
       <!-- What you're fishing for. It changes the scores, so it sits with the
            page title rather than shouting from the top of the screen. -->
       <div>
@@ -1485,6 +1487,17 @@ body.feed-loading .stat-v *{visibility:hidden}
       <span class="snap" id="frMsg" style="color:var(--muted)"></span>
     </div>
 
+    <h3 style="margin-top:22px">Not on ElavoFishAI yet?</h3>
+    <p class="lede" style="margin-top:2px">Invite them by email. When they join through your link the two of you are
+       in each other's crew straight away — no request to send, nothing to accept.</p>
+    <div class="formfoot" style="flex-wrap:wrap">
+      <input id="ivEmail" class="fr-in" type="email" placeholder="their@email.com" style="max-width:240px">
+      <input id="ivNote" class="fr-in" placeholder="Add a line of your own (optional)" style="flex:1;min-width:200px">
+      <button class="btn" id="ivSend">Send invite</button>
+    </div>
+    <div class="snap" id="ivMsg" style="margin-top:6px"></div>
+    <div id="ivList" style="margin-top:8px"></div>
+
     <h3 style="margin-top:22px">Your friends</h3>
     <div id="frRequests" style="margin-top:12px"></div>
     <div id="frList" style="margin-top:6px"></div>
@@ -1770,6 +1783,19 @@ body.feed-loading .stat-v *{visibility:hidden}
   .mk-price{font-weight:700;font-size:17px;color:var(--primary-dark)}
   .mk-sold{position:relative}
   .mk-sold .mk-shot,.mk-sold .mk-noshot{opacity:.45}
+  .nt-bell{position:relative;background:none;border:none;font-size:19px;cursor:pointer;padding:6px 8px;border-radius:10px;line-height:1}
+  .nt-bell:hover{background:var(--accent-soft)}
+  .nt-desk{align-self:flex-start}
+  @media(max-width:900px){.nt-desk{display:none}}
+  .nt-dot{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#e5484d;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+  .nt-row{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);margin-bottom:8px;cursor:pointer}
+  .nt-row.unread{background:var(--accent-soft);border-color:var(--accent-ring)}
+  .nt-row:hover{border-color:var(--primary)}
+  .lb{position:fixed;inset:0;background:rgba(16,35,63,.88);display:flex;align-items:center;justify-content:center;z-index:2000;padding:20px}
+  .lb img{max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .lb button{position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:none;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer}
+  .soc-thumb{position:relative;display:inline-block}
+  .soc-thumb button{position:absolute;top:4px;right:4px;background:rgba(16,35,63,.75);color:#fff;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
   .grp-mem{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
   .grp-mem:last-child{border-bottom:none}
   @media(max-width:680px){.soc-shots img{width:100%;height:220px}}
@@ -1797,6 +1823,17 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
     <div id="fdList"></div>
     <div style="text-align:center;margin:14px 0"><button class="btn ghost" id="fdMore" hidden>Older posts</button></div>
+  </div>
+</section>
+
+<section class="panel" id="p-alerts" hidden>
+  <div id="ntAuth" class="lede">Sign in (top-left) to see what you have missed.</div>
+  <div id="ntMain" hidden>
+    <div class="soc-row" style="margin-bottom:10px">
+      <button class="btn ghost btn-sm" id="ntReadAll">Mark all read</button>
+      <button class="btn ghost btn-sm" id="ntClear">Clear read</button>
+    </div>
+    <div id="ntList"></div>
   </div>
 </section>
 
@@ -4726,6 +4763,7 @@ const NAV=[
 // Reached by tapping a name or a group, never from the sidebar: real views,
 // but no nav entry, so they get their titles the same way without appearing.
 const OFF_NAV=[
+  {id:'alerts',title:'Notifications', sub:'What happened while you were out.'},
   {id:'wall',  title:'Angler', sub:'Their page — what they have posted and landed.'},
   {id:'group', title:'Group',  sub:'The crew page only its members can see.'}
 ];
@@ -4782,7 +4820,7 @@ function go(id,push){
   if(id==='today'){ renderToday(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
-  if(id==='friends'){ loadFriends(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
+  if(id==='friends'){ loadFriends(); loadInvites(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
   if(id==='lakes'){ $('lakesAuth').hidden=!!AUTH.user; refreshMyLakes(); }
   if(id==='sharing'){ $('sharingAuth').hidden=!!AUTH.user; $('sharingMain').hidden=!AUTH.user;
@@ -4791,6 +4829,7 @@ function go(id,push){
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
   if(id==='feed'){ loadSocialFeed(); }
+  if(id==='alerts'){ loadAlerts(); }
   if(id==='market'){ loadMarket(); }
   if(id==='wall'){ loadWall(); }
   if(id==='group'){ loadGroupPage(); }
@@ -4862,9 +4901,11 @@ function postCard(p,opts){
         (p.group&&!opts.inGroup?' · <span class="soc-who" data-group="'+escHtml(p.group.id)+'">'+escHtml(p.group.name)+'</span>':'')+
         (p.lake?' · '+escHtml(p.lake.name):'')+
         (VIS_LABEL[p.visibility]&&!p.group?' · '+VIS_LABEL[p.visibility]:'')+
-        (p.pinned?' · 📌 Pinned':'')+
+        (p.pinned?' · 📌 Pinned':'')+(p.editedAt?' · edited':'')+
       '</div></div>'+
+      (p.mine?'<button class="soc-act" data-editpost="'+escHtml(p.id)+'" title="Edit">✎</button>':'')+
       (canDelete?'<button class="soc-act" data-delpost="'+escHtml(p.id)+'" title="Delete">✕</button>':'')+
+      (p.mine?'':'<button class="soc-act" data-report="'+escHtml(p.id)+'" data-report-type="post" title="Report">⚑</button>')+
     '</div>'+
     (p.body?'<div class="soc-body">'+escHtml(p.body)+'</div>':'')+
     shotsHtml(p.photos)+
@@ -4881,23 +4922,12 @@ function commentHtml(c){
   return '<div class="soc-cmt" data-cmt="'+escHtml(c.id)+'">'+avatarHtml(c.author)+
     '<div class="bub"><b class="soc-who" data-wall="'+escHtml(c.author.id)+'">'+escHtml(c.author.displayName)+'</b> '+escHtml(c.body)+
     '<span class="soc-when" style="display:block">'+whenAgo(c.createdAt)+'</span></div>'+
-    (c.mine?'<button class="soc-act" data-delcmt="'+escHtml(c.id)+'">✕</button>':'')+'</div>';
+    (c.mine?'<button class="soc-act" data-delcmt="'+escHtml(c.id)+'">✕</button>'
+          :'<button class="soc-act" data-report="'+escHtml(c.id)+'" data-report-type="comment" title="Report">⚑</button>')+'</div>';
 }
 
 /* ---- composing: a post can carry one photo, uploaded the same way a catch
    photo is, so the storage rules and the EXIF stripping are shared. ---- */
-let fdPhoto=null, mkPhotoData=null;
-function bindPhotoPicker(inputId,previewId,set){
-  const el=$(inputId); if(!el)return;
-  el.onchange=function(){
-    const f=el.files&&el.files[0]; if(!f)return;
-    resizePhoto(f,1200,function(dataUrl){
-      set(dataUrl);
-      const pv=$(previewId);
-      if(pv){ pv.innerHTML=dataUrl?'<img src="'+dataUrl+'" alt="">':''; pv.hidden=!dataUrl; }
-    });
-  };
-}
 async function uploadDataUrl(dataUrl){
   if(!dataUrl)return {id:null,ok:true};
   try{
@@ -4932,17 +4962,16 @@ async function loadSocialFeed(more){
 }
 async function submitPost(){
   const body=$('fdBody').value.trim();
-  if(!body&&!fdPhoto){ $('fdMsg').textContent='Write something first.'; return; }
+  if(!body&&!PHOTO_BUCKETS.feed.list.length){ $('fdMsg').textContent='Write something first.'; return; }
   $('fdMsg').textContent='Posting…';
-  const up=await uploadDataUrl(fdPhoto);
+  const up=await uploadBucket(PHOTO_BUCKETS.feed);
   if(!up.ok){ $('fdMsg').textContent=up.error+' The post was not sent — try again without it.'; return; }
-  const photoId=up.id;
   try{
     const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({body:body,visibility:$('fdVis').value,photoIds:photoId?[photoId]:undefined})});
+      body:JSON.stringify({body:body,visibility:$('fdVis').value,photoIds:up.ids.length?up.ids:undefined})});
     const d=await r.json();
     if(!r.ok){ $('fdMsg').textContent=d.error||'Could not post that.'; return; }
-    $('fdBody').value=''; fdPhoto=null; $('fdPreview').hidden=true; $('fdPreview').innerHTML='';
+    $('fdBody').value=''; clearBucket(PHOTO_BUCKETS.feed);
     $('fdMsg').textContent='Posted ✓';
     setTimeout(()=>{ $('fdMsg').textContent=''; },1800);
     $('fdList').insertAdjacentHTML('afterbegin',postCard(d.post));
@@ -5027,10 +5056,10 @@ async function loadGroupPage(){
       ((d.posts||[]).map(p=>postCard(p,{canModerate:me.canModerate,inGroup:true})).join('')||'<p class="snap">Nothing posted here yet.</p>');
 
     if(me.canModerate)fillGroupAddList();
-    bindPhotoPicker('gpPhoto','gpPreview',function(v){ gpPhoto=v; });
+    bindMultiPhoto('gpPhoto','gpPreview',PHOTO_BUCKETS.group,4);
+    drawThumbs('gpPreview',PHOTO_BUCKETS.group);
   }catch(e){ $('gpBody').innerHTML='<p class="snap">Server not reachable.</p>'; }
 }
-let gpPhoto=null;
 async function fillGroupAddList(){
   try{
     const r=await apiFetch('/api/friends'); if(!r.ok)return;
@@ -5058,7 +5087,8 @@ async function loadMarket(){
     $('mkEmpty').hidden=!!rows.length;
     $('mkList').innerHTML=rows.map(function(l){
       return '<div class="mk-card'+(l.status==='sold'?' mk-sold':'')+'" data-listing="'+escHtml(l.id)+'">'+
-        (l.photos.length?'<img class="mk-shot" src="/api/photos/'+escHtml(l.photos[0])+'" alt="" loading="lazy" data-zoom="/api/photos/'+escHtml(l.photos[0])+'">':'<div class="mk-noshot">🎣</div>')+
+        (l.photos.length?'<img class="mk-shot" src="/api/photos/'+escHtml(l.photos[0])+'" alt="" loading="lazy" data-zoom="/api/photos/'+escHtml(l.photos[0])+'">'+
+          (l.photos.length>1?'<div class="soc-chip" style="position:absolute;margin:-28px 0 0 8px">+'+(l.photos.length-1)+' more</div>':''):'<div class="mk-noshot">🎣</div>')+
         '<div class="mk-in">'+
           '<div class="mk-price">'+(l.price?escHtml(l.price):'Make an offer')+(l.status==='sold'?' <span class="soc-chip">Sold</span>':'')+
             (l.status==='withdrawn'?' <span class="soc-chip">Hidden</span>':'')+'</div>'+
@@ -5071,7 +5101,8 @@ async function loadMarket(){
                 '<button class="btn ghost btn-sm" data-mk-bump="'+escHtml(l.id)+'">Bump</button>'+
                 '<button class="soc-act" data-mk-del="'+escHtml(l.id)+'">✕</button>'
               : '<span class="soc-who" data-wall="'+escHtml(l.seller.id)+'">'+escHtml(l.seller.displayName)+'</span>'+
-                '<button class="btn btn-sm" data-mk-contact="'+escHtml(l.id)+'">Ask about it</button>')+
+                '<button class="btn btn-sm" data-mk-contact="'+escHtml(l.id)+'">Ask about it</button>'+
+                '<button class="soc-act" data-report="'+escHtml(l.id)+'" data-report-type="listing" title="Report">⚑</button>')+
           '</div>'+
         '</div></div>';
     }).join('');
@@ -5081,18 +5112,17 @@ async function submitListing(){
   const title=$('mkTitle').value.trim();
   if(!title){ $('mkMsg').textContent='Give it a title.'; return; }
   $('mkMsg').textContent='Posting…';
-  const mup=await uploadDataUrl(mkPhotoData);
+  const mup=await uploadBucket(PHOTO_BUCKETS.market);
   if(!mup.ok){ $('mkMsg').textContent=mup.error+' The listing was not posted — try again without it.'; return; }
-  const photoId=mup.id;
   try{
     const r=await apiFetch('/api/market',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       title:title, body:$('mkBody').value.trim(), price:$('mkPrice').value.trim(),
       category:$('mkFCat').value, condition:$('mkCond').value, location:$('mkLoc').value.trim(),
-      photoIds:photoId?[photoId]:undefined })});
+      photoIds:mup.ids.length?mup.ids:undefined })});
     const d=await r.json();
     if(!r.ok){ $('mkMsg').textContent=d.error||'Could not post that.'; return; }
     ['mkTitle','mkPrice','mkBody','mkLoc'].forEach(id=>{ $(id).value=''; });
-    mkPhotoData=null; $('mkPreview').hidden=true; $('mkPreview').innerHTML='';
+    clearBucket(PHOTO_BUCKETS.market);
     $('mkMsg').textContent=''; $('mkForm').hidden=true;
     loadMarket();
   }catch(e){ $('mkMsg').textContent='Server not reachable.'; }
@@ -5103,7 +5133,7 @@ document.addEventListener('click',async function(e){
   const t=e.target;
   const wall=t.closest('[data-wall]'); if(wall){ openWall(wall.dataset.wall); return; }
   const grp=t.closest('[data-group]'); if(grp){ openGroup(dataGroupId(grp)); return; }
-  const zoom=t.closest('[data-zoom]'); if(zoom){ window.open(zoom.dataset.zoom,'_blank','noopener'); return; }
+  const zoom=t.closest('[data-zoom]'); if(zoom){ openLightbox(zoom.dataset.zoom); return; }
 
   const like=t.closest('[data-like]');
   if(like){
@@ -5155,16 +5185,15 @@ document.addEventListener('click',async function(e){
   }
   if(t.id==='gpPost'){
     const body=$('gpBodyIn').value.trim();
-    if(!body&&!gpPhoto){ $('gpPostMsg').textContent='Write something first.'; return; }
+    if(!body&&!PHOTO_BUCKETS.group.list.length){ $('gpPostMsg').textContent='Write something first.'; return; }
     $('gpPostMsg').textContent='Posting…';
-    const gup=await uploadDataUrl(gpPhoto);
+    const gup=await uploadBucket(PHOTO_BUCKETS.group);
     if(!gup.ok){ $('gpPostMsg').textContent=gup.error+' The post was not sent — try again without it.'; return; }
-    const photoId=gup.id;
     const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({body:body,groupId:GROUP_ID,photoIds:photoId?[photoId]:undefined})});
+      body:JSON.stringify({body:body,groupId:GROUP_ID,photoIds:gup.ids.length?gup.ids:undefined})});
     const d=await r.json();
     if(!r.ok){ $('gpPostMsg').textContent=d.error||'Could not post that.'; return; }
-    gpPhoto=null; loadGroupPage(); return;
+    clearBucket(PHOTO_BUCKETS.group); loadGroupPage(); return;
   }
   const rem=t.closest('[data-remove-member]');
   if(rem){
@@ -5219,8 +5248,207 @@ document.addEventListener('keydown',async function(e){
   if(list)list.insertAdjacentHTML('beforeend',commentHtml(d.comment));
   inp.value='';
 });
-bindPhotoPicker('fdPhoto','fdPreview',function(v){ fdPhoto=v; });
-bindPhotoPicker('mkPhoto','mkPreview',function(v){ mkPhotoData=v; });
+
+/* ---- notifications ----
+   The bell polls while the app is open; the list is stored server-side, so a
+   phone and a laptop agree about what has been seen. */
+let NT_TIMER=null;
+async function refreshAlerts(){
+  if(!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/notifications/unread-count');
+    if(!r.ok)return;
+    const n=(await r.json()).count||0;
+    document.querySelectorAll('[data-ntbadge]').forEach(function(b){ b.hidden=!n; b.textContent=n>9?'9+':String(n); });
+  }catch(e){}
+}
+function startAlertPoll(){
+  if(NT_TIMER||!AUTH.user)return;
+  refreshAlerts();
+  NT_TIMER=setInterval(refreshAlerts,60000);
+}
+const NT_TEXT={
+  comment:'commented on your post',
+  like:'liked your post',
+  friend_request:'sent you a friend request',
+  friend_accepted:'accepted your friend request',
+  group_added:'added you to a group',
+  group_role:'changed your role',
+  group_post:'posted in a group',
+  invite_accepted:'joined ElavoFishAI from your invite'
+};
+async function loadAlerts(){
+  const auth=$('ntAuth'), main=$('ntMain');
+  if(auth)auth.hidden=!!AUTH.user;
+  if(main)main.hidden=!AUTH.user;
+  if(!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/notifications');
+    if(!r.ok)return;
+    const rows=(await r.json()).notifications||[];
+    $('ntList').innerHTML=rows.length?rows.map(function(n){
+      const who=n.actor?escHtml(n.actor.displayName):'Someone';
+      const what=NT_TEXT[n.type]||'did something';
+      const where=n.groupName?' in '+escHtml(n.groupName):'';
+      return '<div class="nt-row'+(n.read?'':' unread')+'" data-alert="'+escHtml(n.id)+'"'+
+        (n.postId?' data-alert-post="'+escHtml(n.postId)+'"':'')+
+        (n.groupId?' data-alert-group="'+escHtml(n.groupId)+'"':'')+
+        (n.actor?' data-alert-user="'+escHtml(n.actor.id)+'"':'')+' data-alert-type="'+escHtml(n.type)+'">'+
+        avatarHtml(n.actor)+
+        '<div style="flex:1"><div><b>'+who+'</b> '+what+where+'</div>'+
+        (n.snippet?'<div class="soc-when">“'+escHtml(n.snippet)+'”</div>':'')+
+        '<div class="soc-when">'+whenAgo(n.createdAt)+'</div></div></div>';
+    }).join(''):'<p class="snap">Nothing yet. When someone comments, likes or adds you, it lands here.</p>';
+    // Opening the page is what marks them seen — the same thing every other
+    // inbox does, and it keeps the badge honest.
+    await apiFetch('/api/notifications/read',{method:'POST'});
+    refreshAlerts();
+  }catch(e){}
+}
+
+/* ---- reporting ----
+   Blocking is "not for me"; this is "not for anyone". Kept to one prompt so it
+   is easy enough to actually use. */
+const FLAG_REASONS=[['spam','Spam or advertising'],['scam','Scam or fraud'],['harassment','Harassment or abuse'],
+  ['nudity','Nudity or graphic content'],['illegal','Illegal item or activity'],['other','Something else']];
+async function reportThing(targetType,targetId){
+  const list=FLAG_REASONS.map((r,i)=>(i+1)+') '+r[1]).join('\n');
+  const pick=prompt('Report this '+targetType+'.\n\n'+list+'\n\nEnter a number 1-'+FLAG_REASONS.length+':');
+  if(!pick)return;
+  const idx=parseInt(pick,10)-1;
+  if(isNaN(idx)||idx<0||idx>=FLAG_REASONS.length){ alert('Pick a number from the list.'); return; }
+  const note=prompt('Anything else we should know? (optional)')||'';
+  try{
+    const r=await apiFetch('/api/flags',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({targetType:targetType,targetId:targetId,reason:FLAG_REASONS[idx][0],note:note})});
+    const d=await r.json();
+    alert(r.ok?'Reported — thank you. An admin will take a look.':(d.error||'Could not send that report.'));
+  }catch(e){ alert('Server not reachable.'); }
+}
+
+/* ---- lightbox ----
+   Photos used to open in a new tab, which on a phone means leaving the app. */
+function openLightbox(src){
+  const el=document.createElement('div');
+  el.className='lb';
+  el.innerHTML='<img src="'+escHtml(src)+'" alt=""><button aria-label="Close">✕</button>';
+  el.addEventListener('click',function(){ el.remove(); });
+  document.body.appendChild(el);
+  const esc=function(e){ if(e.key==='Escape'){ el.remove(); document.removeEventListener('keydown',esc); } };
+  document.addEventListener('keydown',esc);
+}
+
+/* ---- several photos at once ----
+   The API takes up to four on a post and six on a listing; a picker that only
+   ever sent one was the UI lying about what the product does. */
+function bindMultiPhoto(inputId,previewId,bucket,max){
+  const el=$(inputId); if(!el)return;
+  el.setAttribute('multiple','');
+  el.onchange=function(){
+    const files=[].slice.call(el.files||[]);
+    if(!files.length)return;
+    let pending=Math.min(files.length,max-bucket.list.length);
+    if(pending<=0){ alert('That is the limit of '+max+' photos.'); el.value=''; return; }
+    files.slice(0,pending).forEach(function(f){
+      resizePhoto(f,1200,function(dataUrl){
+        if(dataUrl)bucket.list.push(dataUrl);
+        if(--pending<=0)drawThumbs(previewId,bucket);
+      });
+    });
+    el.value='';
+  };
+}
+function drawThumbs(previewId,bucket){
+  const pv=$(previewId); if(!pv)return;
+  pv.innerHTML=bucket.list.map((d,i)=>'<span class="soc-thumb"><img src="'+d+'" alt=""><button data-drop-photo="'+i+'" data-drop-bucket="'+bucket.name+'" aria-label="Remove">✕</button></span>').join('');
+  pv.hidden=!bucket.list.length;
+}
+const PHOTO_BUCKETS={feed:{name:'feed',list:[],preview:'fdPreview'},group:{name:'group',list:[],preview:'gpPreview'},market:{name:'market',list:[],preview:'mkPreview'}};
+async function uploadBucket(bucket){
+  const ids=[];
+  for(const d of bucket.list){
+    const up=await uploadDataUrl(d);
+    if(!up.ok)return {ids:null,ok:false,error:up.error};
+    if(up.id)ids.push(up.id);
+  }
+  return {ids:ids,ok:true};
+}
+function clearBucket(bucket){ bucket.list=[]; drawThumbs(bucket.preview,bucket); }
+bindMultiPhoto('fdPhoto','fdPreview',PHOTO_BUCKETS.feed,4);
+bindMultiPhoto('mkPhoto','mkPreview',PHOTO_BUCKETS.market,6);
+
+/* ---- inviting someone who isn't here yet ---- */
+async function loadInvites(){
+  const box=$('ivList'); if(!box||!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/invites');
+    if(!r.ok)return;
+    const rows=(await r.json()).invites||[];
+    box.innerHTML=rows.length?rows.map(function(i){
+      const state=i.accepted?'joined ✓':(i.revoked?'cancelled':'invited');
+      return '<div class="fr-row"><span>'+escHtml(i.email)+' <span class="snap">'+state+' · '+whenAgo(i.createdAt)+'</span></span>'+
+        (i.accepted||i.revoked?'':'<button class="btn ghost btn-sm" data-inv-cancel="'+escHtml(i.id)+'">Cancel</button>')+'</div>';
+    }).join(''):'<p class="snap">No invites sent yet.</p>';
+  }catch(e){}
+}
+async function sendInvite(){
+  const email=$('ivEmail').value.trim();
+  if(!email){ $('ivMsg').textContent='Enter their email address.'; return; }
+  $('ivMsg').textContent='Sending…';
+  try{
+    const r=await apiFetch('/api/invites',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:email,note:$('ivNote').value.trim()})});
+    const d=await r.json();
+    if(!r.ok){ $('ivMsg').textContent=d.error||'Could not send that invite.'; return; }
+    $('ivEmail').value=''; $('ivNote').value='';
+    $('ivMsg').textContent='Invite sent ✓ — you will be in each other’s crew as soon as they join.';
+    loadInvites();
+  }catch(e){ $('ivMsg').textContent='Server not reachable.'; }
+}
+
+document.addEventListener('click',async function(e){
+  const t=e.target;
+
+  const drop=t.closest('[data-drop-photo]');
+  if(drop){
+    const b=PHOTO_BUCKETS[drop.dataset.dropBucket];
+    if(b){ b.list.splice(Number(drop.dataset.dropPhoto),1); drawThumbs(b.preview,b); }
+    return;
+  }
+  const alert_=t.closest('[data-alert]');
+  if(alert_){
+    const ty=alert_.dataset.alertType;
+    if(alert_.dataset.alertGroup)openGroup(alert_.dataset.alertGroup);
+    else if(ty==='friend_request'||ty==='friend_accepted'||ty==='invite_accepted'){ go('friends'); }
+    else if(alert_.dataset.alertUser)openWall(alert_.dataset.alertUser);
+    return;
+  }
+  if(t.id==='ntReadAll'){ await apiFetch('/api/notifications/read',{method:'POST'}); loadAlerts(); return; }
+  if(t.id==='ntClear'){ await apiFetch('/api/notifications',{method:'DELETE'}); loadAlerts(); return; }
+
+  const rep=t.closest('[data-report]');
+  if(rep){ reportThing(rep.dataset.reportType,rep.dataset.report); return; }
+
+  const edit=t.closest('[data-editpost]');
+  if(edit){
+    const card=edit.closest('[data-post]');
+    const bodyEl=card&&card.querySelector('.soc-body');
+    const current=bodyEl?bodyEl.textContent:'';
+    const next=prompt('Edit your post:',current);
+    if(next===null||next.trim()===current.trim())return;
+    const r=await apiFetch('/api/posts/'+encodeURIComponent(edit.dataset.editpost),{method:'PUT',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({body:next})});
+    const d=await r.json();
+    if(!r.ok){ alert(d.error||'Could not save that edit.'); return; }
+    if(bodyEl)bodyEl.textContent=d.post.body;
+    const when=card.querySelector('.soc-when');
+    if(when&&when.textContent.indexOf('edited')<0)when.textContent+=' · edited';
+    return;
+  }
+  if(t.id==='ivSend'){ sendInvite(); return; }
+  const ivc=t.closest('[data-inv-cancel]');
+  if(ivc){ await apiFetch('/api/invites/'+encodeURIComponent(ivc.dataset.invCancel),{method:'DELETE'}); loadInvites(); return; }
+});
 
 /* ---- fishing reports ----
    Agency feeds and anglers who were actually there, newest first. These feed
@@ -5675,7 +5903,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); checkPhotos(); populateAiSpecies(); populateAiLaunch(); loadRamps();
+  await checkAi(); checkPhotos(); startAlertPoll(); populateAiSpecies(); populateAiLaunch(); loadRamps();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){

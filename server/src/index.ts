@@ -6,7 +6,7 @@ import { env, requireEnv } from './env';
 import { prisma } from './db';
 import { healthRoutes } from './routes/health';
 import { meRoutes } from './routes/me';
-import { authRoutes } from './routes/auth';
+import { authRoutes, baseUrlFor } from './routes/auth';
 import { kvRoutes } from './routes/kv';
 import { lakeRoutes } from './routes/lakes';
 import { aiRoutes } from './routes/ai';
@@ -18,11 +18,15 @@ import { photoRoutes, sweepOrphanPhotos } from './routes/photos';
 import { postRoutes } from './routes/posts';
 import { groupPageRoutes } from './routes/groups';
 import { marketRoutes } from './routes/market';
+import { notificationRoutes } from './routes/notifications';
+import { flagRoutes } from './routes/flags';
+import { inviteRoutes } from './routes/invites';
 import { refreshAllSources, sweepReports } from './services/reports';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
 import { currentUser } from './lib/auth';
 import { sweepRateLimits } from './lib/rateLimit';
+import { sweepNotifications } from './services/notify';
 import { sweepAuthTokens } from './services/magicLink';
 import { seedGranbury } from './services/seed';
 
@@ -66,6 +70,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(postRoutes);
   await app.register(groupPageRoutes);
   await app.register(marketRoutes);
+  await app.register(notificationRoutes);
+  await app.register(flagRoutes);
+  await app.register(inviteRoutes, { baseUrlFor: (req: unknown) => baseUrlFor(req as { headers: Record<string, unknown>; protocol: string }) });
 
   // The planner app lives at /app — GATED: the Granbury (and all lake) data is
   // account-only. Anonymous visitors are sent to the login screen; the HTML is
@@ -129,6 +136,7 @@ async function main(): Promise<void> {
     await sweepClientErrors().catch(() => {});
     await sweepReports().catch(() => {});
     await sweepOrphanPhotos().catch(() => {});
+    await sweepNotifications().catch(() => {});
     // Pull fishing reports on the same cadence as the sweeps (every 6h).
     await refreshAllSources()
       .then((r) => r.stored && app.log.info(r, 'fishing reports refreshed'))

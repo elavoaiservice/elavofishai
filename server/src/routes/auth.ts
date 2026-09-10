@@ -3,12 +3,13 @@ import { env } from '../env';
 import { clientIp, endSession, startSession } from '../lib/auth';
 import { isPrivateIp } from '../lib/net';
 import { overLimit } from '../lib/rateLimit';
+import { redeemInvites } from './invites';
 import { emailConfigured } from '../services/email';
 import { consumeMagicLink, issueMagicLink } from '../services/magicLink';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function baseUrlFor(req: { headers: Record<string, unknown>; protocol: string }): string {
+export function baseUrlFor(req: { headers: Record<string, unknown>; protocol: string }): string {
   if (env.publicBaseUrl) return env.publicBaseUrl;
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
   const host = (req.headers['x-forwarded-host'] as string) || (req.headers['host'] as string) || 'localhost';
@@ -76,7 +77,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.redirect(`/app?auth_error=${msg}`);
     }
     await startSession(reply, req, result.userId);
-    return reply.redirect('/app?signed_in=1');
+    // An invite sent to this address becomes a friendship the moment they
+    // arrive — see redeemInvites() for why it keys off the email.
+    const redeemed = await redeemInvites(result.userId).catch(() => 0);
+    return reply.redirect(`/app?signed_in=1${redeemed ? '&invited=' + redeemed : ''}`);
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

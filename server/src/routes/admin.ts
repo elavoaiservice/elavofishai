@@ -634,6 +634,85 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- audit log ----
+  // ---------- moderation queue ----------
+  app.get('/api/admin/flags', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const status = String((req.query as { status?: string }).status || 'open');
+    const rows = await prisma.contentFlag.findMany({
+      where: status === 'all' ? {} : { status },
+      include: {
+        reporter: { select: { id: true, displayName: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    // How many other people flagged the same thing — one report is a
+    // complaint, five is a pattern, and the queue should show which is which.
+    const counts = await prisma.contentFlag.groupBy({
+      by: ['targetType', 'targetId'],
+      _count: { _all: true },
+    });
+    const countOf = new Map(counts.map((c) => [`${c.targetType}:${c.targetId}`, c._count._all]));
+    return {
+      flags: rows.map((f) => ({
+        id: f.id,
+        targetType: f.targetType,
+        targetId: f.targetId,
+        reason: f.reason,
+        note: f.note,
+        snapshot: f.snapshot,
+        status: f.status,
+        resolution: f.resolution,
+        reporter: f.reporter,
+        reviewedBy: f.reviewedBy,
+        reportCount: countOf.get(`${f.targetType}:${f.targetId}`) || 1,
+        createdAt: f.createdAt,
+      })),
+      openCount: await prisma.contentFlag.count({ where: { status: 'open' } }),
+    };
+  });
+
+  /**
+   * Resolve a flag, optionally deleting what it points at. Deleting here is the
+   * whole reason the queue exists — a queue you can only mark as read is a
+   * to-do list, not moderation.
+   */
+  app.post('/api/admin/flags/:id', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const b = (req.body || {}) as { action?: string; resolution?: string };
+    const flag = await prisma.contentFlag.findUnique({ where: { id } });
+    if (!flag) return reply.code(404).send({ error: 'No such report.' });
+
+    let removed = false;
+    if (b.action === 'remove') {
+      try {
+        if (flag.targetType === 'post') { await prisma.post.delete({ where: { id: flag.targetId } }); removed = true; }
+        else if (flag.targetType === 'comment') { await prisma.postComment.delete({ where: { id: flag.targetId } }); removed = true; }
+        else if (flag.targetType === 'listing') { await prisma.listing.delete({ where: { id: flag.targetId } }); removed = true; }
+        else if (flag.targetType === 'user') { await prisma.user.update({ where: { id: flag.targetId }, data: { status: 'suspended' } }); removed = true; }
+      } catch {
+        // Already gone — that is still a resolved report, not an error.
+      }
+    }
+    await prisma.contentFlag.update({
+      where: { id },
+      data: {
+        status: b.action === 'dismiss' ? 'dismissed' : 'actioned',
+        resolution: String(b.resolution || '').slice(0, 500) || (removed ? 'Content removed.' : null),
+        reviewedBy: admin.username,
+        reviewedAt: new Date(),
+      },
+    });
+    // Every other open report about the same thing is resolved with it.
+    await prisma.contentFlag.updateMany({
+      where: { targetType: flag.targetType, targetId: flag.targetId, status: 'open', id: { not: id } },
+      data: { status: b.action === 'dismiss' ? 'dismissed' : 'actioned', reviewedBy: admin.username, reviewedAt: new Date() },
+    });
+    return reply.send({ ok: true, removed });
+  });
+
   app.get('/api/admin/audit', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;

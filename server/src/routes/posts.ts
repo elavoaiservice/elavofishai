@@ -19,6 +19,7 @@ import { areFriends, blockedUserIds, blockState, friendIds } from '../lib/social
 import { canModerate, canPost, roleIn } from '../lib/groups';
 import { myGroupIds } from '../lib/sharing';
 import { deleteObject } from '../services/storage';
+import { notify, notifyGroup } from '../services/notify';
 
 const MAX_BODY = 5000;
 const MAX_PHOTOS = 4;
@@ -32,6 +33,7 @@ type PostRow = {
   body: string;
   visibility: string;
   pinned: boolean;
+  editedAt: Date | null;
   createdAt: Date;
   author: { id: string; displayName: string; avatarUrl: string | null };
   group?: { id: string; name: string } | null;
@@ -62,6 +64,7 @@ function shape(p: PostRow, meId: string, likedIds: Set<string>) {
     visibility: p.visibility,
     pinned: p.pinned,
     createdAt: p.createdAt,
+    editedAt: p.editedAt ?? null,
     mine: p.authorId === meId,
     author: p.author,
     group: p.group ?? null,
@@ -116,8 +119,27 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       data: { authorId: me.id, groupId, lakeId: b.lakeId ? String(b.lakeId) : null, body, visibility },
     });
     await attachPhotos(photoIds, me.id, { postId: post.id });
+    if (groupId) await notifyGroup(groupId, me.id, post.id, body);
     const full = (await prisma.post.findUnique({ where: { id: post.id }, include: INCLUDE })) as unknown as PostRow;
     return reply.send({ post: shape(full, me.id, new Set()) });
+  });
+
+  /**
+   * Edit a post. The author only, and the body only — changing who can see
+   * something people have already replied to is a different, worse thing than
+   * fixing a typo, so visibility is fixed at posting time.
+   */
+  app.put('/api/posts/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const id = String((req.params as { id: string }).id);
+    const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true, photos: { select: { id: true } } } });
+    if (!post) return reply.code(404).send({ error: 'No such post.' });
+    if (post.authorId !== me.id) return reply.code(403).send({ error: 'Not your post.' });
+    const body = String((req.body as { body?: string }).body || '').trim().slice(0, MAX_BODY);
+    if (!body && !post.photos.length) return reply.code(400).send({ error: 'A post needs words or a photo.' });
+    const updated = await prisma.post.update({ where: { id }, data: { body, editedAt: new Date() } });
+    return reply.send({ post: { id: updated.id, body: updated.body, editedAt: updated.editedAt } });
   });
 
   app.delete('/api/posts/:id', async (req, reply) => {
@@ -141,15 +163,17 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/feed', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
-    const q = req.query as { before?: string; limit?: string };
+    const q = req.query as { before?: string; limit?: string; q?: string };
     const take = Math.min(Math.max(Number(q.limit) || 25, 1), 50);
     const [friends, blocked, groups] = await Promise.all([friendIds(me.id), blockedUserIds(me.id), myGroupIds(me.id)]);
     const visible = friends.filter((f) => !blocked.includes(f));
 
+    const search = String(q.q || '').trim().slice(0, 80);
     const posts = (await prisma.post.findMany({
       where: {
         createdAt: q.before ? { lt: new Date(String(q.before)) } : undefined,
         authorId: { notIn: blocked },
+        ...(search ? { body: { contains: search, mode: 'insensitive' as const } } : {}),
         OR: [
           { authorId: me.id },
           { groupId: { in: groups } },
@@ -239,6 +263,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       data: { postId: id, authorId: me.id, body },
       include: { author: { select: { id: true, displayName: true, avatarUrl: true } } },
     });
+    const parent = await prisma.post.findUnique({ where: { id }, select: { authorId: true, groupId: true } });
+    if (parent) await notify({ userId: parent.authorId, actorId: me.id, type: 'comment', postId: id, commentId: c.id, groupId: parent.groupId, snippet: body });
     return reply.send({ comment: { id: c.id, body: c.body, createdAt: c.createdAt, author: c.author, mine: true } });
   });
 
@@ -272,6 +298,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       create: { postId: id, userId: me.id, kind: 'like' },
       update: {},
     });
+    const liked = await prisma.post.findUnique({ where: { id }, select: { authorId: true, body: true, groupId: true } });
+    if (liked) await notify({ userId: liked.authorId, actorId: me.id, type: 'like', postId: id, groupId: liked.groupId, snippet: liked.body });
     return reply.send({ ok: true, likes: await prisma.postReaction.count({ where: { postId: id } }), liked: true });
   });
 

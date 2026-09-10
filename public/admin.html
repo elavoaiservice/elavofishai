@@ -162,14 +162,14 @@ $('logoutBtn').onclick=async()=>{ await api('/api/admin/logout',{method:'POST'})
 /* ---- shell / nav ---- */
 const NAV=[
   {h:'Overview',items:[['dashboard','📊 Dashboard'],['activity','⚡ Activity feed']]},
-  {h:'People',items:[['users','👤 Users']]},
+  {h:'People',items:[['users','👤 Users'],['flags','⚑ Reports']]},
   {h:'Content',items:[['lakes','🗺️ Lakes'],['sources','📣 Report sources']]},
   {h:'Growth',items:[['analytics','📈 Analytics'],['aicost','🪙 AI usage & cost']]},
   {h:'Security',items:[['admins','🛡️ Admins'],['signin','🔑 Sign-in links'],['audit','📜 Audit log']]},
   {h:'Operations',items:[['changelog','🧾 Changelog'],['errors','🐞 Client errors'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
   {h:'Settings',items:[['environment','⚙️ Environment']]},
 ];
-const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],sources:['Report sources','Where fishing reports are fetched from.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
+const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],flags:['Reported content','What anglers have flagged, and what to do about it.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],sources:['Report sources','Where fishing reports are fetched from.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
 function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden'); $('whoami').textContent='Signed in as '+admin.username;
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
   $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
@@ -178,10 +178,56 @@ function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').
 function go(tab){
   document.querySelectorAll('.nav-i[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $('pageTitle').textContent=(TITLES[tab]||[tab])[0]; $('pageSub').textContent=(TITLES[tab]||['',''])[1];
-  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,sources:tSources,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
+  ({dashboard:tDashboard,activity:tActivity,users:tUsers,flags:tFlags,lakes:tLakes,sources:tSources,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
 }
 
 /* ---- panels ---- */
+/* Reported content. The queue can delete what it points at — a queue you can
+   only mark as read is a to-do list, not moderation. Each row shows the
+   snapshot taken when the report was raised, because the author may well have
+   deleted the original by now. */
+const FLAG_LABEL={spam:'Spam',scam:'Scam',harassment:'Harassment',nudity:'Nudity',illegal:'Illegal',other:'Other'};
+let FLAG_STATUS='open';
+async function tFlags(){
+  $('content').innerHTML='<div class="muted">Loading…</div>';
+  const d=await (await api('/api/admin/flags?status='+encodeURIComponent(FLAG_STATUS))).json();
+  const rows=d.flags||[];
+  $('content').innerHTML=
+    '<div class="metrics" style="margin-bottom:16px">'
+    + metricCard(String(d.openCount||0),'Open reports','waiting on a decision')
+    + metricCard(String(rows.length),'Shown','current filter')
+    + '</div>'
+    + '<div class="card" style="margin-bottom:16px"><div class="row">'
+    + ['open','actioned','dismissed','all'].map(st=>'<button class="btn '+(FLAG_STATUS===st?'btn-primary':'btn-ghost')
+        +' btn-sm" data-flagstatus="'+st+'">'+st[0].toUpperCase()+st.slice(1)+'</button>').join('')
+    + '</div></div>'
+    + (rows.length?rows.map(f=>'<div class="card" style="margin-bottom:12px">'
+        + '<div class="row" style="justify-content:space-between;align-items:flex-start">'
+        + '<div><b>'+esc(FLAG_LABEL[f.reason]||f.reason)+'</b> · <span class="muted">'+esc(f.targetType)+'</span>'
+        + (f.reportCount>1?' <span class="pill down">'+f.reportCount+' reports</span>':'')
+        + '<div class="snap">by '+esc(f.reporter.displayName)+' · '+ago(f.createdAt)
+        + (f.status!=='open'?' · '+esc(f.status)+(f.reviewedBy?' by '+esc(f.reviewedBy):''):'')+'</div></div>'
+        + (f.status==='open'?'<div class="row" style="flex:0 0 auto">'
+            + '<button class="btn btn-ghost btn-sm" data-flagact="dismiss" data-flagid="'+f.id+'">Dismiss</button>'
+            + '<button class="btn btn-primary btn-sm" data-flagact="remove" data-flagid="'+f.id+'">Remove content</button></div>':'')
+        + '</div>'
+        + (f.note?'<div class="snap" style="margin-top:8px"><b>Reporter said:</b> '+esc(f.note)+'</div>':'')
+        + '<pre style="white-space:pre-wrap;background:#f8fbff;border:1px solid #dce7f5;border-radius:10px;padding:10px;margin-top:10px;font-size:13px">'
+        + esc(f.snapshot||'(the original is gone, and no snapshot was taken)')+'</pre>'
+        + '</div>').join('')
+      :'<div class="card"><div class="muted">Nothing here. That is the good outcome.</div></div>');
+
+  $('content').querySelectorAll('[data-flagstatus]').forEach(b=>b.onclick=()=>{ FLAG_STATUS=b.dataset.flagstatus; tFlags(); });
+  $('content').querySelectorAll('[data-flagact]').forEach(b=>b.onclick=async()=>{
+    const act=b.dataset.flagact;
+    if(act==='remove'&&!confirm('Delete the reported content? This cannot be undone.'))return;
+    b.disabled=true;
+    await api('/api/admin/flags/'+b.dataset.flagid,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:act})});
+    tFlags();
+  });
+}
+
 /* Report sources — operator-managed on purpose. We fetch what someone has
    deliberately pointed us at, not whatever we can reach. A regional source only
    attaches an item to a lake the item actually names. */

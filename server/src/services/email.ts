@@ -112,3 +112,23 @@ export function adminMfaEmail(code: string): { subject: string; html: string } {
     ),
   };
 }
+
+export function inviteEmail(
+  inviterName: string,
+  url: string,
+  note: string | null
+): { subject: string; html: string } {
+  const who = inviterName.replace(/[<>]/g, '');
+  return {
+    subject: `${who} invited you to ElavoFishAI`,
+    html: WRAP(
+      `<p style="font-size:15px;margin:0 0 14px"><b>${who}</b> uses ElavoFishAI to plan trips, log catches and
+         share spots with the anglers they fish with — and wants you in their crew.</p>
+       ${note ? `<p style="font-size:15px;margin:0 0 16px;padding:12px 14px;background:#f0f9ff;border-radius:12px">${note}</p>` : ''}
+       <p style="margin:0 0 22px"><a href="${url}" style="display:inline-block;background:#29ABE2;color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:12px">Accept the invite</a></p>
+       <p style="color:#5f708a;font-size:13px;margin:0">Signing up with this link puts you and ${who} in each
+          other's crew straight away. It is free, and you choose what you share — everything defaults to
+          private. If you'd rather not, just ignore this email.</p>`
+    ),
+  };
+}
