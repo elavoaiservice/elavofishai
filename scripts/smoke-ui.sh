@@ -60,5 +60,37 @@ if grep -q 'id="todayCards"></div>' "$TMP/today.html" 2>/dev/null; then
   echo "[smoke] FAIL today — dashboard cards are empty"; FAIL=1
 fi
 
+# Every in-page navigation target must resolve to a view that exists. A button
+# wired to the wrong attribute or a renamed view is silently dead otherwise —
+# it looks fine and does nothing when tapped.
+TARGETS="$(grep -oE 'data-go="[a-z-]+"' "$TMP/today.html" | sed 's/.*="//;s/"//' | sort -u)"
+if [ -z "$TARGETS" ]; then
+  echo "[smoke] FAIL today — no navigation targets found (are the quick actions wired?)"; FAIL=1
+fi
+for t in $TARGETS; do
+  if ! grep -q "id=\"p-$t\"" "$TMP/today.html"; then
+    echo "[smoke] FAIL today — button targets '$t', which is not a view"; FAIL=1
+  fi
+done
+QA="$(grep -c 'class="quick"' "$TMP/today.html" || true)"
+[ "$QA" = "0" ] && { echo "[smoke] FAIL today — quick actions missing"; FAIL=1; }
+
+# Every button in the quick-action row must carry a target the handler reads.
+# Checking only the buttons that DO have data-go is useless: a button wired to
+# the wrong attribute is invisible to that check and dead on the page — which
+# is exactly how all four shipped broken.
+QUICK="$(sed -n 's/.*<div class="quick">\(.*\)<\/div>.*/\1/p' "$TMP/today.html" | head -1)"
+if [ -n "$QUICK" ]; then
+  BTNS="$(printf '%s' "$QUICK" | grep -o '<button' | wc -l | tr -d ' ')"
+  WIRED="$(printf '%s' "$QUICK" | grep -o 'data-go=' | wc -l | tr -d ' ')"
+  if [ "$BTNS" != "$WIRED" ]; then
+    echo "[smoke] FAIL today — $BTNS quick-action buttons but only $WIRED wired to data-go"; FAIL=1
+  fi
+fi
+# No stray attribute names that nothing listens for.
+if grep -qE 'data-(goto|navto|view)=' "$TMP/today.html"; then
+  echo "[smoke] FAIL today — button uses an attribute no handler reads: $(grep -oE 'data-(goto|navto|view)="[^"]*"' "$TMP/today.html" | head -1)"; FAIL=1
+fi
+
 [ "$FAIL" = "0" ] && echo "[smoke] all views ok" || echo "[smoke] FAILURES above" >&2
 exit "$FAIL"
