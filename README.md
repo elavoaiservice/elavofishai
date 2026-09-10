@@ -234,6 +234,16 @@ on-screen "where to copy it" instructions change per vendor (Garmin's
 Waypoint Management → Import), and generic GPX omits `<sym>` entirely. The file
 is named after the active lake.
 
+## Species per lake
+
+`FISH` is Granbury's hand-verified dataset. On any other water the species come
+from that lake's AI guide — `species[]` with a twelve-month activity rating —
+shaped to the same fields, so the dropdowns, the seasonal grid and the species
+panel all work unchanged on Lake Michigan or anywhere else. A lake with no guide
+yet falls back to a short common list rather than showing Granbury's crappie and
+blue cats, and the species panel renders only the fields that exist (an AI
+species has a note and a season, not Granbury's where/how/bait lists).
+
 ## Lake orientation
 
 Wind advice tells you which bank the bait is stacking on, and how much fetch the
@@ -324,9 +334,13 @@ smoke test reads. It skips cleanly when no Chrome is installed.
 
 ## The day planner
 
-You choose the day (today through the end of the forecast), what you're after,
+You choose the day (today through the end of the forecast), the hours you can
+actually fish, whether you're in a boat or on the bank, what you're after,
 whether you want numbers or one big fish, and where you're launching — a boat
-ramp you've marked, any other mark, or a dropped pin. Given a launch point the
+ramp you've marked, any other mark, or a dropped pin. Fishing from shore or a
+pier changes the plan, not just the wording: every stop has to be reachable on
+foot. A cached plan whose inputs no longer match (different hours, off the bank
+now, launching elsewhere) is regenerated rather than served. Given a launch point the
 plan is ordered around it, with rough distances from the ramp. **Anything
 biting** hands the species choice to the model, which picks the target and says
 why. Plans are cached per lake + day + species + goal, and regenerate as the day

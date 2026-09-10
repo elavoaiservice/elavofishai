@@ -41,6 +41,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const b = (req.body || {}) as {
       lakeId?: string; date?: string; species?: string; conditions?: unknown; force?: boolean;
       goal?: string; launch?: { name?: string; lat?: number; lon?: number; kind?: string } | null;
+      window?: { from?: string; to?: string } | null; platform?: string;
     };
     // Only rate-limit calls that will actually hit the model.
     if (b.force && (await overLimit(`dayplan:${user.id}`, 30, 3600000))) {
@@ -55,6 +56,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       userId: user.id,
       goal: b.goal === 'trophy' ? 'trophy' : 'numbers',
       launch: b.launch || null,
+      window: b.window || null,
+      platform: String(b.platform || 'boat'),
     });
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);

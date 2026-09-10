@@ -12,6 +12,8 @@ export interface DayPlanRequest {
   userId?: string; // who asked — for usage accounting
   goal?: 'numbers' | 'trophy'; // keepers in the boat, or one big fish
   launch?: { name?: string; lat?: number; lon?: number; kind?: string } | null;
+  window?: { from?: string; to?: string } | null; // hours they can actually fish
+  platform?: string; // boat | shore | kayak | pier
 }
 
 export interface DayPlanResult {
@@ -41,9 +43,25 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const cached = await prisma.dayPlan.findUnique({
     where: { lakeId_date_species_goal: { lakeId, date, species, goal } },
   });
+  // What this plan was built for. A cached plan whose inputs no longer match
+  // (different hours, fishing from the bank now, launching elsewhere) is the
+  // wrong plan, however fresh it is.
+  const inputs = {
+    from: req.window?.from || '',
+    to: req.window?.to || '',
+    platform: req.platform || 'boat',
+    launch: req.launch?.name || '',
+  };
+  const sameInputs = (c: unknown) => {
+    const prev = (c as { inputs?: typeof inputs } | null)?.inputs;
+    if (!prev) return true; // generated before inputs were recorded
+    return prev.from === inputs.from && prev.to === inputs.to &&
+      prev.platform === inputs.platform && prev.launch === inputs.launch;
+  };
+
   // Serve cache unless forced, unless it's gone stale, or unless we're now
   // closer to the day than when it was generated (the forecast has firmed up).
-  if (cached && !req.force) {
+  if (cached && !req.force && sameInputs(cached.content)) {
     const stale = Date.now() - cached.generatedAt.getTime() > 12 * 3600000;
     const closer = out < cached.daysOutAtGen;
     if (!stale && !closer) {
@@ -82,6 +100,15 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const goalLine = goal === 'trophy'
     ? `Goal: ONE BIG FISH. Fewer bites is fine. Favour the water, times and presentations that hold the largest fish, even if that means a slow day.`
     : `Goal: NUMBERS — keeper-size fish in the boat. Favour reliable, repeatable bites over a long-shot at a giant.`;
+  const hours = inputs.from || inputs.to
+    ? `They can fish ${inputs.from || 'first light'} to ${inputs.to || 'dark'} — build the plan INSIDE those hours only, and say up front if the best window of the day falls outside them.`
+    : `No time limit given — plan the fishable day, dawn to dusk.`;
+  const platform = ({
+    shore: `Fishing from the BANK or wading. Every stop must be reachable on foot from shore — no boat-only structure, no long runs. Think access points, bank-adjacent depth changes, docks and riprap.`,
+    kayak: `Fishing from a KAYAK or small craft. Keep the water covered modest, favour protected water, and treat heavy wind as a real limit.`,
+    pier: `Fishing from a PIER or dock. The spot is fixed — plan depth, presentation and timing rather than moving.`,
+    boat: `Fishing from a BOAT — the whole lake is reachable.`,
+  } as Record<string, string>)[req.platform || 'boat'] || `Fishing from a BOAT.`;
   const launch = req.launch && Number.isFinite(Number(req.launch.lat)) && Number.isFinite(Number(req.launch.lon))
     ? `Launching from ${req.launch.name || 'a marked launch point'} at ${Number(req.launch.lat).toFixed(4)}, ${Number(req.launch.lon).toFixed(4)}. ` +
       `Build the day around that starting point — order the stops so the running between them makes sense, and say roughly how far each is from the ramp.`
@@ -90,7 +117,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const prompt =
     `You are a veteran fishing guide building an hour-by-hour game plan.\n` +
     `Lake: ${where} (${lake.lat.toFixed(4)}, ${lake.lon.toFixed(4)}). Date: ${date} (${out} days out).\n` +
-    `Target: ${target}\n${goalLine}\n${launch}\n` +
+    `Target: ${target}\n${goalLine}\n${platform}\n${hours}\n${launch}\n` +
     `Lake profile (JSON, may be empty): ${profileText}\n` +
     `Conditions for the day (JSON: weather/solunar/moon/water temp/best hours, may be sparse): ${condText}\n\n` +
     (webSearch
@@ -164,7 +191,8 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
   }
 
-  const content = extractJson(text);
+  const parsed = extractJson(text);
+  const content = parsed && typeof parsed === 'object' ? { ...(parsed as object), inputs } : parsed;
   if (!content) {
     // eslint-disable-next-line no-console
     console.error(`[dayplan] could not parse ${text.length} chars from ${model}: ${text.slice(0, 200)}`);

@@ -1140,6 +1140,17 @@ body.feed-loading .stat-v *{visibility:hidden}
           <option value="numbers">Numbers — keepers in the boat</option>
           <option value="trophy">One big fish</option>
         </select></div>
+      <div class="ai-f"><label for="aiFrom">Out from</label>
+        <input type="time" id="aiFrom"></div>
+      <div class="ai-f"><label for="aiTo">Back by</label>
+        <input type="time" id="aiTo"></div>
+      <div class="ai-f"><label for="aiPlatform">Fishing from</label>
+        <select id="aiPlatform">
+          <option value="boat">A boat</option>
+          <option value="shore">The bank or wading</option>
+          <option value="kayak">Kayak or small craft</option>
+          <option value="pier">A pier or dock</option>
+        </select></div>
       <div class="ai-f"><label for="aiLaunch">Launching from</label>
         <select id="aiLaunch"><option value="">Anywhere on the lake</option></select></div>
       <div class="ai-f wide" id="aiPinRow" hidden>
@@ -2285,6 +2296,38 @@ let FORECAST=[];   // per-day objects
 let trips=[];
 const $=id=>document.getElementById(id);
 const vals=f=>MODE==="eater"?f.eater:f.trophy;
+
+/* ---- species for the ACTIVE lake ----
+   FISH is Granbury's hand-verified dataset. On any other water the species come
+   from that lake's AI guide (species[] with a 12-month activity rating), shaped
+   to the same fields so every dropdown, the seasonal grid and the species panel
+   work unchanged. A lake with no guide yet falls back to a short common list so
+   the app is never empty — and says so rather than pretending it's Granbury. */
+const GENERIC_SPECIES=['Largemouth Bass','Smallmouth Bass','Crappie','Bluegill','Catfish','Walleye','Yellow Perch','Northern Pike','Trout'];
+const SPECIES_COLORS=['#1D6F42','#1882AE','#B3402C','#C98A1E','#5B4BC4','#0F766E','#C4682E','#2563EB','#7C3AED','#0891B2','#9333EA','#059669'];
+function adaptProfileSpecies(list){
+  return (list||[]).map((sp,i)=>{
+    const name=typeof sp==='string'?sp:(sp&&sp.name)||'';
+    if(!name)return null;
+    const months=Array.isArray(sp&&sp.months)&&sp.months.length===12
+      ? sp.months.map(n=>Math.max(1,Math.min(5,Number(n)||3)))
+      : [3,3,3,3,3,3,3,3,3,3,3,3];
+    const note=(sp&&sp.notes)||'';
+    return {n:name,c:SPECIES_COLORS[i%SPECIES_COLORS.length],
+      eater:months,trophy:months,
+      eaterSize:'',trophySize:'',
+      eaterNote:note,trophyNote:note,
+      where:[],how:[],bait:[],twhere:[],thow:[],tbait:[],
+      ai:true};
+  }).filter(Boolean);
+}
+function lakeFish(){
+  if(ACTIVE.key==='granbury')return FISH;
+  const fromGuide=adaptProfileSpecies(LAKE_PROFILE&&LAKE_PROFILE.species);
+  if(fromGuide.length)return fromGuide;
+  return adaptProfileSpecies(GENERIC_SPECIES);
+}
+function speciesNames(){ return lakeFish().map(f=>clean(f.n)); }
 const cls=v=>(MODE==="eater"?"v":"t")+v;
 const clean=s=>s.replace(/&amp;/g,'&');
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2435,7 +2478,7 @@ function drawGrid(){
   let h='<thead><tr><th class="sp"></th>';
   M.forEach((m,i)=>h+='<th class="'+(i===mi?'now':'')+'">'+m+'</th>');
   h+='</tr></thead><tbody>';
-  FISH.forEach(f=>{
+  lakeFish().forEach(f=>{
     h+='<tr><th class="sp">'+f.n+'<em>'+(MODE==="eater"?f.eaterSize:f.trophySize)+'</em></th>';
     vals(f).forEach((v,i)=>h+='<td class="cell '+cls(v)+(i===mi?' now':'')+'">'+v+'</td>');
     h+='</tr>';
@@ -2447,7 +2490,7 @@ function drawGrid(){
   $('gridLede').textContent=MODE==="eater"
     ? "Odds of putting keeper-size fish in the boat. Brighter is better. The outlined column is right now."
     : "Odds of hooking a genuine wall fish. Read this as when to try, not how often you'll succeed.";
-  $('notecol').innerHTML=FISH.map(f=>
+  $('notecol').innerHTML=lakeFish().map(f=>
     '<div class="nc"><b>'+f.n+'</b> &mdash; '+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</div>').join('');
 }
 
@@ -2462,14 +2505,14 @@ function drawCurves(){
   }
   s+='<rect x="'+(x(mi)-13)+'" y="'+pt+'" width="26" height="'+ih+'" fill="'+ac+'" opacity="0.10"/>';
   M.forEach((m,i)=>s+='<text x="'+x(i)+'" y="'+(H-12)+'" fill="'+(i===mi?ac:"#5F708A")+'" font-size="11" font-family="Inter,sans-serif" font-weight="600" text-anchor="middle">'+m+'</text>');
-  FISH.forEach(f=>{
+  lakeFish().forEach(f=>{
     if(hidden.has(f.n))return;
     const pts=vals(f).map((v,i)=>x(i)+','+y(v)).join(' ');
     s+='<polyline points="'+pts+'" fill="none" stroke="'+f.c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>';
     vals(f).forEach((v,i)=>s+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+f.c+'"/>');
   });
   $('svg').innerHTML=s;
-  $('keys').innerHTML=FISH.map(f=>
+  $('keys').innerHTML=lakeFish().map(f=>
     '<button class="key" data-n="'+f.n+'" aria-pressed="'+(!hidden.has(f.n))+'"><i style="background:'+f.c+'"></i>'+clean(f.n)+'</button>').join('');
   $('keys').querySelectorAll('.key').forEach(b=>b.onclick=()=>{
     const n=b.dataset.n; hidden.has(n)?hidden.delete(n):hidden.add(n); drawCurves();
@@ -2484,7 +2527,7 @@ function drawMonthPicker(){
   });
 }
 function drawMonth(){
-  const ranked=FISH.slice().sort((a,b)=>vals(b)[selMonth]-vals(a)[selMonth]);
+  const ranked=lakeFish().slice().sort((a,b)=>vals(b)[selMonth]-vals(a)[selMonth]);
   const sh=MODE==="eater"?["--r1","--r2","--r3","--r4","--r5"]:["--t1","--t2","--t3","--t4","--t5"];
   $('monthOut').innerHTML='<div class="mhead">'+FULL[selMonth]+'</div><p class="msum">'+MONTHNOTES[selMonth]+'</p><div class="rank">'+
     ranked.map(f=>{
@@ -2496,7 +2539,7 @@ function drawMonth(){
 }
 
 function drawSpecies(){
-  $('species').innerHTML=FISH.map(f=>{
+  $('species').innerHTML=lakeFish().map(f=>{
     const v=vals(f)[mi];
     const w=MODE==="eater"?f.where:f.twhere, h=MODE==="eater"?f.how:f.thow, b=MODE==="eater"?f.bait:f.tbait;
     const max=Math.max.apply(null,vals(f));
@@ -2504,15 +2547,17 @@ function drawSpecies(){
     return '<details class="fish"><summary><span class="fname">'+f.n+'</span><span class="tag '+
       (v>=4?'on':'')+'">'+(v>=4?'Good right now':'Peak: '+peak)+'</span><span class="chev">&#9656;</span></summary>'+
       '<div class="fbody">'+
-      '<div class="row"><div class="k">Target size</div><p>'+(MODE==="eater"?f.eaterSize:f.trophySize)+'</p></div>'+
-      '<div class="row"><div class="k">Where</div><ul>'+w.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
-      '<div class="row"><div class="k">How</div><ul>'+h.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
-      '<div class="row"><div class="k">Bait</div><ul>'+b.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
+      // A species from a lake's AI guide has a note and a season, not the deep
+      // where/how/bait lists Granbury carries — render what exists.
+      ((MODE==="eater"?f.eaterSize:f.trophySize)?'<div class="row"><div class="k">Target size</div><p>'+(MODE==="eater"?f.eaterSize:f.trophySize)+'</p></div>':'')+
+      ((w&&w.length)?'<div class="row"><div class="k">Where</div><ul>'+w.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
+      ((h&&h.length)?'<div class="row"><div class="k">How</div><ul>'+h.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
+      ((b&&b.length)?'<div class="row"><div class="k">Bait</div><ul>'+b.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
       (SCOPE[f.n]?'<div class="row"><div class="k">On live sonar &mdash; what to look for</div><ul>'+
         SCOPE[f.n].read.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
         '<div class="row"><div class="k">On live sonar &mdash; how to work it</div><ul>'+
         SCOPE[f.n].work.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
-      '<div class="row"><div class="k">Reality check</div><p>'+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</p></div>'+
+      (((MODE==="eater"?f.eaterNote:f.trophyNote)||'')?'<div class="row"><div class="k">'+(f.ai?'From this lake\u2019s AI guide':'Reality check')+'</div><p>'+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</p></div>':'')+
       '</div></details>';
   }).join('');
 }
@@ -2657,7 +2702,7 @@ function drawMoonStat(){
 }
 
 function drawHead(){
-  const ranked=FISH.slice().sort((a,b)=>vals(b)[mi]-vals(a)[mi]);
+  const ranked=lakeFish().slice().sort((a,b)=>vals(b)[mi]-vals(a)[mi]);
   $('pick').textContent=clean(ranked[0].n);
   const top=clean(ranked[0].n), second=clean(ranked[1].n);
   let t;
@@ -2691,7 +2736,7 @@ function initLogForm(){
   const wpn=waypoints.map(w=>w.name).filter(n=>SPOTS.indexOf(n)<0);
   $('lgSpot').innerHTML=SPOTS.concat(wpn).map(s=>'<option>'+esc(s)+'</option>').join('');
   if($('qSpot'))$('qSpot').innerHTML=$('lgSpot').innerHTML;
-  $('lgSpecies').innerHTML='<option>Mixed / anything</option>'+FISH.map(f=>'<option>'+clean(f.n)+'</option>').join('');
+  $('lgSpecies').innerHTML='<option>Mixed / anything</option>'+speciesNames().map(n=>'<option>'+n+'</option>').join('');
   updateSnap();
 }
 function updateSnap(){
@@ -2923,7 +2968,8 @@ function spotFit(sp){
   }
   if(sp.months&&sp.months.indexOf(mi+1)>=0){sc+=22;why.push('in season')}
   else{sc-=8}
-  const topSp=FISH.slice().sort((a,b)=>vals(b)[mi]-vals(a)[mi])[0].n;
+  const rankedTop=lakeFish().slice().sort((a,b)=>vals(b)[mi]-vals(a)[mi])[0];
+  const topSp=rankedTop?rankedTop.n:'fish';
   if(sp.species&&sp.species.indexOf(topSp)>=0){sc+=14;why.push('holds '+clean(topSp))}
   const t=waterTemp!=null?waterTemp:estWater();
   if(t>=84&&/bridge/i.test(sp.type)){sc+=10;why.push('shade and depth in the heat')}
@@ -3205,13 +3251,13 @@ async function loadActiveLake(){
    The app was written around Garmin + LiveScope. GEAR lets it match the boat
    instead: the GPX export defaults to their plotter, and the forward-facing
    sonar guide is named for the unit they own — or hidden if they don't run one. */
-let GEAR={plotter:null,ffs:null};
+let GEAR={plotter:null,ffs:null,boat:null};
 const FFS_LABEL={livescope:'LiveScope',activetarget:'ActiveTarget',megalive:'MEGA Live'};
 async function loadGear(){
   if(!AUTH.user)return;
   try{ const r=await apiFetch('/api/me/profile'); if(!r.ok)return;
     const p=(await r.json()).profile||{};
-    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null};
+    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null,boat:(p.hasBoat==null?null:!!p.hasBoat)};
     applyGear();
   }catch(e){}
 }
@@ -3368,7 +3414,7 @@ async function checkAi(){ try{ const r=await apiFetch('/api/ai/status'); const d
 function ymd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
 function populateAiSpecies(){
   const sel=$('aiSpecies'); if(!sel)return;
-  const names=(typeof FISH!=='undefined'?FISH.map(f=>f.n):['Largemouth Bass','Crappie','Catfish','White Bass']);
+  const names=speciesNames();
   // "Anything biting" hands the choice to the AI, which is the honest option
   // when you just want to catch fish and don't care what kind.
   sel.innerHTML='<option value="any">Anything biting — you pick</option>'
@@ -3416,11 +3462,14 @@ async function genAiPlan(force){
   const goal=$('aiGoal').value||'numbers';
   const launch=aiLaunchPoint();
   const day=$('aiDate').value||cond.date;
+  const window={from:$('aiFrom').value||'',to:$('aiTo').value||''};
+  const platform=$('aiPlatform').value||'boat';
   $('aiPlanMsg').textContent='Working on your plan… this can take up to a minute.';
   $('aiPlanBtn').disabled=true;
   try{
     const r=await apiFetch('/api/ai/day-plan',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lakeId:ACTIVE.id,date:day,species:species,goal:goal,launch:launch,conditions:cond,force:!!force})});
+      body:JSON.stringify({lakeId:ACTIVE.id,date:day,species:species,goal:goal,launch:launch,
+        window:window,platform:platform,conditions:cond,force:!!force})});
     const d=await r.json();
     if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
     else { $('aiPlanMsg').textContent=''; renderAiPlan(d,species); }
@@ -3479,7 +3528,12 @@ async function drawLakeGuide(){
     if(!d.profile){
       box.innerHTML='<div style="border:1px dashed var(--border);border-radius:14px;padding:16px;background:var(--surface)"><b>AI lake guide</b><p class="lede" style="margin:6px 0 10px">No guide yet for '+escHtml(ACTIVE.name)+'.</p>'+(AI_ON?'<button class="btn" id="aiGuideGen">Generate AI guide</button>':'<span class="snap" style="color:var(--muted)">AI isn’t configured yet.</span>')+'</div>';
       const g=$('aiGuideGen'); if(g)g.onclick=genLakeGuide;
-    } else { LAKE_PROFILE=Object.assign({source:d.profile.source},d.profile.content||{}); applyLakeNotes(); renderLakeGuide(d.profile); }
+    } else {
+      LAKE_PROFILE=Object.assign({source:d.profile.source},d.profile.content||{});
+      applyLakeNotes(); renderLakeGuide(d.profile);
+      // Species lists, the seasonal grid and every dropdown key off this.
+      populateAiSpecies(); initLogForm(); renderAll();
+    }
   }catch(e){ box.innerHTML=''; }
 }
 function renderLakeGuide(p){
@@ -3729,7 +3783,7 @@ async function loadProfile(){
     $('pfSpecies').value=p.favoriteSpecies||''; $('pfBio').value=p.bio||'';
     $('pfLure').value=p.favoriteLure||''; $('pfYears').value=p.yearsFishing||'';
     $('pfPlotter').value=p.plotterBrand||'__unset'; $('pfFfs').value=p.ffsBrand||'__unset';
-    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null}; applyGear();
+    GEAR={plotter:p.plotterBrand||null,ffs:p.ffsBrand||null,boat:(p.hasBoat==null?null:!!p.hasBoat)}; applyGear();
     // hasBoat null means never asked — distinct from "no boat".
     $('pfBoat').value = p.hasBoat==null ? '__unset' : (p.hasBoat ? (p.boatType||'other boat') : '');
     $('pfPrivacy').value=p.messagePrivacy||'friends';
@@ -4689,7 +4743,7 @@ $('retry').onclick=loadWeather;
 
 /* ============ log wiring ============ */
 $('wpType').innerHTML=WP_TYPES.map(t=>'<option>'+t[0]+'</option>').join('');
-$('wpSpecies').innerHTML='<option value=""></option>'+FISH.map(f=>'<option>'+clean(f.n)+'</option>').join('');
+$('wpSpecies').innerHTML='<option value=""></option>'+speciesNames().map(n=>'<option>'+n+'</option>').join('');
 $('mAdd').onclick=()=>setArmed(!armed);
 $('mSat').onclick=()=>{ if(!map)return; map.removeLayer(layerStreet); layerSat.addTo(map);
   $('mSat').setAttribute('aria-pressed',true); $('mStreet').setAttribute('aria-pressed',false); };
@@ -4781,7 +4835,7 @@ function drawWindows(d){
   const off=(t,h)=>new Date(t.valueOf()+h*3600000);
   const hot=d.hi>=95, cold=d.hi<=55;
   const mt=moonTimes(d.start);
-  const sp=FISH.slice().sort((a,b)=>vals(b)[d.start.getMonth()]-vals(a)[d.start.getMonth()])[0];
+  const sp=lakeFish().slice().sort((a,b)=>vals(b)[d.start.getMonth()]-vals(a)[d.start.getMonth()])[0];
   const top=clean(sp.n);
 
   const W=[];
@@ -4898,6 +4952,19 @@ drawTrips();
   const gEl=$('aiGoal'); if(gEl)gEl.value=(MODE==='trophy'?'trophy':'numbers');
   const lEl=$('aiLaunch');
   if(lEl)lEl.onchange=function(){ $('aiPinRow').hidden=(lEl.value!=='pin'); };
+  const pEl=$('aiPlatform');
+  if(pEl){
+    // From the bank you don't launch anywhere — ask where you'll be standing.
+    const syncPlatform=function(){
+      const shore=(pEl.value==='shore'||pEl.value==='pier');
+      const lab=$('aiLaunch').previousElementSibling;
+      if(lab)lab.textContent=shore?'Where you\u2019ll be fishing from':'Launching from';
+    };
+    pEl.onchange=syncPlatform;
+    // Default to what they told us about their boat during onboarding.
+    if(GEAR&&GEAR.boat===false)pEl.value='shore';
+    syncPlatform();
+  }
   const gps=$('aiGps'); if(gps)gps.onclick=()=>gpsInto('aiLat','aiLon');
   const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
   drawLakeGuide();
