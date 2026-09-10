@@ -413,6 +413,25 @@ Measured cost of one real day plan (1,780 in / 791 out) and one lake guide
 | gpt-5-mini | $0.0020 | $0.0046 | $2.03 |
 | gpt-4o-mini | $0.0007 | $0.0014 | $0.70 |
 
+## Fishing reports
+
+Reports feed the day planner, weighted above the model's own knowledge when
+they disagree about what's biting. Three kinds:
+
+- **angler** — someone who was actually on the water, posted from the app. The
+  freshest signal there is, and the only source nobody can copy.
+- **agency** — a state wildlife or Corps feed an admin has added under admin →
+  Report sources (RSS/Atom or a page). A regional feed only attaches an item to
+  a lake the item actually names.
+- **web** — the optional in-plan web search described above.
+
+Sources are operator-managed on purpose: the app fetches what someone has
+deliberately pointed it at, identifies itself, and respects what a site says
+about automated access. It does not scrape platforms that forbid it — that's a
+licence and reputation risk, and the indexed web plus your own anglers is
+better material anyway. Sources refresh every six hours; fetched reports are
+swept after 120 days, angler reports are kept.
+
 ## AI usage and cost
 
 Every model call is recorded with its token counts and what it cost, priced at

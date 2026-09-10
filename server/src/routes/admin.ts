@@ -19,7 +19,8 @@ async function audit(by: string, action: string, target?: string, meta?: Record<
 import { CATALOG, maskedView, setValue, testValue, loadOverlay } from '../config-store';
 import { buildInfo, incomingCommits, targetVersion, versionStatus } from '../version';
 import { emailStatus } from '../services/email';
-import { rateFor } from '../services/aiUsage';
+import { rateFor, recalculateCosts } from '../services/aiUsage';
+import { fetchSource, refreshAllSources } from '../services/reports';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
 import {
@@ -320,6 +321,62 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // ---- report sources ----
+  // Where fishing reports come from. Operator-managed on purpose: we fetch what
+  // someone has deliberately pointed us at, not whatever we can reach.
+  app.get('/api/admin/report-sources', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const [sources, counts] = await Promise.all([
+      prisma.reportSource.findMany({ orderBy: { createdAt: 'asc' } }),
+      prisma.lakeReport.groupBy({ by: ['source'], _count: { _all: true } }),
+    ]);
+    const recent = await prisma.lakeReport.findMany({
+      orderBy: { publishedAt: 'desc' },
+      take: 15,
+      select: { source: true, sourceName: true, title: true, publishedAt: true, lake: { select: { name: true } } },
+    });
+    return { sources, counts: counts.map((c) => ({ source: c.source, n: c._count._all })), recent };
+  });
+
+  app.post('/api/admin/report-sources', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const b = (req.body || {}) as { name?: string; url?: string; kind?: string; region?: string; lakeId?: string };
+    const name = String(b.name || '').trim();
+    const url = String(b.url || '').trim();
+    if (!name || !/^https?:\/\//i.test(url)) return reply.code(400).send({ error: 'Needs a name and an http(s) URL.' });
+    const src = await prisma.reportSource.create({
+      data: {
+        name: name.slice(0, 120),
+        url,
+        kind: b.kind === 'html' ? 'html' : 'rss',
+        region: b.region ? String(b.region).slice(0, 60) : null,
+        lakeId: b.lakeId ? String(b.lakeId) : null,
+      },
+    });
+    await audit(admin.username, 'admin.report_source_add', src.id, { name, url });
+    // Pull it straight away so the operator sees whether it works.
+    const r = await fetchSource(src.id).catch((e) => ({ stored: 0, scanned: 0, error: (e as Error).message }));
+    return reply.send({ source: src, first: r });
+  });
+
+  app.delete('/api/admin/report-sources/:id', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    await prisma.reportSource.deleteMany({ where: { id } });
+    await audit(admin.username, 'admin.report_source_remove', id);
+    return reply.send({ ok: true });
+  });
+
+  app.post('/api/admin/report-sources/refresh', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const r = await refreshAllSources().catch((e) => ({ sources: 0, stored: 0, error: (e as Error).message }));
+    return reply.send(r);
+  });
+
   // ---- AI usage + cost ----
   // What the model calls actually cost, by day and by feature. Cost is stored
   // per call at the price in force then, so these totals never drift when
@@ -392,6 +449,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       unpriced,
       recent,
     };
+  });
+
+  // Re-price stored usage from the current rate table. For correcting a wrong
+  // table, not for re-pricing history after a vendor price change.
+  app.post('/api/admin/ai-usage/recalculate', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const r = await recalculateCosts();
+    await audit(admin.username, 'admin.ai_cost_recalculate', undefined, r);
+    return reply.send(r);
   });
 
   // ---- client errors ----

@@ -14,6 +14,7 @@ import { adminRoutes } from './routes/admin';
 import { socialRoutes } from './routes/social';
 import { messageRoutes } from './routes/messages';
 import { clientErrorRoutes, sweepClientErrors } from './routes/clientErrors';
+import { refreshAllSources, sweepReports } from './services/reports';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
 import { currentUser } from './lib/auth';
@@ -118,6 +119,11 @@ async function main(): Promise<void> {
     await sweepAuthTokens().catch(() => {});
     await sweepRateLimits(24 * hour).catch(() => {});
     await sweepClientErrors().catch(() => {});
+    await sweepReports().catch(() => {});
+    // Pull fishing reports on the same cadence as the sweeps (every 6h).
+    await refreshAllSources()
+      .then((r) => r.stored && app.log.info(r, 'fishing reports refreshed'))
+      .catch(() => {});
     await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   };
   await sweep();

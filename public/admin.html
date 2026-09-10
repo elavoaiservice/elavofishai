@@ -201,8 +201,10 @@ async function tAiCost(){
     [tok(t.outputTokens||0),'Output tokens',(t.avgMs?t.avgMs+' ms average':'')],
     [String(t.webSearches||0),'Web searches',(t.webSearches?money(t.webSearches*0.01)+' of the spend':'search is off')],
   ];
-  let h='<div class="row" style="margin:0 0 14px;gap:8px">'
-    +[7,30,90].map(n=>'<button class="btn btn-sm '+(AI_DAYS===n?'btn-primary':'btn-ghost')+'" data-aidays="'+n+'">'+n+' days</button>').join('')+'</div>'
+  let h='<div class="row" style="margin:0 0 14px;gap:8px;align-items:center">'
+    +[7,30,90].map(n=>'<button class="btn btn-sm '+(AI_DAYS===n?'btn-primary':'btn-ghost')+'" data-aidays="'+n+'">'+n+' days</button>').join('')
+    +'<button class="btn btn-ghost btn-sm" id="aiRecalc" style="margin-left:auto" title="Re-price stored usage from the current rate table">Recalculate costs</button>'
+    +'<span class="snap" id="aiRecalcMsg"></span></div>'
     +'<div class="metrics">'+cards.map(c=>'<div class="metric"><div class="n">'+esc(c[0])+'</div><div class="k">'+esc(c[1])+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('')+'</div>';
 
   if((d.unpriced||[]).length) h+='<div class="card" style="margin-top:14px;border-color:#f0d9a8"><b style="color:#b7791f">No price on file for: '+d.unpriced.map(esc).join(', ')+'</b><div class="snap" style="margin-top:6px">Those calls are counted but costed at $0. Add the rate in server/src/services/aiUsage.ts.</div></div>';
@@ -233,6 +235,13 @@ async function tAiCost(){
 
   $('content').innerHTML=h;
   document.querySelectorAll('[data-aidays]').forEach(b=>b.onclick=()=>{ AI_DAYS=+b.dataset.aidays; tAiCost(); });
+  $('aiRecalc').onclick=async function(){
+    $('aiRecalcMsg').textContent='Recalculating…';
+    const r=await api('/api/admin/ai-usage/recalculate',{method:'POST'});
+    const d=await r.json();
+    $('aiRecalcMsg').textContent=r.ok?(d.changed+' of '+d.rows+' rows re-priced ('+money(d.before)+' → '+money(d.after)+')'):'Failed.';
+    if(r.ok)setTimeout(tAiCost,1500);
+  };
 }
 
 /* Client errors — grouped by message so one broken line doesn't fill the page.

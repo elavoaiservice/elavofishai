@@ -124,6 +124,7 @@ model User {
   friendshipsReceived  Friendship[]          @relation("FriendshipFriend")
   auditLogs            AuditLog[]
   profileContributions ProfileContribution[]
+  reports              LakeReport[]
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -193,6 +194,7 @@ model Lake {
   waypoints     Waypoint[]
   dayPlans      DayPlan[]
   contributions ProfileContribution[]
+  reports       LakeReport[]
   favoritedBy   User[]                @relation("UserFavoriteLake")
 
   @@index([name])
@@ -432,6 +434,44 @@ model AiUsage {
 
   @@index([createdAt])
   @@index([feature, createdAt])
+}
+
+// A fishing report about a lake — from an official agency feed, a page we
+// fetched, or an angler who was actually there. These feed the day planner,
+// which is the whole point: a report from this week beats any model's guess.
+model LakeReport {
+  id          String    @id @default(cuid())
+  lakeId      String
+  lake        Lake      @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  source      String // agency | corps | web | angler
+  sourceName  String? // "TPWD", or the angler's display name
+  title       String?
+  body        String    @db.Text
+  url         String?
+  publishedAt DateTime? // when the report is about, not when we stored it
+  userId      String? // set when an angler posted it
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([lakeId, publishedAt])
+  @@unique([lakeId, url]) // one row per fetched item
+}
+
+// Where reports come from. A source can be pinned to one lake or to a whole
+// region (a state agency page that covers every lake in it).
+model ReportSource {
+  id            String    @id @default(cuid())
+  name          String // "TPWD freshwater reports"
+  url           String
+  kind          String    @default("rss") // rss | html
+  lakeId        String? // pinned to one lake...
+  region        String? // ...or matched by lake region ("Texas")
+  active        Boolean   @default(true)
+  lastFetchedAt DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  @@index([active])
 }
 
 // ---- P3 admin / community ----

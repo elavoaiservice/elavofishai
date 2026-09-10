@@ -23,7 +23,8 @@ export const WEB_SEARCH_USD_PER_SEARCH = 10 / 1000;
 
 export const RATES: Record<string, Rate> = {
   // Anthropic — USD per million tokens.
-  'claude-fable-5-1': { input: 10, output: 50, cacheRead: 1.0 },
+  // Fable 5.1 is the exception to the 0.1x cache-read rule: 0.025x.
+  'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25 },
   'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5 },
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5 },
   'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5 },
@@ -63,6 +64,29 @@ export function costOf(
     (cacheReadTokens / 1e6) * r.cacheRead +
     search;
   return Math.round(usd * 1e6) / 1e6; // to the millionth of a dollar
+}
+
+/**
+ * Recompute stored costs from the rate table. Normally history is left alone —
+ * a price change should not rewrite last month — but when the TABLE ITSELF was
+ * wrong, the stored numbers are wrong too, and a wrong number that looks
+ * authoritative is worse than no number. Returns how many rows changed.
+ */
+export async function recalculateCosts(): Promise<{ rows: number; changed: number; before: number; after: number }> {
+  const rows = await prisma.aiUsage.findMany({
+    select: { id: true, model: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, webSearches: true, costUsd: true },
+  });
+  let changed = 0, before = 0, after = 0;
+  for (const r of rows) {
+    const fresh = costOf(r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.webSearches);
+    before += r.costUsd;
+    after += fresh;
+    if (Math.abs(fresh - r.costUsd) > 1e-9) {
+      await prisma.aiUsage.update({ where: { id: r.id }, data: { costUsd: fresh } });
+      changed++;
+    }
+  }
+  return { rows: rows.length, changed, before, after };
 }
 
 export interface UsageRecord {

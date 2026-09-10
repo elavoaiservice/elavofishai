@@ -1,4 +1,5 @@
 import { complete } from './llm';
+import { recentReports, reportsForPrompt } from './reports';
 import { prisma } from '../db';
 import { env } from '../env';
 
@@ -113,12 +114,23 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       `Build the day around that starting point — order the stops so the running between them makes sense, and say roughly how far each is from the ramp.`
     : `No launch point given — keep the plan usable from anywhere on the lake.`;
 
+  // Real reports about this water beat anything a model can infer. Agency feeds
+  // and angler reports are already collected; put the recent ones in front of
+  // it, dated and attributed.
+  const reports = reportsForPrompt(await recentReports(lakeId).catch(() => []));
+
   const prompt =
     `You are a veteran fishing guide building an hour-by-hour game plan.\n` +
     `Lake: ${where} (${lake.lat.toFixed(4)}, ${lake.lon.toFixed(4)}). Date: ${date} (${out} days out).\n` +
     `Target: ${target}\n${goalLine}\n${platform}\n${hours}\n${launch}\n` +
     `Lake profile (JSON, may be empty): ${profileText}\n` +
     `Conditions for the day (JSON: weather/solunar/moon/water temp/best hours, may be sparse): ${condText}\n\n` +
+    (reports
+      ? `Recent reports about THIS lake — dated, newest first. An angler report is someone who was actually ` +
+        `there; an agency report is official. Weigh these ABOVE your own general knowledge, and above ` +
+        `anything you search for, when they disagree about what is biting right now. Note it in "notes" if ` +
+        `they contradict the conditions:\n${reports}\n\n`
+      : '') +
     (webSearch
       ? `You have web search. Look for recent, local information about THIS lake before planning — ` +
         `state fish & wildlife reports, marina and guide reports, tournament results, generation or release schedules, ` +

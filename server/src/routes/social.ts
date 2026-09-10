@@ -186,6 +186,65 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // ---------- angler reports ----------
+  // The source nobody else has: someone who was actually on this water. These
+  // feed the day planner alongside agency feeds, weighted as the freshest
+  // signal available.
+  app.get('/api/lakes/:id/reports', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const lakeId = String((req.params as { id: string }).id);
+    const rows = await prisma.lakeReport.findMany({
+      where: { lakeId, publishedAt: { gte: new Date(Date.now() - 60 * 86400000) } },
+      orderBy: { publishedAt: 'desc' },
+      take: 30,
+      select: {
+        id: true, source: true, sourceName: true, title: true, body: true, url: true,
+        publishedAt: true, userId: true,
+      },
+    });
+    const blocked = await blockedUserIds(me.id);
+    return reply.send({
+      reports: rows
+        .filter((r) => !r.userId || !blocked.includes(r.userId))
+        .map((r) => ({ ...r, mine: r.userId === me.id })),
+    });
+  });
+
+  app.post('/api/lakes/:id/reports', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    if (await overLimit(`report:${me.id}`, 10, 3600_000)) {
+      return reply.code(429).send({ error: 'That is a lot of reports in an hour — try again later.' });
+    }
+    const lakeId = String((req.params as { id: string }).id);
+    const b = (req.body || {}) as { body?: string; fishedOn?: string };
+    const body = String(b.body || '').trim();
+    if (body.length < 10) return reply.code(400).send({ error: 'Say a little more — what the water was doing, what worked.' });
+    const when = b.fishedOn && !Number.isNaN(Date.parse(b.fishedOn)) ? new Date(b.fishedOn) : new Date();
+    if (when.getTime() > Date.now() + 86400000) return reply.code(400).send({ error: "You can't report a day that hasn't happened." });
+
+    const report = await prisma.lakeReport.create({
+      data: {
+        lakeId,
+        source: 'angler',
+        sourceName: me.displayName,
+        body: body.slice(0, 2000),
+        publishedAt: when,
+        userId: me.id,
+        url: `angler:${me.id}:${Date.now()}`, // keeps the per-lake unique index happy
+      },
+    });
+    return reply.send({ report: { id: report.id } });
+  });
+
+  app.delete('/api/reports/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    await prisma.lakeReport.deleteMany({ where: { id: String((req.params as { id: string }).id), userId: me.id } });
+    return reply.send({ ok: true });
+  });
+
   // ---------- blocking ----------
   // Blocking replaces whatever relationship existed: an accepted friendship or
   // a pending request becomes a block, and the pair disappears from each
