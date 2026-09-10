@@ -108,7 +108,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary);outline
 .btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 /* mode */
-.modebar{display:flex;margin:34px 0 10px;border:1px solid var(--border);border-radius:var(--rc);
+.modebar{display:flex;margin:0;border:1px solid var(--border);border-radius:999px;overflow:hidden;
+  flex:0 0 auto;background:var(--surface)}
+.modebar .mode{min-height:38px;padding:0 16px;font-size:13px;font-weight:650;flex:0 0 auto}
+.modebar .mode small{display:none}
+.modebar-legacy{display:flex;margin:34px 0 10px;border:1px solid var(--border);border-radius:var(--rc);
   overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
 .mode{flex:1;min-height:60px;padding:12px 10px;background:transparent;border:none;cursor:pointer;
   font-size:1.05rem;font-weight:700;letter-spacing:-.01em;color:var(--muted);transition:.18s;
@@ -119,7 +123,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary);outline
 .mode[aria-pressed="true"]{background:var(--primary);color:#fff}
 body.trophy .mode[aria-pressed="true"]{background:var(--violet);color:#fff}
 .mode:focus-visible{outline:2px solid var(--primary);outline-offset:-3px}
-.modehint{font-size:.95rem;color:var(--muted);margin-bottom:32px}
+.modehint{font-size:12.5px;color:var(--muted);margin:0 0 18px;text-align:right}
+@media(max-width:1023px){ .modehint{display:none} .pagehead{align-items:center} }
 
 /* tabs */
 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
@@ -768,8 +773,13 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .v{font-size:34px}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
-.sec-t{font-size:15px;margin:26px 0 10px;padding-top:18px;border-top:1px solid var(--border);color:var(--ink)}
-.sec-t:first-of-type{border-top:none;padding-top:0}
+.sec{margin-top:22px;border-top:1px solid var(--border);padding-top:14px}
+.sec-t{font-size:15px;font-weight:700;color:var(--ink);cursor:pointer;list-style:none;
+  display:flex;align-items:center;gap:8px;padding:6px 0;min-height:40px}
+.sec-t::-webkit-details-marker{display:none}
+.sec-t::after{content:'❯';margin-left:auto;color:var(--muted);font-size:12px;transition:transform .18s var(--ease)}
+.sec[open] .sec-t::after{transform:rotate(90deg)}
+.sec-t:hover{color:var(--primary-dark)}
 
 /* ================= first run ================= */
 .onboard{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;
@@ -822,10 +832,8 @@ body.feed-loading .stat-v *{visibility:hidden}
   .pagehead{margin-bottom:14px}
   .pagehead h2{font-size:20px}
   .pagehead p{font-size:13px}
-  /* The goal toggle is two big thumb targets, not a wide segmented bar. */
-  .modebar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .mode{min-height:52px}
-  .modehint{font-size:12.5px;line-height:1.4;margin-bottom:14px}
+  /* The goal toggle stays a compact pill pair beside the title. */
+  .modebar .mode{min-height:40px;padding:0 13px;font-size:12.5px}
   .quick{gap:8px}
   .quick .btn{flex:1 1 calc(50% - 4px);min-height:46px;justify-content:center}
   .today-grid{grid-template-columns:1fr 1fr;gap:10px}
@@ -1008,12 +1016,17 @@ body.feed-loading .stat-v *{visibility:hidden}
   <main class="main">
     <div class="pagehead">
       <div><h2 id="viewTitle">Today</h2><p id="viewSub"></p></div>
+      <!-- What you're fishing for. It changes the scores, so it sits with the
+           page title rather than shouting from the top of the screen. -->
+      <div>
+        <div class="modebar" role="group" aria-label="What are you after?">
+          <button class="mode" id="mEater" aria-pressed="true">Eaters</button>
+          <button class="mode" id="mTrophy" aria-pressed="false">One big fish</button>
+        </div>
+        <p class="modehint" id="modehint">Rating your odds of putting keeper-size fish in the boat.</p>
+      </div>
     </div>
-  <div class="modebar" role="group" aria-label="Goal">
-    <button class="mode" id="mEater" aria-pressed="true">Eaters<small>NUMBERS · KEEPERS</small></button>
-    <button class="mode" id="mTrophy" aria-pressed="false">Trophy<small>ONE BIG FISH</small></button>
-  </div>
-  <p class="modehint" id="modehint" style="margin-top:0">Rating your odds of putting keeper-size fish in the boat.</p>
+
 
 <section class="panel" id="p-today">
   <div class="quick">
@@ -1024,12 +1037,16 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
   <div class="today-grid" id="todayCards"></div>
 
-  <h3 class="sec-t">The next 7 days</h3>
+  <details class="sec" id="secWeek">
+  <summary class="sec-t">The next 7 days</summary>
   <p class="lede">Tap a day for the reasoning.</p>
   <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
   <div class="note" id="bestNote" hidden></div>
 
-  <h3 class="sec-t">Windows worth booking time off for</h3>
+  </details>
+
+  <details class="sec" id="secSeason">
+  <summary class="sec-t">Windows worth booking time off for</summary>
   <p class="lede">The windows worth taking time off for, in the order they arrive.</p>
   <div id="weeksOut"></div>
   <div class="note"><b>These are the peaks, not the only good days.</b> Dates shift with the weather — a warm February pulls the crappie window forward two weeks, a cold one pushes it back. Watch water temperature rather than the calendar and treat these as the window to be watching, not a guarantee.</div>
@@ -1074,6 +1091,7 @@ body.feed-loading .stat-v *{visibility:hidden}
       </div>
     </div>
   </div>
+  </details>
 </section>
 
 <section class="panel" id="p-plan" hidden>
@@ -4436,6 +4454,17 @@ window.addEventListener('hashchange',function(){ const h=location.hash.replace('
 // Safe to call from anywhere, at any point in boot: does nothing unless the
 // Today view is the one on screen.
 function todayRefresh(){ try{ if(CUR==='today')renderToday(); }catch(e){} }
+// On a phone Today should open to the answer, not to a scroll; on a big screen
+// there is room for everything. Either way, what you last opened is remembered.
+function initTodaySections(){
+  const wide=window.matchMedia('(min-width:1024px)').matches;
+  [['secWeek','efa:sec:week'],['secSeason','efa:sec:season']].forEach(function(pair){
+    const el=$(pair[0]); if(!el)return;
+    let saved=null; try{ saved=localStorage.getItem(pair[1]); }catch(e){}
+    el.open = saved===null ? wide : saved==='1';
+    el.addEventListener('toggle',function(){ try{ localStorage.setItem(pair[1],el.open?'1':'0'); }catch(e){} });
+  });
+}
 function renderToday(){
   const el=$('todayCards'); if(!el)return;
   const cards=[];
@@ -4837,6 +4866,7 @@ drawTrips();
   renderNav();
   wireOnboard();
   loadGear();
+  initTodaySections();
   go((location.hash||'').replace('#','')||'today',false);
 })();
 
