@@ -21,6 +21,7 @@ import { buildInfo, incomingCommits, targetVersion, versionStatus } from '../ver
 import { emailStatus } from '../services/email';
 import { rateFor, recalculateCosts } from '../services/aiUsage';
 import { fetchSource, refreshAllSources } from '../services/reports';
+import { buildIndex } from '../services/corps';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
 import {
@@ -458,6 +459,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!admin) return;
     const r = await recalculateCosts();
     await audit(admin.username, 'admin.ai_cost_recalculate', undefined, r);
+    return reply.send(r);
+  });
+
+  // Rebuild the Corps project index (slow: every district's location list).
+  app.post('/api/admin/corps-index', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const r = await buildIndex().catch((e) => ({ offices: 0, projects: 0, error: (e as Error).message }));
+    await audit(admin.username, 'admin.corps_index_rebuild', undefined, r);
     return reply.send(r);
   });
 

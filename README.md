@@ -423,10 +423,17 @@ there's hydropower, total gated flow otherwise. The day planner gets a plain
 summary ("water is moving now: 5,100 cfs… released in 9 of the last 24 hours —
 an on-and-off pattern") and is told to work it into the timeline.
 
-Not every lake is a Corps lake: Granbury is Brazos River Authority, and BRA is a
-different publisher. A lake with no Corps project within 25 miles gets nothing
-here rather than a wrong number, and the empty result is cached so we don't
-search every district again.
+Finding the project is a distance query against an index of every USACE
+project, built once from the districts' own location lists and refreshed
+monthly (admin → rebuild). The first version guessed the district from the
+lake's state using a table I wrote by hand, and live testing showed exactly why
+that was wrong: it put Table Rock — a famous Corps lake — in the wrong district
+and found nothing. Only base locations are indexed, because a district's list
+is mostly components (`Table_Rock_Dam-Tainter_Gate_1`), and matching one of
+those puts a gate's coordinates on the map instead of the project.
+
+A lake with no project within 25 miles caches that emptiness rather than
+searching again.
 
 ## Fishing reports
 

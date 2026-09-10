@@ -22,25 +22,12 @@ const UA = { 'User-Agent': 'ElavoFishAI/1.0', Accept: 'application/json;version=
 const CACHE_DAYS = 60;
 const MAX_MILES = 25;
 
-/**
- * State → the USACE district offices that operate water there. Not exhaustive
- * — it covers the districts with the reservoirs people fish, and an unknown
- * state simply means no Corps lookup rather than a wrong one.
- */
-const STATE_DISTRICTS: Record<string, string[]> = {
-  Texas: ['SWF', 'SWG', 'SWT'], Oklahoma: ['SWT'], Arkansas: ['SWL', 'MVK'],
-  Missouri: ['NWK', 'MVS', 'LRL'], Kansas: ['NWK'], Nebraska: ['NWO'],
-  Iowa: ['MVR', 'NWO'], Illinois: ['MVR', 'MVS', 'LRL'], Kentucky: ['LRL', 'LRN'],
-  Tennessee: ['LRN'], Alabama: ['SAM'], Georgia: ['SAM', 'SAS'], Florida: ['SAJ'],
-  Mississippi: ['MVK'], Louisiana: ['MVN', 'MVK'], Virginia: ['NAO', 'LRH'],
-  'West Virginia': ['LRH', 'LRP'], Ohio: ['LRH', 'LRB', 'LRL'], Pennsylvania: ['LRP', 'NAB'],
-  'New York': ['LRB', 'NAN'], Michigan: ['LRE'], Wisconsin: ['MVP', 'LRE'],
-  Minnesota: ['MVP'], 'North Dakota': ['NWO'], 'South Dakota': ['NWO'],
-  Montana: ['NWO', 'NWS'], Washington: ['NWS', 'NWW'], Oregon: ['NWP', 'NWW'],
-  Idaho: ['NWW'], California: ['SPK', 'SPL'], Nevada: ['SPK'], Arizona: ['SPL'],
-  'New Mexico': ['SPA'], Colorado: ['NWO', 'SPA'], 'North Carolina': ['SAW'],
-  'South Carolina': ['SAC'], Kentucky_TN: ['LRN'], Indiana: ['LRL'],
-};
+/** A location like "Table_Rock_Dam-Tainter_Gate_1" is a component of a project,
+ *  not the project. Base names (no dash) are the ones worth matching — 269 of
+ *  SWL's 719 locations, and the only ones that carry project-level series. */
+export function isBaseLocation(name: string): boolean {
+  return !!name && !name.includes('-');
+}
 
 export interface CorpsProject {
   office: string;
@@ -58,40 +45,76 @@ function milesBetween(aLat: number, aLon: number, bLat: number, bLon: number): n
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/** Districts worth searching for a lake in this region. Exported for tests. */
-export function districtsFor(region: string | null): string[] {
-  if (!region) return [];
-  const hit = Object.keys(STATE_DISTRICTS).find((state) =>
-    region.toLowerCase().includes(state.toLowerCase().replace('_', ' '))
-  );
-  return hit ? STATE_DISTRICTS[hit] : [];
+interface RawLocation {
+  name?: string;
+  'public-name'?: string;
+  latitude?: number;
+  longitude?: number;
+  active?: boolean;
 }
 
 async function locationsFor(office: string): Promise<CorpsProject[]> {
-  const r = await fetch(`${CWMS}/locations?office=${office}`, { headers: UA, signal: AbortSignal.timeout(30_000) });
+  const r = await fetch(`${CWMS}/locations?office=${office}`, { headers: UA, signal: AbortSignal.timeout(40_000) });
   if (!r.ok) return [];
-  const j = (await r.json()) as { locations?: { locations?: unknown[] } } | unknown[];
-  const raw = (Array.isArray(j) ? j : j.locations?.locations || []) as {
-    name?: string; 'public-name'?: string; latitude?: number; longitude?: number; active?: boolean;
-  }[];
+  const j = (await r.json()) as { locations?: { locations?: RawLocation[] } } | RawLocation[];
+  const raw = (Array.isArray(j) ? j : j.locations?.locations || []) as RawLocation[];
   return raw
-    .filter((l) => l.active !== false && Number.isFinite(l.latitude) && Number.isFinite(l.longitude))
+    .filter((l) => l.active !== false && Number.isFinite(l.latitude) && Number.isFinite(l.longitude) && isBaseLocation(String(l.name || '')))
     .map((l) => ({
       office, name: String(l.name), publicName: String(l['public-name'] || l.name),
       lat: Number(l.latitude), lon: Number(l.longitude), miles: 0,
     }));
 }
 
-/** The Corps project nearest this lake, if there is one worth using. */
-export async function findProject(lat: number, lon: number, region: string | null): Promise<CorpsProject | null> {
-  const offices = districtsFor(region);
-  let best: CorpsProject | null = null;
+/** District offices, from the Corps' own list rather than a map I typed out. */
+export async function districtOffices(): Promise<string[]> {
+  const r = await fetch('https://water.usace.army.mil/cda/reporting/providers?fmt=json', {
+    headers: UA, signal: AbortSignal.timeout(20_000),
+  });
+  if (!r.ok) return [];
+  const j = (await r.json()) as { slug?: string; type?: string }[];
+  return j.filter((p) => p.type === 'dis' && p.slug).map((p) => String(p.slug).toUpperCase());
+}
+
+/**
+ * Build (or refresh) the project index. Slow and heavy on purpose — it runs
+ * monthly in the background, and every lake lookup afterwards is a local
+ * distance query.
+ */
+export async function buildIndex(): Promise<{ offices: number; projects: number }> {
+  const offices = await districtOffices();
+  let projects = 0;
   for (const office of offices) {
     const locs = await locationsFor(office).catch(() => []);
     for (const l of locs) {
-      const miles = milesBetween(lat, lon, l.lat, l.lon);
-      // Prefer something that reads like the lake itself, not a stream gauge.
-      if (miles <= MAX_MILES && (!best || miles < best.miles)) best = { ...l, miles };
+      await prisma.corpsLocation
+        .upsert({
+          where: { office_name: { office: l.office, name: l.name } },
+          create: { office: l.office, name: l.name, publicName: l.publicName, lat: l.lat, lon: l.lon },
+          update: { publicName: l.publicName, lat: l.lat, lon: l.lon },
+        })
+        .then(() => { projects++; })
+        .catch(() => {});
+    }
+  }
+  return { offices: offices.length, projects };
+}
+
+/** The Corps project nearest this lake, from the index. */
+export async function findProject(lat: number, lon: number): Promise<CorpsProject | null> {
+  if ((await prisma.corpsLocation.count()) === 0) await buildIndex().catch(() => ({ offices: 0, projects: 0 }));
+  // A degree of latitude is ~69 miles; box first so the distance maths runs
+  // over a handful of rows rather than every project in the country.
+  const pad = MAX_MILES / 69 + 0.05;
+  const rows = await prisma.corpsLocation.findMany({
+    where: { lat: { gte: lat - pad, lte: lat + pad }, lon: { gte: lon - pad * 1.4, lte: lon + pad * 1.4 } },
+    take: 200,
+  });
+  let best: CorpsProject | null = null;
+  for (const r of rows) {
+    const miles = milesBetween(lat, lon, r.lat, r.lon);
+    if (miles <= MAX_MILES && (!best || miles < best.miles)) {
+      best = { office: r.office, name: r.name, publicName: r.publicName, lat: r.lat, lon: r.lon, miles };
     }
   }
   return best;
@@ -171,7 +194,7 @@ export async function releaseFor(lakeId: string): Promise<ReleaseSummary | null>
   let project = lake.corpsProject;
   const stale = !lake.corpsAt || Date.now() - lake.corpsAt.getTime() > CACHE_DAYS * 86400000;
   if (!project && stale) {
-    const found = await findProject(lake.lat, lake.lon, lake.region).catch(() => null);
+    const found = await findProject(lake.lat, lake.lon).catch(() => null);
     project = found ? `${found.office}:${found.name}` : '';
     await prisma.lake.update({
       where: { id: lake.id },
@@ -183,10 +206,15 @@ export async function releaseFor(lakeId: string): Promise<ReleaseSummary | null>
   const [office, loc] = project.split(':');
   if (!office || !loc) return null;
   const base = loc.split('-')[0];
+  // Turbine flow is generation; gated total is the whole release; the daily
+  // averages are the fallback for projects that don't publish hourly.
   for (const series of [
     `${base}-Turbine.Flow-Out.Inst.1Hour.0.Rev-${office}-REGI`,
     `${base}-Gated_Total.Flow-Out.Inst.1Hour.0.Rev-${office}-REGI`,
     `${base}.Flow-Out.Inst.1Hour.0.Rev-${office}-REGI`,
+    `${base}-Turbine.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
+    `${base}-Gated_Total.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
+    `${base}-Pump.Flow-Out.Ave.~1Day.1Day.Rev-${office}-REGI`,
   ]) {
     const s = await readSeries(office, series).catch(() => null);
     if (s) return s;

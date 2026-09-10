@@ -476,6 +476,24 @@ model ReportSource {
   @@index([active])
 }
 
+// Every USACE project we know of, with coordinates. Built once from the CWMS
+// location lists (one district is ~800KB, so this is emphatically a cached
+// index, not a per-lake lookup) and refreshed monthly. Replaces a hand-written
+// state-to-district map that was quietly wrong — it put Table Rock in the
+// wrong district, so a famous Corps lake found nothing.
+model CorpsLocation {
+  id         String   @id @default(cuid())
+  office     String
+  name       String
+  publicName String
+  lat        Float
+  lon        Float
+  updatedAt  DateTime @updatedAt
+
+  @@unique([office, name])
+  @@index([lat, lon])
+}
+
 // ---- P3 admin / community ----
 
 model AuditLog {

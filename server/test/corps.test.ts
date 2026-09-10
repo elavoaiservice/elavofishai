@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { districtsFor, summarizeRelease, type ReleaseSummary } from '../src/services/corps';
+import { isBaseLocation, summarizeRelease, type ReleaseSummary } from '../src/services/corps';
 
 const hours = (cfs: number[]): ReleaseSummary => ({
   project: 'WTYT2', office: 'SWF', series: 'x', units: 'cfs',
@@ -15,16 +15,16 @@ const hours = (cfs: number[]): ReleaseSummary => ({
   peakCfs: Math.max(...cfs),
 });
 
-describe('districtsFor', () => {
-  test('maps a lake region to its Corps districts', () => {
-    assert.deepEqual(districtsFor('Texas'), ['SWF', 'SWG', 'SWT']);
-    assert.deepEqual(districtsFor('Hood County, Texas'), ['SWF', 'SWG', 'SWT']);
-    assert.deepEqual(districtsFor('Tennessee'), ['LRN']);
-  });
-
-  test('an unknown or missing region searches nothing rather than everything', () => {
-    assert.deepEqual(districtsFor('Ontario, Canada'), []);
-    assert.deepEqual(districtsFor(null), []);
+describe('isBaseLocation', () => {
+  test('a project is a base name; its gates and sensors are not', () => {
+    assert.equal(isBaseLocation('WTYT2'), true);
+    assert.equal(isBaseLocation('Table_Rock_Dam'), true);
+    // These are components — matching one puts a gate's coordinates on the map
+    // instead of the project, which is how discovery first went wrong.
+    assert.equal(isBaseLocation('Table_Rock_Dam-Tainter_Gate_1'), false);
+    assert.equal(isBaseLocation('WTYT2-sub1'), false);
+    assert.equal(isBaseLocation('GBYT2-Alt-SH51'), false);
+    assert.equal(isBaseLocation('LEWT2-PZ-175-T'), false);
   });
 });
 
