@@ -75,8 +75,10 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     `"timeline": [{"time": string, "advice": string}], ` +
     `"lures": [string], ` +
     `"notes": string}\n\n` +
-    `Rules: 4-7 timeline blocks across the fishable day (dawn to dusk), each tying location + presentation to the ` +
-    `solunar windows and weather. Be specific to ${species} on THIS water and season. Keep each advice to 1-2 sentences. ` +
+    `Rules: 4-6 timeline blocks across the fishable day (dawn to dusk), each tying location + presentation to the ` +
+    `feeding windows and weather. Be specific to ${species} on THIS water and season. ` +
+    `Hard limits so the plan fits on a phone: "summary" under 30 words, each "advice" under 30 words, ` +
+    `at most 5 lures, "notes" under 25 words. Plain language a working angler uses — no jargon. ` +
     `If conditions look tough, say so honestly. Do not invent regulations.`;
 
   let text = '';
@@ -85,7 +87,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
     const stream = client.messages.stream({
       model,
-      max_tokens: 1200,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     } as Anthropic.MessageCreateParamsStreaming);
     const msg = await stream.finalMessage();
@@ -93,15 +95,25 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
       .join('');
-  } catch {
+    if (msg.stop_reason === 'max_tokens') {
+      // eslint-disable-next-line no-console
+      console.error(`[dayplan] ${model} hit the token ceiling for ${species} — JSON will be truncated`);
+    }
+  } catch (e) {
+    // Swallowing this was why a failing generation looked like a mystery in the
+    // logs: the request 400'd and nothing said why.
+    // eslint-disable-next-line no-console
+    console.error(`[dayplan] ${model} call failed:`, (e as Error).message);
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
     return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
   }
 
   const content = extractJson(text);
   if (!content) {
+    // eslint-disable-next-line no-console
+    console.error(`[dayplan] could not parse ${text.length} chars from ${model}: ${text.slice(0, 200)}`);
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
-    return { ok: false, error: 'The AI response could not be read — try again.' };
+    return { ok: false, error: 'The AI response came back unreadable — try again.' };
   }
 
   const saved = await prisma.dayPlan.upsert({
@@ -112,13 +124,42 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   return { ok: true, content: saved.content, generatedAt: saved.generatedAt, daysOutAtGen: out, source: 'ai' };
 }
 
-function extractJson(text: string): unknown | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
+/**
+ * Pull the JSON object out of a model reply. First-brace-to-last-brace looks
+ * fine until the model adds a closing line like "Tight lines! {good luck}" or
+ * wraps the object in a code fence — then the slice swallows the extra text and
+ * the parse dies on a complete, perfectly good response. Scan for the brace
+ * that actually balances instead, ignoring braces inside strings.
+ *
+ * Exported for tests: this is the seam where a good generation gets thrown away.
+ */
+export function extractJson(text: string): unknown | null {
+  if (!text) return null;
+  // Strip a ```json fence if there is one.
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = fenced ? fenced[1] : text;
+
+  const start = body.indexOf('{');
+  if (start < 0) return null;
+
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < body.length; i++) {
+    const c = body[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\' && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(body.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
   }
+  return null; // never balanced — truncated mid-object
 }
