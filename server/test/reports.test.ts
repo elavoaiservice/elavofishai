@@ -98,3 +98,38 @@ describe('reportsForPrompt', () => {
     assert.equal(reportsForPrompt([]), '');
   });
 });
+
+/**
+ * Two things live agency sites actually do: answer a missing page with HTTP
+ * 200 and a "not found" body (Oklahoma's does), and bury two lines of report
+ * in a page of navigation.
+ */
+import { extractAbout, looksLikeSoft404 } from '../src/services/reports';
+
+describe('looksLikeSoft404', () => {
+  test('catches a 200 response whose body says not found', () => {
+    assert.equal(looksLikeSoft404('404 Page Not Found | Oklahoma Department of Wildlife'), true);
+    assert.equal(looksLikeSoft404("Sorry, that page can't be found."), true);
+  });
+
+  test('a real report is not mistaken for one', () => {
+    assert.equal(looksLikeSoft404('Lake Fork report: water 78 degrees, crappie good on brush.'), false);
+    // A report that merely mentions 404 fish later on is fine.
+    assert.equal(looksLikeSoft404('Weekly report. '.repeat(40) + '404'), false);
+  });
+});
+
+describe('extractAbout', () => {
+  const page = 'Home About Contact Licensing '.repeat(20) + 'Lake Granbury: water 83, sand bass schooling early on the upper end. ' + 'Footer nav '.repeat(20);
+
+  test('pulls the part of the page that names the lake', () => {
+    const out = extractAbout(page, 'Lake Granbury', 300);
+    assert.match(out, /sand bass schooling/);
+    assert.ok(out.length <= 300);
+  });
+
+  test('falls back to the top of the page when the lake is never named', () => {
+    const out = extractAbout(page, 'Lake Michigan', 120);
+    assert.equal(out, page.slice(0, 120));
+  });
+});

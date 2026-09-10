@@ -36,6 +36,8 @@ export function htmlToText(html: string): string {
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/[ \t]+/g, ' ')
@@ -85,6 +87,30 @@ export function mentionsLake(item: FetchedItem, lakeName: string): boolean {
   return hay.includes(name);
 }
 
+/**
+ * Plenty of agency sites answer a missing page with HTTP 200 and a "404 Page
+ * Not Found" body — Oklahoma's does. Storing that as a fishing report would
+ * put nonsense in front of the planner, so treat it as the failure it is.
+ * Exported for tests.
+ */
+export function looksLikeSoft404(text: string): boolean {
+  const head = text.slice(0, 400).toLowerCase();
+  return /(^|\s)404(\s|$)/.test(head) || /page not found|page can'?t be found|page doesn'?t exist/.test(head);
+}
+
+/**
+ * Pull the part of a page that actually concerns this lake. A fetched page is
+ * mostly navigation; storing all of it buries a two-line report in site chrome
+ * when the planner reads it. Exported for tests.
+ */
+export function extractAbout(text: string, lakeName: string, span = 1200): string {
+  const name = lakeName.replace(/^lake\s+/i, '').replace(/\s+(lake|reservoir)$/i, '');
+  const at = text.toLowerCase().indexOf(name.toLowerCase());
+  if (name.length < 3 || at < 0) return text.slice(0, span);
+  const start = Math.max(0, at - Math.floor(span / 4));
+  return text.slice(start, start + span).trim();
+}
+
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -103,9 +129,14 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
   let items: FetchedItem[] = [];
   try {
     const text = await fetchText(src.url);
-    items = src.kind === 'html'
-      ? [{ body: htmlToText(text).slice(0, MAX_BODY), url: src.url, publishedAt: new Date() }]
-      : parseFeed(text);
+    if (src.kind === 'html') {
+      const page = htmlToText(text);
+      if (looksLikeSoft404(page)) throw new Error('page answered 200 with a "not found" body');
+      // Trimmed per lake below; keep the whole page here.
+      items = [{ body: page, url: src.url, publishedAt: new Date() }];
+    } else {
+      items = parseFeed(text);
+    }
   } catch (e) {
     await prisma.reportSource.update({
       where: { id: src.id },
@@ -124,6 +155,9 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
       // A regional feed has to actually name the lake; a pinned one doesn't.
       if (!src.lakeId && !mentionsLake(item, lake.name)) continue;
       try {
+        // For a page, keep the part that names this lake rather than the whole
+        // site; for a feed item, the item is already the unit.
+        const body = src.kind === 'html' ? extractAbout(item.body, lake.name) : item.body.slice(0, MAX_BODY);
         await prisma.lakeReport.upsert({
           where: { lakeId_url: { lakeId: lake.id, url: item.url || `${src.id}:${item.title || ''}` } },
           create: {
@@ -131,11 +165,11 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
             source: 'agency',
             sourceName: src.name,
             title: item.title?.slice(0, 200) || null,
-            body: item.body,
+            body,
             url: item.url || src.url,
             publishedAt: item.publishedAt || new Date(),
           },
-          update: { body: item.body, publishedAt: item.publishedAt || undefined },
+          update: { body, publishedAt: item.publishedAt || undefined },
         });
         stored++;
       } catch {
