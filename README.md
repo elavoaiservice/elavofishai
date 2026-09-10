@@ -385,6 +385,34 @@ sources with dates and is shown under the plan. Searches are billed at $10 per
 1,000 on top of tokens and are counted in admin → AI usage & cost, which is why
 it is off unless you turn it on.
 
+## Choosing the model
+
+Each AI feature has its own model and an optional fallback, both dropdowns in
+admin → Environment: **lake guide**, **day plan**, **catch photos**. The model
+id picks the provider — `claude-*` goes to Anthropic, `gpt-*` and `o*` to
+OpenAI (set `OPENAI_API_KEY`) — so switching provider is a dropdown, not a
+deploy.
+
+**The fallback fires on failure, not on taste.** A model that errors, times
+out, gets truncated, or returns something the feature can't parse is
+objectively unusable, and the request is retried on the fallback model. Judging
+whether an answer is *good* would need a judge model on every call, which costs
+more than a cheap model saves — so the caller supplies a validator (for plans
+and guides: "does the JSON parse") and that decides. Both attempts are recorded
+in the cost view, so a model that keeps failing over to its backup is visible
+rather than merely expensive.
+
+Measured cost of one real day plan (1,780 in / 791 out) and one lake guide
+(386 in / 2,269 out) at current prices:
+
+| model | day plan | lake guide | per 1,000 plans |
+| --- | --- | --- | --- |
+| claude-opus-5 | $0.0287 | $0.0587 | $28.70 |
+| claude-sonnet-5 | $0.0115 | $0.0235 | $11.47 |
+| claude-haiku-4-5 | $0.0057 | $0.0117 | $5.73 |
+| gpt-5-mini | $0.0020 | $0.0046 | $2.03 |
+| gpt-4o-mini | $0.0007 | $0.0014 | $0.70 |
+
 ## AI usage and cost
 
 Every model call is recorded with its token counts and what it cost, priced at

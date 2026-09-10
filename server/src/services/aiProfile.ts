@@ -1,6 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { complete } from './llm';
 import { prisma } from '../db';
-import { recordUsage } from './aiUsage';
 import { env } from '../env';
 
 // Generate a starter fishing profile for a lake with Claude, cached in the DB.
@@ -34,30 +33,21 @@ export async function generateLakeProfile(lakeId: string): Promise<void> {
     `If you are unsure this specific water exists, still give sound guidance for its region and climate.`;
 
   let text = '';
-  const startedAt = Date.now();
   try {
-    const client = new Anthropic({ apiKey });
-    // Streamed to avoid request timeouts on longer generations.
-    const stream = client.messages.stream({
+    const r = await complete({
+      feature: 'lake_profile',
       model,
-      max_tokens: 2500,
-      messages: [{ role: 'user', content: prompt }],
-    } as Anthropic.MessageCreateParamsStreaming);
-    const msg = await stream.finalMessage();
-    await recordUsage({
-      feature: 'lake_profile', model,
-      inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens,
-      // Prompt caching isn't in this SDK version's Usage type yet, but the API
-      // sends it — read it defensively rather than dropping the cheapest tokens.
-      cacheReadTokens: (msg.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
-      lakeId: lake.id, ms: Date.now() - startedAt,
+      fallbackModel: process.env.AI_PROFILE_FALLBACK || '',
+      prompt,
+      maxTokens: 2500,
+      validate: (t) => !!extractJson(t),
+      lakeId: lake.id,
     });
-    text = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-  } catch {
-    return; // leave profile pending; safe to retry later
+    text = r.text;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[lake-profile] generation failed:', (e as Error).message);
+    return;
   }
 
   const content = extractJson(text);

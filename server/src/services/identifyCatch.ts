@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { recordUsage } from './aiUsage';
+import { complete } from './llm';
 
 // Claude-vision fish identification. Takes a catch photo (base64 data URL) and
 // returns a best-effort species + size estimate the angler can then edit.
@@ -43,37 +42,21 @@ export async function identifyCatch(dataUrl: string, hint?: { lake?: string }): 
 
   let text = '';
   try {
-    const client = new Anthropic({ apiKey });
-    const startedAt = Date.now();
     const model = process.env.AI_VISION_MODEL || process.env.AI_PROFILE_MODEL || 'claude-opus-4-8';
-    const msg = await client.messages.create({
+    const r = await complete({
+      feature: 'identify_catch',
       model,
-      max_tokens: 400,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-    } as Anthropic.MessageCreateParamsNonStreaming);
-    text = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
-    await recordUsage({
-      feature: 'identify_catch', model,
-      inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens,
-      // Prompt caching isn't in this SDK version's Usage type yet, but the API
-      // sends it — read it defensively rather than dropping the cheapest tokens.
-      cacheReadTokens: (msg.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
-      ms: Date.now() - startedAt,
+      fallbackModel: process.env.AI_VISION_FALLBACK || '',
+      prompt,
+      maxTokens: 400,
+      images: [{ mediaType, data }],
+      validate: (t) => /\{[\s\S]*\}/.test(t),
     });
-  } catch {
-    return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
+    text = r.text.trim();
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[identify-catch] failed:', (e as Error).message);
+    return { ok: false, error: 'Could not read that photo — try again, or fill the log in by hand.' };
   }
 
   // Pull the JSON object out of the response (tolerate stray text / fences).

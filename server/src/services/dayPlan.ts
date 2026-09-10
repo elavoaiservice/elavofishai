@@ -1,6 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { complete } from './llm';
 import { prisma } from '../db';
-import { recordUsage } from './aiUsage';
 import { env } from '../env';
 
 export interface DayPlanRequest {
@@ -147,48 +146,26 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     `If conditions look tough, say so honestly. Do not invent regulations, reports or sources.`;
 
   let text = '';
-  const startedAt = Date.now();
   try {
-    // A hung call must fail rather than hold the HTTP request open forever.
-    const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
-    const stream = client.messages.stream({
+    const r = await complete({
+      feature: 'day_plan',
       model,
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: prompt }],
-      // Server-side web search. The tool type isn't in this SDK version's types
-      // yet, hence the cast; the API accepts it.
-      ...(webSearch
-        ? { tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }] as unknown as Anthropic.Tool[] }
-        : {}),
-    } as Anthropic.MessageCreateParamsStreaming);
-    const msg = await stream.finalMessage();
-    text = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-    const searches =
-      (msg.usage as { server_tool_use?: { web_search_requests?: number } } | undefined)?.server_tool_use
-        ?.web_search_requests ?? 0;
-    await recordUsage({
-      feature: 'day_plan', model, webSearches: searches,
-      inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens,
-      // Prompt caching isn't in this SDK version's Usage type yet, but the API
-      // sends it — read it defensively rather than dropping the cheapest tokens.
-      cacheReadTokens: (msg.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
-      userId: req.userId ?? null, lakeId, ms: Date.now() - startedAt,
+      fallbackModel: process.env.AI_PLAN_FALLBACK || '',
+      prompt,
+      maxTokens: 2000,
+      webSearch,
+      // A plan we can't parse is a failed plan, whatever the model says —
+      // this is what makes the fallback fire on substance, not on vibes.
+      validate: (t) => !!extractJson(t),
+      userId: req.userId ?? null,
+      lakeId,
     });
-    if (msg.stop_reason === 'max_tokens') {
-      // eslint-disable-next-line no-console
-      console.error(`[dayplan] ${model} hit the token ceiling for ${species} — JSON will be truncated`);
-    }
+    text = r.text;
   } catch (e) {
-    // Swallowing this was why a failing generation looked like a mystery in the
-    // logs: the request 400'd and nothing said why.
     // eslint-disable-next-line no-console
-    console.error(`[dayplan] ${model} call failed:`, (e as Error).message);
-    await recordUsage({ feature: 'day_plan', model, userId: req.userId ?? null, lakeId, ok: false, ms: Date.now() - startedAt });
+    console.error(`[dayplan] generation failed:`, (e as Error).message);
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
-    return { ok: false, error: 'Could not reach the AI just now — try again shortly.' };
+    return { ok: false, error: 'Could not build a plan just now — try again shortly.' };
   }
 
   const parsed = extractJson(text);

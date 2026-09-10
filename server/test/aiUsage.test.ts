@@ -9,10 +9,17 @@ import { costOf, rateFor } from '../src/services/aiUsage';
 
 describe('AI cost', () => {
   test('prices a call from the rate table', () => {
-    // Sonnet: $3/M in, $15/M out.
-    assert.equal(costOf('claude-sonnet-5', 1_000_000, 0), 3);
-    assert.equal(costOf('claude-sonnet-5', 0, 1_000_000), 15);
-    assert.equal(costOf('claude-sonnet-5', 500_000, 100_000), 1.5 + 1.5);
+    // Sonnet 5: $2/M in, $10/M out.
+    assert.equal(costOf('claude-sonnet-5', 1_000_000, 0), 2);
+    assert.equal(costOf('claude-sonnet-5', 0, 1_000_000), 10);
+    assert.equal(costOf('claude-sonnet-5', 500_000, 100_000), 1 + 1);
+  });
+
+  test('the cheap tiers really are cheaper for the same call', () => {
+    const call = (m: string) => costOf(m, 2000, 1000);
+    assert.ok(call('claude-haiku-4-5') < call('claude-sonnet-5'));
+    assert.ok(call('gpt-5-mini') < call('claude-haiku-4-5'));
+    assert.ok(call('claude-opus-5') > call('claude-sonnet-5'));
   });
 
   test('a realistic day plan costs a fraction of a cent', () => {
@@ -22,7 +29,9 @@ describe('AI cost', () => {
   });
 
   test('opus is priced well above sonnet for the same call', () => {
-    assert.ok(costOf('claude-opus-4-8', 2000, 1000) > costOf('claude-sonnet-5', 2000, 1000) * 4);
+    // Opus 5 / 4.8 are $5/$25 against Sonnet 5's $2/$10 — 2.5x, not the 4x
+    // this test asserted while the rate table itself was wrong.
+    assert.ok(costOf('claude-opus-4-8', 2000, 1000) > costOf('claude-sonnet-5', 2000, 1000) * 2);
   });
 
   test('cache reads are cheaper than fresh input', () => {

@@ -18,6 +18,23 @@ export interface ConfigItem {
 }
 
 // Who may send a new user a direct message, by default. Admin-configurable.
+export // Model menus. Price per million tokens is in the label so the choice is made
+// with the cost visible, not looked up afterwards.
+const MODEL_CHOICES = [
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-sonnet-5',
+  'claude-haiku-4-5',
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+];
+const FALLBACK_CHOICES = ['', ...MODEL_CHOICES];
+// Vision: the models that can actually read an image.
+const VISION_CHOICES = ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5', 'gpt-5', 'gpt-4o', 'gpt-4o-mini'];
+const VISION_FALLBACK_CHOICES = ['', ...VISION_CHOICES];
+
 export const MESSAGE_PRIVACY_CHOICES = ['everyone', 'friends', 'nobody'];
 export function defaultMessagePrivacy(): string {
   const v = (process.env.DEFAULT_MESSAGE_PRIVACY || '').toLowerCase();
@@ -26,8 +43,13 @@ export function defaultMessagePrivacy(): string {
 
 export const CATALOG: ConfigItem[] = [
   { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API key', group: 'AI', secret: true, test: true, placeholder: 'sk-ant-...', help: 'Powers AI lake guides + the day planner.' },
-  { key: 'AI_PROFILE_MODEL', label: 'AI model', group: 'AI', placeholder: 'claude-opus-4-8', help: 'claude-opus-4-8 (best) or claude-sonnet-5 (cheaper).' },
-  { key: 'AI_PLAN_MODEL', label: 'Day-plan model', group: 'AI', placeholder: 'claude-sonnet-5', help: 'Day plans are generated while someone waits — the fast model by default.' },
+  { key: 'AI_PROFILE_MODEL', label: 'Lake guide — model', group: 'AI', choices: MODEL_CHOICES, placeholder: 'claude-opus-4-8', help: 'Written once per lake and cached forever, so quality matters more than price here.' },
+  { key: 'AI_PROFILE_FALLBACK', label: 'Lake guide — fallback', group: 'AI', choices: FALLBACK_CHOICES, placeholder: '', help: 'Used only when the first model errors or returns something unusable.' },
+  { key: 'AI_PLAN_MODEL', label: 'Day plan — model', group: 'AI', choices: MODEL_CHOICES, placeholder: 'claude-sonnet-5', help: 'Generated while an angler waits — favour a fast one.' },
+  { key: 'AI_PLAN_FALLBACK', label: 'Day plan — fallback', group: 'AI', choices: FALLBACK_CHOICES, placeholder: '', help: 'Try a cheap model first and fall back to a stronger one here.' },
+  { key: 'AI_VISION_MODEL', label: 'Catch photos — model', group: 'AI', choices: VISION_CHOICES, placeholder: 'claude-opus-4-8', help: 'Reads a photo of a fish. Must be a vision-capable model.' },
+  { key: 'AI_VISION_FALLBACK', label: 'Catch photos — fallback', group: 'AI', choices: VISION_FALLBACK_CHOICES, placeholder: '' },
+  { key: 'OPENAI_API_KEY', label: 'OpenAI API key', group: 'AI', secret: true, test: true, placeholder: 'sk-...', help: 'Only needed if you pick a gpt-* model above.' },
   { key: 'AI_WEB_SEARCH', label: 'Web search in day plans', group: 'AI', choices: ['0', '1'], placeholder: '0', help: 'Let the planner search for recent fishing reports. Billed $10 per 1,000 searches on top of tokens (max 4 per plan).' },
   { key: 'RESEND_API_KEY', label: 'Resend API key', group: 'Email', secret: true, test: true, placeholder: 're_...', help: 'Sends magic-link + admin MFA emails (replaces dev/console mode).' },
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
@@ -118,6 +140,13 @@ export async function testValue(key: string, value: string): Promise<TestResult>
       const client = new Anthropic({ apiKey: v });
       await client.messages.create({ model: process.env.AI_PROFILE_MODEL || 'claude-opus-4-8', max_tokens: 4, messages: [{ role: 'user', content: 'ping' }] } as Anthropic.MessageCreateParamsNonStreaming);
       return { ok: true, message: 'Anthropic key works.' };
+    }
+    if (key === 'OPENAI_API_KEY') {
+      const r = await fetch('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${v}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      return r.ok ? { ok: true, message: 'OpenAI key works.' } : { ok: false, message: `OpenAI returned ${r.status}.` };
     }
     if (key === 'RESEND_API_KEY') {
       const r = await fetch('https://api.resend.com/domains', { headers: { Authorization: `Bearer ${v}` }, signal: AbortSignal.timeout(8000) });

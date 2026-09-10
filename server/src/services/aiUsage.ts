@@ -22,11 +22,20 @@ export interface Rate {
 export const WEB_SEARCH_USD_PER_SEARCH = 10 / 1000;
 
 export const RATES: Record<string, Rate> = {
-  'claude-opus-5': { input: 15, output: 75, cacheRead: 1.5 },
-  'claude-opus-4-8': { input: 15, output: 75, cacheRead: 1.5 },
-  'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3 },
-  'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheRead: 0.1 },
-  'claude-fable-5-1': { input: 3, output: 15, cacheRead: 0.3 },
+  // Anthropic — USD per million tokens.
+  'claude-fable-5-1': { input: 10, output: 50, cacheRead: 1.0 },
+  'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2 },
+  'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3 },
+  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1 },
+  // OpenAI — USD per million tokens.
+  'gpt-5-mini': { input: 0.25, output: 2, cacheRead: 0.025 },
+  'gpt-5': { input: 1.25, output: 10, cacheRead: 0.125 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6, cacheRead: 0.075 },
+  'gpt-4o': { input: 2.5, output: 10, cacheRead: 1.25 },
 };
 
 export function rateFor(model: string): Rate | null {
