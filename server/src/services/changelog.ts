@@ -210,7 +210,16 @@ export function groupCommitsByDay(commits: ClassifiedCommit[]): DayGroup[] {
 /** Newest-first commits scanned from HEAD. */
 export const MAX_SCAN = 2000;
 
-const BAKED = path.join(__dirname, 'changelog.json'); // dist/changelog.json
+// The Dockerfile bakes this to dist/changelog.json, but this module compiles to
+// dist/services/, so __dirname is one level deeper — the original path silently
+// missed the file in the container and fell through to `git`, which isn't
+// installed in the runtime image ("spawn git ENOENT"). Tests never caught it:
+// under tsx there is no baked file at all, so the git fallback is the only path
+// exercised. Look in both places.
+const BAKED_CANDIDATES = [
+  path.join(__dirname, '..', 'changelog.json'), // dist/changelog.json (compiled)
+  path.join(__dirname, 'changelog.json'), // alongside, if the layout changes
+];
 
 export interface History {
   commits: RawCommit[];
@@ -233,13 +242,15 @@ async function git(args: string[]): Promise<string> {
  * Throws only when neither is available.
  */
 export async function loadHistory(withFiles: boolean): Promise<History> {
-  try {
-    const baked = JSON.parse(fs.readFileSync(BAKED, 'utf8')) as RawCommit[];
-    if (Array.isArray(baked) && baked.length) {
-      return { commits: baked.map((c) => ({ ...c, files: c.files || [] })), source: 'baked' };
+  for (const file of BAKED_CANDIDATES) {
+    try {
+      const baked = JSON.parse(fs.readFileSync(file, 'utf8')) as RawCommit[];
+      if (Array.isArray(baked) && baked.length) {
+        return { commits: baked.map((c) => ({ ...c, files: c.files || [] })), source: 'baked' };
+      }
+    } catch {
+      /* try the next location, then fall through to live git */
     }
-  } catch {
-    /* not baked — fall through to live git */
   }
 
   const rawLog = await git(['log', `--max-count=${MAX_SCAN}`, '--no-merges', `--pretty=format:${GIT_PRETTY_FORMAT}`]);

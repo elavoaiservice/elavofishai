@@ -777,6 +777,8 @@ body.feed-loading .stat-v *{visibility:hidden}
 .ai-f.wide{grid-column:1/-1}
 .ai-f label{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
   color:var(--muted);margin-bottom:5px}
+.ai-map{height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--border)}
+@media(max-width:620px){.ai-map{height:240px}}
 .ai-f input,.ai-f select{width:100%;min-height:44px;font-size:15px;padding:0 11px;border:1px solid var(--border);
   border-radius:11px;background:var(--surface);color:var(--ink);font-family:inherit}
 .ai-f input:focus,.ai-f select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--accent-soft)}
@@ -1154,11 +1156,14 @@ body.feed-loading .stat-v *{visibility:hidden}
       <div class="ai-f"><label for="aiLaunch">Launching from</label>
         <select id="aiLaunch"><option value="">Anywhere on the lake</option></select></div>
       <div class="ai-f wide" id="aiPinRow" hidden>
-        <label>Launch coordinates</label>
-        <div style="display:flex;gap:8px">
-          <input id="aiLat" placeholder="lat" inputmode="decimal">
-          <input id="aiLon" placeholder="lon" inputmode="decimal">
-          <button class="btn ghost" id="aiGps" style="white-space:nowrap">Use GPS</button>
+        <label>Tap the map where you're putting in</label>
+        <div id="aiMap" class="ai-map"></div>
+        <div id="aiMapFail" class="snap" hidden>Map tiles are blocked here — type the coordinates instead.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <input id="aiLat" placeholder="lat" inputmode="decimal" style="max-width:130px">
+          <input id="aiLon" placeholder="lon" inputmode="decimal" style="max-width:130px">
+          <button class="btn ghost" id="aiGps" style="white-space:nowrap">Use my location</button>
+          <span class="snap" id="aiPinMsg"></span>
         </div>
       </div>
     </div>
@@ -3232,6 +3237,7 @@ function setActiveLake(l){
     sub:isG?GRANBURY_LAKE.sub:'When to go, what hours to fish, and what to throw \u2014 for this lake.' };
   applyActive();
   if(!isG){ spots=[]; waypoints=[]; LAKE_PROFILE=null; }
+  LAKE_RAMPS=[]; if(typeof loadRamps==='function')loadRamps();   // ramps are per lake
   renderLakeHeader();
   applyLakeNotes();
 }
@@ -3421,16 +3427,32 @@ function populateAiSpecies(){
     +names.map(n=>'<option>'+escHtml(n)+'</option>').join('');
   sel.value='any';
 }
-// Launch points: the boat ramps you've marked, then your other spots, then a pin.
+/* Launch points: the real boat ramps on this lake (OpenStreetMap, fetched
+   once and cached server-side), then your own marks, then a pin you place on
+   a map. Your own marks come second because a ramp you've saved is usually
+   already in the OSM list under its proper name. */
+let LAKE_RAMPS=[];
+async function loadRamps(){
+  if(!AUTH.user||!ACTIVE.id)return;
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/ramps');
+    if(!r.ok)return;
+    LAKE_RAMPS=((await r.json()).ramps)||[];
+    populateAiLaunch();
+  }catch(e){ /* ramps are a convenience — the pin still works */ }
+}
 function populateAiLaunch(){
   const sel=$('aiLaunch'); if(!sel)return;
-  const ramps=(waypoints||[]).filter(w=>w.type==='Boat ramp');
-  const others=(waypoints||[]).filter(w=>w.type!=='Boat ramp');
-  const opt=w=>'<option value="wp:'+w.id+'">'+escHtml(w.name)+'</option>';
+  const keep=sel.value;
+  const mine=(waypoints||[]).filter(w=>w.type==='Boat ramp');
+  const opt=(v,label)=>'<option value="'+v+'">'+escHtml(label)+'</option>';
   sel.innerHTML='<option value="">Anywhere on the lake</option>'
-    +(ramps.length?'<optgroup label="Your boat ramps">'+ramps.map(opt).join('')+'</optgroup>':'')
-    +(others.length?'<optgroup label="Your other marks">'+others.map(opt).join('')+'</optgroup>':'')
-    +'<option value="pin">Drop a pin…</option>';
+    +(LAKE_RAMPS.length?'<optgroup label="Boat ramps on this lake">'
+        +LAKE_RAMPS.map((r,i)=>opt('ramp:'+i,r.name)).join('')+'</optgroup>':'')
+    +(mine.length?'<optgroup label="Ramps you\u2019ve marked">'
+        +mine.map(w=>opt('wp:'+w.id,w.name)).join('')+'</optgroup>':'')
+    +'<optgroup label="Somewhere else">'+opt('pin','Drop a pin on the map\u2026')+'</optgroup>';
+  if(keep)sel.value=keep;
 }
 function aiLaunchPoint(){
   const v=$('aiLaunch').value;
@@ -3438,11 +3460,43 @@ function aiLaunchPoint(){
     const la=parseFloat($('aiLat').value), lo=parseFloat($('aiLon').value);
     return (isFinite(la)&&isFinite(lo))?{name:'a dropped pin',lat:la,lon:lo}:null;
   }
+  if(v.indexOf('ramp:')===0){
+    const r=LAKE_RAMPS[+v.slice(5)];
+    return r?{name:r.name,lat:r.lat,lon:r.lon,kind:'boat ramp'}:null;
+  }
   if(v.indexOf('wp:')===0){
     const w=(waypoints||[]).filter(x=>String(x.id)===v.slice(3))[0];
     return w?{name:w.name,lat:w.lat,lon:w.lng,kind:w.type}:null;
   }
   return null;
+}
+
+/* The pin map. Built lazily the first time it's needed — Leaflet can't size a
+   hidden container, so it also gets an invalidateSize once it's visible. */
+let aiMap=null, aiPin=null;
+function setAiPin(lat,lon){
+  $('aiLat').value=lat.toFixed(5); $('aiLon').value=lon.toFixed(5);
+  $('aiPinMsg').textContent='Launch point set.';
+  if(aiMap){
+    if(aiPin)aiPin.setLatLng([lat,lon]);
+    else aiPin=L.marker([lat,lon]).addTo(aiMap);
+  }
+}
+function initAiMap(){
+  if(aiMap){ setTimeout(()=>aiMap.invalidateSize(),60); return; }
+  if(typeof L==='undefined'){ $('aiMapFail').hidden=false; return; }
+  try{
+    aiMap=L.map('aiMap',{center:[ACTIVE.lat,ACTIVE.lon],zoom:12,scrollWheelZoom:false});
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {maxZoom:19,attribution:'Imagery: Esri, Maxar, Earthstar Geographics'}).addTo(aiMap);
+    // Show the known ramps so a pin is a deliberate choice, not a guess.
+    LAKE_RAMPS.forEach(r=>{
+      L.circleMarker([r.lat,r.lon],{radius:6,color:'#fff',weight:2,fillColor:'#29ABE2',fillOpacity:.95})
+        .addTo(aiMap).bindPopup(escHtml(r.name)+'<br><span class="snap">Tap the map to pin somewhere else</span>');
+    });
+    aiMap.on('click',function(e){ setAiPin(e.latlng.lat,e.latlng.lng); });
+    setTimeout(()=>aiMap.invalidateSize(),80);
+  }catch(e){ $('aiMapFail').hidden=false; }
 }
 function condSummary(){
   if(typeof FORECAST==='undefined'||!FORECAST.length)return null;
@@ -4940,7 +4994,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); populateAiSpecies(); populateAiLaunch();
+  await checkAi(); populateAiSpecies(); populateAiLaunch(); loadRamps();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){
@@ -4951,7 +5005,11 @@ drawTrips();
   }
   const gEl=$('aiGoal'); if(gEl)gEl.value=(MODE==='trophy'?'trophy':'numbers');
   const lEl=$('aiLaunch');
-  if(lEl)lEl.onchange=function(){ $('aiPinRow').hidden=(lEl.value!=='pin'); };
+  if(lEl)lEl.onchange=function(){
+    const pin=(lEl.value==='pin');
+    $('aiPinRow').hidden=!pin;
+    if(pin)initAiMap();
+  };
   const pEl=$('aiPlatform');
   if(pEl){
     // From the bank you don't launch anywhere — ask where you'll be standing.
@@ -4965,7 +5023,15 @@ drawTrips();
     if(GEAR&&GEAR.boat===false)pEl.value='shore';
     syncPlatform();
   }
-  const gps=$('aiGps'); if(gps)gps.onclick=()=>gpsInto('aiLat','aiLon');
+  const gps=$('aiGps');
+  if(gps)gps.onclick=function(){
+    if(!navigator.geolocation)return;
+    $('aiPinMsg').textContent='Finding you…';
+    navigator.geolocation.getCurrentPosition(function(p){
+      setAiPin(p.coords.latitude,p.coords.longitude);
+      if(aiMap)aiMap.setView([p.coords.latitude,p.coords.longitude],14);
+    },function(){ $('aiPinMsg').textContent='Could not get your location.'; });
+  };
   const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
   drawLakeGuide();
   wireFriends();

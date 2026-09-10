@@ -38,6 +38,23 @@ npx prisma migrate deploy
 echo "[test] running suite"
 npm test
 
+# Compiled-layout check. The suite runs from source under tsx, where __dirname
+# points at src/ — so a path that only breaks in the built image (dist/, one
+# level deeper) passes every test and fails in production. That is exactly how
+# the admin changelog shipped empty.
+echo "[test] checking the compiled layout"
+npm run build >/dev/null
+node tools/bake-changelog.js "$REPO_DIR/.git" ./dist/changelog.json >/dev/null
+node -e "
+require('./dist/services/changelog').loadHistory(false).then(h => {
+  if (h.source !== 'baked' || !h.commits.length) {
+    console.error('[test] FAIL: compiled build does not read its baked changelog (source=' + h.source + ')');
+    process.exit(1);
+  }
+  console.log('[test] compiled build reads its baked changelog (' + h.commits.length + ' commits)');
+}).catch(e => { console.error('[test] FAIL:', e.message); process.exit(1); });
+"
+
 # The server suite never loads the app itself; this does.
 echo "[test] running UI smoke tests"
 "$REPO_DIR/scripts/smoke-ui.sh"

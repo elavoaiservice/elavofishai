@@ -179,6 +179,8 @@ model Lake {
   gaugeSource GaugeSource @default(none)
   fullPool    Float?
   bbox        String? // JSON [w,s,e,n]
+  rampsJson   String? @db.Text // cached OSM boat ramps for this lake
+  rampsAt     DateTime? // when that cache was filled
   osmRef      String?     @unique // e.g. "way/12345678"
   addedById   String?
   addedBy     User?       @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)

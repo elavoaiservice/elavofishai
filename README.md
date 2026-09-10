@@ -234,6 +234,28 @@ on-screen "where to copy it" instructions change per vendor (Garmin's
 Waypoint Management → Import), and generic GPX omits `<sym>` entirely. The file
 is named after the active lake.
 
+## Adding a lake
+
+Adding a lake stores a name and coordinates instantly, then enriches it in the
+background from public sources — none of which need a key:
+
+- **Water-level gauge** — the nearest USGS monitoring location that reports
+  level, preferring a lake/reservoir site over a stream gauge (a stream gauge
+  five miles upriver says nothing about pool elevation, so a distant one is
+  refused rather than adopted). Discovery uses `api.waterdata.usgs.gov`; the
+  older `waterservices.usgs.gov/nwis/site` service times out consistently and is
+  part of the NWIS stack being retired, though the `iv` endpoint the app reads
+  levels from still works.
+- **Boat ramps** — OpenStreetMap via Overpass, cached 30 days per lake. OSM
+  ramps are often unnamed (all four of Granbury's are) and often mapped twice,
+  so unnamed ramps are labelled by distance and bearing from the lake centre and
+  near-duplicates are collapsed — otherwise the picker is four identical rows.
+- **The AI guide** — species with a twelve-month activity rating, seasonal
+  notes, patterns, a regulations link and the lake's orientation.
+
+Each step is independent, so one dead service leaves the lake thinner rather
+than unusable.
+
 ## Species per lake
 
 `FISH` is Granbury's hand-verified dataset. On any other water the species come

@@ -4,7 +4,9 @@ import { clientIp, requireUser } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import { searchLakes } from '../services/lakeSearch';
 import { generateLakeProfile } from '../services/aiProfile';
+import { enrichLake } from '../services/enrichLake';
 import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
+import { rampsForLake } from '../services/ramps';
 
 const GRANBURY_OSM_REF = 'seed:lake-granbury';
 
@@ -75,8 +77,13 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
           addedById: user.id,
         },
       });
-      // Kick off the AI starter profile in the background (best-effort).
-      generateLakeProfile(lake.id).catch(() => {});
+      // Pull down everything public sources know about this water — gauge,
+      // boat ramps, and the AI guide — in the background. Adding a lake stays
+      // instant; the detail fills in behind it.
+      const newId = lake.id;
+      enrichLake(newId)
+        .then((r) => app.log.info({ lakeId: newId, ...r }, 'lake enriched'))
+        .catch((e) => app.log.warn({ err: e, lakeId: newId }, 'lake enrichment failed'));
     }
 
     await prisma.userLake.upsert({
@@ -159,6 +166,17 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     const lakeId = String((req.params as { lakeId: string }).lakeId);
     await prisma.userLake.deleteMany({ where: { userId: user.id, lakeId } });
     return reply.send({ ok: true });
+  });
+
+  // Boat ramps on this lake, from OpenStreetMap (cached 30 days per lake).
+  app.get('/api/lakes/:id/ramps', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    if (await overLimit(`ramps:${user.id}`, 30, 60_000)) {
+      return reply.code(429).send({ error: 'Slow down a moment.' });
+    }
+    const { ramps, source } = await rampsForLake(String((req.params as { id: string }).id));
+    return reply.send({ ramps, source });
   });
 
   // Lake detail + its profile (AI or hand-verified).
