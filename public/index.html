@@ -1674,6 +1674,26 @@ body.feed-loading .stat-v *{visibility:hidden}
   </div>
 </section>
 
+<section class="panel" id="p-reports" hidden>
+  <div id="rpAuth" class="lede" hidden>Sign in to read and post reports for this water.</div>
+  <div id="rpMain">
+    <div class="fr-card" style="margin-bottom:18px">
+      <b>How did it fish?</b>
+      <p class="lede" style="margin:6px 0 10px">A couple of lines is plenty — where you were, what the water was
+         doing, what worked. Your report helps the planner and anyone fishing here next.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <label class="snap" for="rpDate" style="align-self:center">Day you fished</label>
+        <input type="date" id="rpDate" class="fr-in" style="max-width:180px">
+      </div>
+      <textarea id="rpBody" class="fr-in" rows="3" maxlength="2000"
+        placeholder="e.g. Upper end Saturday morning, water 78 and stained. Crappie stacked on brush in 18 ft, 1/16 oz chartreuse jig. Nothing shallow."></textarea>
+      <div class="formfoot" style="margin-top:8px"><button class="btn" id="rpPost">Post report</button>
+        <span class="snap" id="rpMsg" style="color:var(--muted)"></span></div>
+    </div>
+    <div id="rpList" class="lede">Loading…</div>
+  </div>
+</section>
+
 <section class="panel" id="p-reference" hidden>
 <h2>Reading the barometer</h2>
 <p class="lede">The trend matters far more than the number.</p>
@@ -4520,6 +4540,7 @@ const NAV=[
     {id:'species',   ic:'🐟', label:'By species', title:'By species', sub:'Where each fish lives through the year.'},
     {id:'rigs',      ic:'🪝', label:'Rigs',       title:'Rigs',       sub:'What to tie on, and how to fish it.'},
     {id:'scope',     ic:'📡', label:'Live sonar', title:'Forward-facing sonar', sub:'Live sonar on this water — named for the unit you run.'},
+    {id:'reports',   ic:'📣', label:'Reports',    title:'Fishing reports', sub:'What anglers and the agencies are saying about this water.'},
     {id:'reference', ic:'📖', label:'Reference',  title:'Reference',  sub:'Reading the barometer, and the limits before you keep.'}
   ]},
   {grp:'settings', ic:'⚙️', label:'Settings', kids:[
@@ -4590,6 +4611,7 @@ function go(id,push){
     if(AUTH.user){ refreshGroups(); loadSharing(); } }
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
+  if(id==='reports'){ loadReports(); }
 }
 // My water holds three sections behind sub-tabs; goSub() lets other views
 // (and the Today quick actions) land on the right one.
@@ -4621,6 +4643,53 @@ document.addEventListener('click',function(e){
 $('mobMenu').onclick=openDrawer;
 $('mobLake').onclick=function(){ toggleLakePanel(); };
 window.addEventListener('hashchange',function(){ const h=location.hash.replace('#',''); if(h&&h!==CUR)go(h,false); });
+
+/* ---- fishing reports ----
+   Agency feeds and anglers who were actually there, newest first. These feed
+   the day planner, so posting one makes everyone's plan better — worth saying
+   out loud on the page. */
+const RP_SRC={angler:'🎣',agency:'🏛️',corps:'🏛️',web:'🌐'};
+async function loadReports(){
+  const auth=$('rpAuth'), main=$('rpMain');
+  if(auth)auth.hidden=!!AUTH.user;
+  if(main)main.hidden=!AUTH.user;
+  if(!AUTH.user||!ACTIVE.id)return;
+  const d=$('rpDate');
+  if(d&&!d.value){ const t=new Date(); d.value=new Date(t.getTime()-t.getTimezoneOffset()*60000).toISOString().slice(0,10); d.max=d.value; }
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/reports');
+    if(!r.ok){ $('rpList').innerHTML='<p class="snap">Could not load reports.</p>'; return; }
+    const rows=(await r.json()).reports||[];
+    $('rpList').innerHTML=rows.length?rows.map(x=>{
+      const when=x.publishedAt?new Date(x.publishedAt).toLocaleDateString():'';
+      const who=x.source==='angler'?(x.sourceName||'An angler'):(x.sourceName||'Official report');
+      return '<div class="fr-row" style="align-items:flex-start"><span>'
+        +'<b>'+(RP_SRC[x.source]||'•')+' '+escHtml(who)+'</b> <span class="snap">'+escHtml(when)+'</span>'
+        +(x.title?'<br><b>'+escHtml(x.title)+'</b>':'')
+        +'<br><span style="color:var(--muted)">'+escHtml(x.body.slice(0,600))+'</span>'
+        +(x.url&&x.source!=='angler'?'<br><a class="snap" href="'+escHtml(x.url)+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">Read the original →</a>':'')
+        +'</span>'+(x.mine?'<button class="btn ghost btn-sm" data-delrp="'+x.id+'">Delete</button>':'')+'</div>';
+    }).join(''):'<p class="snap">No reports for this water yet. Yours would be the first — and it would go straight into the day planner.</p>';
+  }catch(e){ $('rpList').innerHTML='<p class="snap">Server not reachable.</p>'; }
+}
+async function postReport(){
+  const body=$('rpBody').value.trim();
+  if(body.length<10){ $('rpMsg').textContent='A little more detail — what the water was doing, what worked.'; return; }
+  $('rpMsg').textContent='Posting…';
+  try{
+    const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/reports',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({body:body,fishedOn:$('rpDate').value||undefined})});
+    const d=await r.json();
+    if(!r.ok){ $('rpMsg').textContent=d.error||'Could not post that.'; return; }
+    $('rpMsg').textContent='Posted — thanks.'; $('rpBody').value='';
+    loadReports();
+  }catch(e){ $('rpMsg').textContent='Server not reachable.'; }
+}
+document.addEventListener('click',function(e){
+  const post=e.target.closest('#rpPost'); if(post){ postReport(); return; }
+  const del=e.target.closest('[data-delrp]');
+  if(del){ apiFetch('/api/reports/'+del.dataset.delrp,{method:'DELETE'}).then(loadReports); }
+});
 
 /* ---- Today ---- */
 // Safe to call from anywhere, at any point in boot: does nothing unless the
@@ -4669,11 +4738,30 @@ function renderToday(){
   const fish=mine.reduce((n,t)=>n+(Number(t.count)||0),0);
   cards.push('<div class="tcard"><div class="k">Your '+yr+'</div><div class="v">'+mine.length+' trip'+(mine.length===1?'':'s')+
     '</div><div class="s">'+fish+' fish logged'+(waypoints.length?' · '+waypoints.length+' spots marked':'')+'</div></div>');
+  // The most recent report on this water — the freshest thing the app knows.
+  if(AUTH.user) cards.push('<div class="tcard" id="tcReport"><div class="k">Latest report</div>'
+    +'<div class="v" style="font-size:18px">…</div><div class="s">on '+escHtml(ACTIVE.name)+'</div></div>');
   // Friends' activity (signed in only)
   cards.push('<div class="tcard" id="tcFeed"><div class="k">Friends’ activity</div><div class="v" style="font-size:20px">'+
     (AUTH.user?'…':'Sign in')+'</div><div class="s">'+(AUTH.user?'on '+escHtml(ACTIVE.name):'to see what your circle is sharing')+'</div></div>');
   el.innerHTML=cards.join('');
-  if(AUTH.user&&ACTIVE.id) loadTodayFeed();
+  if(AUTH.user&&ACTIVE.id){ loadTodayFeed(); loadTodayReport(); }
+}
+async function loadTodayReport(){
+  try{
+    const r=await apiFetch('/api/lakes/'+ACTIVE.id+'/reports'); if(!r.ok)return;
+    const rows=((await r.json()).reports)||[];
+    const c=$('tcReport'); if(!c)return;
+    if(!rows.length){
+      c.innerHTML='<div class="k">Latest report</div><div class="v" style="font-size:17px">None yet</div>'
+        +'<div class="s"><a href="#reports" style="color:var(--primary-dark)">Post the first one →</a></div>';
+      return;
+    }
+    const x=rows[0], when=x.publishedAt?new Date(x.publishedAt).toLocaleDateString():'';
+    c.innerHTML='<div class="k">Latest report</div>'
+      +'<div class="v" style="font-size:15px;font-weight:600;line-height:1.35">'+escHtml(x.body.slice(0,90))+(x.body.length>90?'…':'')+'</div>'
+      +'<div class="s">'+escHtml(x.source==='angler'?(x.sourceName||'An angler'):(x.sourceName||'Official'))+' · '+escHtml(when)+'</div>';
+  }catch(e){}
 }
 async function loadTodayFeed(){
   try{

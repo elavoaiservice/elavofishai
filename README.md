@@ -425,6 +425,12 @@ they disagree about what's biting. Three kinds:
   a lake the item actually names.
 - **web** — the optional in-plan web search described above.
 
+In the app, **Lake guide → Reports** shows what's been posted and fetched for
+the active lake, with a box to post your own; Today carries the latest one as a
+card. In admin, **Report sources** manages the feeds: add one and it's fetched
+immediately so you can see whether it works, with per-source status and the
+most recent items stored.
+
 Sources are operator-managed on purpose: the app fetches what someone has
 deliberately pointed it at, identifies itself, and respects what a site says
 about automated access. It does not scrape platforms that forbid it — that's a

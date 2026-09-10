@@ -163,13 +163,13 @@ $('logoutBtn').onclick=async()=>{ await api('/api/admin/logout',{method:'POST'})
 const NAV=[
   {h:'Overview',items:[['dashboard','📊 Dashboard'],['activity','⚡ Activity feed']]},
   {h:'People',items:[['users','👤 Users']]},
-  {h:'Content',items:[['lakes','🗺️ Lakes']]},
+  {h:'Content',items:[['lakes','🗺️ Lakes'],['sources','📣 Report sources']]},
   {h:'Growth',items:[['analytics','📈 Analytics'],['aicost','🪙 AI usage & cost']]},
   {h:'Security',items:[['admins','🛡️ Admins'],['signin','🔑 Sign-in links'],['audit','📜 Audit log']]},
   {h:'Operations',items:[['changelog','🧾 Changelog'],['errors','🐞 Client errors'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
   {h:'Settings',items:[['environment','⚙️ Environment']]},
 ];
-const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
+const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],sources:['Report sources','Where fishing reports are fetched from.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
 function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden'); $('whoami').textContent='Signed in as '+admin.username;
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
   $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
@@ -178,10 +178,78 @@ function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').
 function go(tab){
   document.querySelectorAll('.nav-i[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $('pageTitle').textContent=(TITLES[tab]||[tab])[0]; $('pageSub').textContent=(TITLES[tab]||['',''])[1];
-  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
+  ({dashboard:tDashboard,activity:tActivity,users:tUsers,lakes:tLakes,sources:tSources,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
 }
 
 /* ---- panels ---- */
+/* Report sources — operator-managed on purpose. We fetch what someone has
+   deliberately pointed us at, not whatever we can reach. A regional source only
+   attaches an item to a lake the item actually names. */
+async function tSources(){
+  $('content').innerHTML='<div class="muted">Loading…</div>';
+  const d=await (await api('/api/admin/report-sources')).json();
+  const counts=(d.counts||[]).reduce((m,c)=>{m[c.source]=c.n;return m;},{});
+  $('content').innerHTML=
+    '<div class="metrics" style="margin-bottom:16px">'
+    + metricCard(String(counts.angler||0),'Angler reports','posted in the app')
+    + metricCard(String(counts.agency||0),'Agency reports','fetched from feeds')
+    + metricCard(String((d.sources||[]).filter(s=>s.active).length),'Active sources','refreshed every 6h')
+    + '</div>'
+    + '<div class="card" style="margin-bottom:16px"><h2>Add a source</h2>'
+    + '<div class="snap" style="margin-bottom:10px">An RSS/Atom feed, or a page to read as text. Pin it to one lake, '
+    + 'or leave the lake blank and give a region (e.g. “Texas”) — a regional source only stores items that name one of that region’s lakes.</div>'
+    + '<div class="row">'
+    + '<div style="flex:2;min-width:180px"><label>Name</label><input id="rsName" placeholder="TPWD freshwater reports"></div>'
+    + '<div style="flex:3;min-width:240px"><label>URL</label><input id="rsUrl" placeholder="https://…/reports.rss"></div>'
+    + '<div><label>Kind</label><select id="rsKind" style="width:auto"><option value="rss">RSS / Atom</option><option value="html">Web page</option></select></div>'
+    + '<div style="flex:1;min-width:130px"><label>Region</label><input id="rsRegion" placeholder="Texas"></div>'
+    + '<button class="btn btn-primary" id="rsAdd">Add &amp; fetch</button></div>'
+    + '<div class="msg" id="rsMsg"></div></div>'
+    + '<div class="card" style="padding:6px 10px;overflow:auto;margin-bottom:16px"><table><thead><tr>'
+    + '<th>Source</th><th>Scope</th><th>Last fetched</th><th>Status</th><th></th></tr></thead><tbody>'
+    + ((d.sources||[]).map(s=>'<tr><td><b>'+esc(s.name)+'</b><div class="snap">'+esc(s.url)+'</div></td>'
+        +'<td class="muted">'+esc(s.lakeId?'one lake':(s.region||'all lakes'))+'</td>'
+        +'<td class="muted">'+(s.lastFetchedAt?ago(s.lastFetchedAt):'never')+'</td>'
+        +'<td>'+(s.lastError?'<span class="pill down" title="'+esc(s.lastError)+'">failing</span>':'<span class="pill ok">ok</span>')+'</td>'
+        +'<td><button class="btn btn-ghost btn-sm" data-rsdel="'+s.id+'">Remove</button></td></tr>').join('')
+       || '<tr><td colspan="5" class="muted" style="padding:14px">No sources yet. Anglers can still post reports in the app.</td></tr>')
+    + '</tbody></table></div>'
+    + '<div class="row" style="margin-bottom:14px"><button class="btn btn-ghost btn-sm" id="rsRefresh">Refresh all now</button><span class="msg" id="rsRefreshMsg"></span></div>'
+    + '<div class="card" style="padding:6px 10px;overflow:auto"><h2 style="padding:10px 4px 0">Latest reports stored</h2><table><thead><tr>'
+    + '<th>Lake</th><th>Source</th><th>Title</th><th>Dated</th></tr></thead><tbody>'
+    + ((d.recent||[]).map(r=>'<tr><td>'+esc(r.lake&&r.lake.name||'')+'</td><td class="muted">'+esc(r.sourceName||r.source)+'</td>'
+        +'<td>'+esc((r.title||'').slice(0,70))+'</td><td class="muted">'+(r.publishedAt?ago(r.publishedAt):'—')+'</td></tr>').join('')
+       || '<tr><td colspan="4" class="muted" style="padding:14px">Nothing stored yet.</td></tr>')
+    + '</tbody></table></div>';
+
+  $('rsAdd').onclick=async function(){
+    const body={name:$('rsName').value.trim(),url:$('rsUrl').value.trim(),kind:$('rsKind').value,region:$('rsRegion').value.trim()};
+    if(!body.name||!body.url){ $('rsMsg').className='msg err'; $('rsMsg').textContent='Needs a name and a URL.'; return; }
+    $('rsMsg').className='msg'; $('rsMsg').textContent='Adding and fetching…';
+    const r=await api('/api/admin/report-sources',{method:'POST',body:JSON.stringify(body)});
+    const d2=await r.json();
+    if(!r.ok){ $('rsMsg').className='msg err'; $('rsMsg').textContent=d2.error||'Could not add.'; return; }
+    const f=d2.first||{};
+    $('rsMsg').className=f.error?'msg err':'msg ok';
+    $('rsMsg').textContent=f.error?('Added, but the first fetch failed: '+f.error)
+      :('Added — '+(f.stored||0)+' report(s) stored from '+(f.scanned||0)+' item(s).');
+    setTimeout(tSources,1500);
+  };
+  $('rsRefresh').onclick=async function(){
+    $('rsRefreshMsg').className='msg'; $('rsRefreshMsg').textContent='Refreshing…';
+    const r=await api('/api/admin/report-sources/refresh',{method:'POST'});
+    const d2=await r.json();
+    $('rsRefreshMsg').className='msg ok';
+    $('rsRefreshMsg').textContent=(d2.stored||0)+' report(s) from '+(d2.sources||0)+' source(s).';
+    setTimeout(tSources,1500);
+  };
+  document.querySelectorAll('[data-rsdel]').forEach(b=>b.onclick=async function(){
+    if(!confirm('Remove this source? Reports already stored are kept.'))return;
+    await api('/api/admin/report-sources/'+b.dataset.rsdel,{method:'DELETE'});
+    tSources();
+  });
+}
+
 /* AI usage & cost — cost is stored per call at the price in force then, so
    these totals don't drift when pricing changes. A model with no rate shows as
    unpriced rather than free. */

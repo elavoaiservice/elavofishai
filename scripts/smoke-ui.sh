@@ -22,7 +22,7 @@ done
 [ -n "$CHROME" ] || { echo "[smoke] no Chrome found — skipping UI smoke tests"; exit 0; }
 
 # One view per primary nav entry, plus a Settings child and a Lake guide child.
-VIEWS="today plan log friends water season species rigs scope reference profile lakes sharing blocked data"
+VIEWS="today plan log friends water season species rigs scope reports reference profile lakes sharing blocked data"
 FAIL=0
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
