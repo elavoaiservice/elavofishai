@@ -98,17 +98,57 @@ export function looksLikeSoft404(text: string): boolean {
   return /(^|\s)404(\s|$)/.test(head) || /page not found|page can'?t be found|page doesn'?t exist/.test(head);
 }
 
+/** Lines that are site furniture, not content, on every agency page. */
+const BOILERPLATE = [
+  /javascript/i, /skip to (content|main)/i, /cookie/i, /privacy polic/i,
+  /subscriber preferences|children under 13/i, /^\s*(home|menu|search|share|print)\s*$/i,
+  /follow us|social media|sign up for/i, /copyright|all rights reserved/i,
+  /accessibility|site map|contact us$/i, /^\s*\d{3}[-.]\d{3}[-.]\d{4}\s*$/,
+];
+
+/** Words that mean a paragraph is actually about fishing this water. */
+const SIGNAL = /\b(fish|fishing|angler|bass|crappie|catfish|walleye|trout|perch|bream|bluegill|stripe[rd]|hybrid|spawn|habitat|structure|brush|timber|cover|ramp|jig|crankbait|shad|minnow|lure|bait|depth|acre|reservoir|stock(ed|ing)?|regulation|limit|alga|water level|clarity)\b/i;
+
 /**
- * Pull the part of a page that actually concerns this lake. A fetched page is
- * mostly navigation; storing all of it buries a two-line report in site chrome
- * when the planner reads it. Exported for tests.
+ * Pull the part of a fetched page that is actually about fishing this lake.
+ *
+ * The naive version — text around the first mention of the lake name — reliably
+ * grabbed the page title and the "this site needs JavaScript" notice underneath
+ * it, and stored that as a fishing report. Score the paragraphs instead, drop
+ * the furniture, and return nothing at all when nothing scores: an empty
+ * report is honest, a page of navigation in the planner's prompt is not.
+ *
+ * Exported for tests.
  */
-export function extractAbout(text: string, lakeName: string, span = 1200): string {
-  const name = lakeName.replace(/^lake\s+/i, '').replace(/\s+(lake|reservoir)$/i, '');
-  const at = text.toLowerCase().indexOf(name.toLowerCase());
-  if (name.length < 3 || at < 0) return text.slice(0, span);
-  const start = Math.max(0, at - Math.floor(span / 4));
-  return text.slice(start, start + span).trim();
+export function extractReportText(text: string, lakeName: string, budget = 1400): string {
+  const name = lakeName.replace(/^lake\s+/i, '').replace(/\s+(lake|reservoir)$/i, '').toLowerCase();
+  const paras = text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 40 && !BOILERPLATE.some((re) => re.test(p)));
+
+  const scored = paras
+    .map((p) => {
+      const hits = (p.match(new RegExp(SIGNAL, 'gi')) || []).length;
+      const named = name.length >= 3 && p.toLowerCase().includes(name) ? 1 : 0;
+      // Long lists of links score badly: lots of pipes, few sentences.
+      const listy = (p.match(/\|/g) || []).length > 2 ? -2 : 0;
+      return { p, score: hits + named * 2 + listy };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scored.length) return '';
+
+  const out: string[] = [];
+  let used = 0;
+  for (const { p } of scored) {
+    if (used + p.length > budget) continue;
+    out.push(p);
+    used += p.length;
+    if (used > budget * 0.8) break;
+  }
+  return out.join('\n');
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -157,7 +197,8 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
       try {
         // For a page, keep the part that names this lake rather than the whole
         // site; for a feed item, the item is already the unit.
-        const body = src.kind === 'html' ? extractAbout(item.body, lake.name) : item.body.slice(0, MAX_BODY);
+        const body = src.kind === 'html' ? extractReportText(item.body, lake.name) : item.body.slice(0, MAX_BODY);
+        if (!body) continue; // nothing on the page was about fishing this water
         await prisma.lakeReport.upsert({
           where: { lakeId_url: { lakeId: lake.id, url: item.url || `${src.id}:${item.title || ''}` } },
           create: {

@@ -104,7 +104,7 @@ describe('reportsForPrompt', () => {
  * 200 and a "not found" body (Oklahoma's does), and bury two lines of report
  * in a page of navigation.
  */
-import { extractAbout, looksLikeSoft404 } from '../src/services/reports';
+import { extractReportText, looksLikeSoft404 } from '../src/services/reports';
 
 describe('looksLikeSoft404', () => {
   test('catches a 200 response whose body says not found', () => {
@@ -119,17 +119,39 @@ describe('looksLikeSoft404', () => {
   });
 });
 
-describe('extractAbout', () => {
-  const page = 'Home About Contact Licensing '.repeat(20) + 'Lake Granbury: water 83, sand bass schooling early on the upper end. ' + 'Footer nav '.repeat(20);
+describe('extractReportText', () => {
+  // The shape of a real TPWD lake page, boilerplate and all.
+  const page = [
+    "Fishing Lake Granbury",
+    "We're sorry, some parts of the TPWD website don't work properly without JavaScript enabled.",
+    "New World Screwworm (NWS) has been detected in Texas, learn more about NWS .",
+    "Regulations | Angling Opportunities | Cover & Structure | Tips & Tactics",
+    "Location: On the Brazos River in downtown Granbury, off US 377 33 miles southwest of Fort Worth.",
+    "Golden alga blooms can occur in the reservoir. These blooms are toxic to fish and may affect the quality of fishing.",
+    "Striped bass fishing can be very good on this long, sinuous reservoir. Downrigging jigs and crankbaits as well as drifting live shad can be very effective.",
+    "Your contact information is used to deliver requested updates. Children under 13 years of age must have a parent's consent.",
+  ].join('\n');
 
-  test('pulls the part of the page that names the lake', () => {
-    const out = extractAbout(page, 'Lake Granbury', 300);
-    assert.match(out, /sand bass schooling/);
-    assert.ok(out.length <= 300);
+  test('keeps the fishing content and drops the furniture', () => {
+    const out = extractReportText(page, 'Lake Granbury');
+    assert.match(out, /Striped bass fishing can be very good/);
+    assert.match(out, /Golden alga/);
+    assert.doesNotMatch(out, /JavaScript/, 'the JS notice is what the naive version stored');
+    assert.doesNotMatch(out, /Children under 13/);
+    assert.doesNotMatch(out, /Screwworm/);
   });
 
-  test('falls back to the top of the page when the lake is never named', () => {
-    const out = extractAbout(page, 'Lake Michigan', 120);
-    assert.equal(out, page.slice(0, 120));
+  test('a nav bar of links is not mistaken for content', () => {
+    assert.doesNotMatch(extractReportText(page, 'Lake Granbury'), /Regulations \| Angling/);
+  });
+
+  test('a page with nothing about fishing yields nothing, not noise', () => {
+    const chrome = ['Home | About | Contact', 'Sign up for our newsletter', 'Copyright 2026 All rights reserved'].join('\n');
+    assert.equal(extractReportText(chrome, 'Lake Granbury'), '');
+  });
+
+  test('stays within the budget', () => {
+    const out = extractReportText(page, 'Lake Granbury', 200);
+    assert.ok(out.length <= 200, `expected <=200 chars, got ${out.length}`);
   });
 });
