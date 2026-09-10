@@ -245,6 +245,25 @@ tell north-south from east-west and only for a clearly elongated lake. When
 neither knows, the app says nothing about fetch rather than assuming every lake
 is shaped like Granbury.
 
+## Finding anglers
+
+`GET /api/users/search?q=` matches on display name, username, town and exact
+email, and each angler controls whether they appear at all
+(`discoverability`, on Settings → Profile):
+
+| setting | who finds you |
+| --- | --- |
+| `everyone` | anyone signed in |
+| `friends_of_friends` (default) | someone who shares an accepted friend with you |
+| `nobody` | no one — you are not listed |
+
+An exact email address reaches anyone regardless, including `nobody`: knowing
+someone's address is its own introduction, and it's how the original invite flow
+worked. Blocked pairs never see each other, you never see yourself, and each
+result carries the existing relationship (`none` / `requested` / `incoming` /
+`friend`) so the UI never offers to add someone twice. Requests can be sent by
+user id from search results or by email as before.
+
 ## Blocking
 
 An angler can block another from the Friends tab. A block replaces whatever

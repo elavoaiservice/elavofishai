@@ -1443,12 +1443,20 @@ body.feed-loading .stat-v *{visibility:hidden}
   </style>
   <div id="friendsAuth" class="lede">Sign in (top-left) to add friends and share spots — the private way to help each other find fish.</div>
   <div id="friendsMain" hidden>
-    <h3>Your friends</h3>
+    <h3>Find anglers</h3>
+    <p class="lede" style="margin-top:2px">Search by name, town or username. Who can find you is yours to
+       set under Settings → Profile.</p>
+    <input id="frSearch" class="fr-in" placeholder="Search anglers — name, town, username…" autocomplete="off" style="max-width:420px">
+    <div id="frResults" style="margin-top:8px"></div>
+
+    <h3 style="margin-top:22px">Know their email?</h3>
     <div class="formfoot" style="flex-wrap:wrap">
       <input id="frEmail" class="fr-in" type="email" placeholder="friend@email.com" style="max-width:240px">
       <button class="btn" id="frAdd">Send request</button>
       <span class="snap" id="frMsg" style="color:var(--muted)"></span>
     </div>
+
+    <h3 style="margin-top:22px">Your friends</h3>
     <div id="frRequests" style="margin-top:12px"></div>
     <div id="frList" style="margin-top:6px"></div>
 
@@ -1567,6 +1575,14 @@ body.feed-loading .stat-v *{visibility:hidden}
     <select id="pfLake" class="pf-in"><option value="">— none —</option></select>
     <label for="pfBio">About you</label>
     <textarea id="pfBio" class="pf-in" maxlength="600" placeholder="Tell other anglers about how you fish…"></textarea>
+    <label for="pfFind">Who can find you in search</label>
+    <select id="pfFind" class="pf-in">
+      <option value="everyone">Anyone on ElavoFishAI</option>
+      <option value="friends_of_friends">Friends of my friends</option>
+      <option value="nobody">Nobody — don't list me</option>
+    </select>
+    <p class="snap" style="margin:4px 0 12px">Someone who already knows your email address can always send you a
+       request, whichever you pick.</p>
     <label for="pfPrivacy">Who can message you</label>
     <select id="pfPrivacy" class="pf-in">
       <option value="everyone">Everyone</option>
@@ -3500,6 +3516,45 @@ async function refreshFriends(){
     $('frBlocked').innerHTML=bl.length?(bl.map(b=>'<div class="fr-row"><span>'+escHtml(b.displayName)+'</span><button class="btn ghost btn-sm" data-unblock="'+b.id+'">Unblock</button></div>').join('')):'';
   }catch(e){}
 }
+/* ---- finding anglers ----
+   Results say what the relationship already is, so the button never offers to
+   "add" someone who is already a friend or has a request in flight. */
+let frTimer=null;
+const REL_LABEL={friend:'Already friends',requested:'Request sent',incoming:'They asked you',blocked:'Blocked'};
+function wireFriendSearch(){
+  const box=$('frSearch'); if(!box)return;
+  box.oninput=function(){
+    clearTimeout(frTimer);
+    const q=box.value.trim();
+    if(q.length<2){ $('frResults').innerHTML=''; return; }
+    frTimer=setTimeout(async function(){
+      $('frResults').innerHTML='<p class="snap">Searching…</p>';
+      try{
+        const r=await apiFetch('/api/users/search?q='+encodeURIComponent(q));
+        const d=await r.json();
+        if(!r.ok){ $('frResults').innerHTML='<p class="snap">'+escHtml(d.error||'Search unavailable.')+'</p>'; return; }
+        const list=d.results||[];
+        $('frResults').innerHTML=list.length?list.map(u=>{
+          const bits=[u.location,u.favoriteSpecies,u.favoriteLake].filter(Boolean).map(escHtml).join(' · ');
+          const action=u.relationship==='none'
+            ? '<button class="btn btn-sm" data-addid="'+u.id+'">Add friend</button>'
+            : '<span class="snap">'+escHtml(REL_LABEL[u.relationship]||'')+'</span>';
+          return '<div class="fr-row"><span>'+escHtml(u.displayName)+(u.username?' <span class="snap">@'+escHtml(u.username)+'</span>':'')+
+            (bits?'<br><span class="snap">'+bits+'</span>':'')+'</span>'+action+'</div>';
+        }).join(''):'<p class="snap">Nobody matching — they may not be findable, or not signed up yet. If you have their email, use the box below.</p>';
+      }catch(e){ $('frResults').innerHTML='<p class="snap">Search unavailable.</p>'; }
+    },300);
+  };
+}
+async function requestFriendById(id,btn){
+  if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  try{
+    const r=await apiFetch('/api/friends/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:id})});
+    const d=await r.json();
+    if(btn){ btn.outerHTML='<span class="snap">'+(r.ok?'Request sent':escHtml(d.error||'Could not send'))+'</span>'; }
+    if(r.ok)refreshFriends();
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Add friend'; } }
+}
 async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)return; $('frMsg').textContent='Sending…';
   try{ const r=await apiFetch('/api/friends/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); const d=await r.json();
     $('frMsg').textContent=r.ok?'Request sent!':(d.error||'Could not send.'); if(r.ok){$('frEmail').value='';refreshFriends();}
@@ -3622,6 +3677,7 @@ async function loadFeed(){
 function wireFriends(){
   const p=$('p-friends'); if(!p)return;
   $('frAdd').onclick=addFriend; $('grAdd').onclick=createGroup;
+  wireFriendSearch();
   $('shShare').onclick=shareThing;
   $('shType').onclick=function(e){ const b=e.target.closest('[data-t]'); if(b)shTypeChange(b.dataset.t); };
   const sd=$('shDefSave'); if(sd)sd.onclick=saveSharing;
@@ -3629,6 +3685,8 @@ function wireFriends(){
   $('shVis').onchange=()=>{$('shGroup').hidden=$('shVis').value!=='group';};
   p.addEventListener('click',e=>{
     const acc=e.target.closest('[data-acc]'),dec=e.target.closest('[data-dec]'),rem=e.target.closest('[data-rem]'),dg=e.target.closest('[data-delgrp]'),del=e.target.closest('[data-del]'),msg=e.target.closest('[data-msg]');
+    const addid=e.target.closest('[data-addid]');
+    if(addid){ requestFriendById(addid.dataset.addid,addid); return; }
     const blk=e.target.closest('[data-block]'), unb=e.target.closest('[data-unblock]');
     if(blk){
       if(!confirm('Block '+blk.dataset.blockname+'? They will no longer see your shared spots and catches, or be able to message you.'))return;
@@ -3671,6 +3729,7 @@ async function loadProfile(){
     // hasBoat null means never asked — distinct from "no boat".
     $('pfBoat').value = p.hasBoat==null ? '__unset' : (p.hasBoat ? (p.boatType||'other boat') : '');
     $('pfPrivacy').value=p.messagePrivacy||'friends';
+    $('pfFind').value=p.discoverability||'friends_of_friends';
     $('pfLake').innerHTML='<option value="">— none —</option>'+lakes.map(l=>'<option value="'+l.id+'"'+(p.favoriteLakeId===l.id?' selected':'')+'>'+escHtml(l.name)+(l.region?' ('+escHtml(l.region)+')':'')+'</option>').join('');
     paintAvatar($('pfAvatar'),p.avatarUrl,p.displayName);
     $('pfAvClear').hidden=!p.avatarUrl;
@@ -3692,7 +3751,8 @@ async function saveProfile(){
   const body={ displayName:$('pfName').value.trim(), location:$('pfLocation').value.trim(),
     favoriteSpecies:$('pfSpecies').value.trim(), bio:$('pfBio').value.trim(),
     favoriteLure:$('pfLure').value.trim(), yearsFishing:$('pfYears').value,
-    favoriteLakeId:$('pfLake').value||null, messagePrivacy:$('pfPrivacy').value };
+    favoriteLakeId:$('pfLake').value||null, messagePrivacy:$('pfPrivacy').value,
+    discoverability:$('pfFind').value };
   const bt=$('pfBoat').value;
   if(bt!=='__unset'){ body.hasBoat=!!bt; body.boatType=bt; }
   const pb=$('pfPlotter').value, fb=$('pfFfs').value;

@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
 import { blockedUserIds, blockState } from '../lib/social';
+import { clientIp } from '../lib/auth';
+import { overLimit } from '../lib/rateLimit';
 import {
   DATA_TYPES,
   type DataType,
@@ -49,11 +51,16 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/friends/request', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
-    const email = String((req.body as { email?: string }).email || '').trim().toLowerCase();
-    if (!email) return reply.code(400).send({ error: 'Enter an email.' });
-    if (email === me.email) return reply.code(400).send({ error: "That's you!" });
-    const target = await prisma.user.findUnique({ where: { email } });
+    const b = (req.body || {}) as { email?: string; userId?: string };
+    const email = String(b.email || '').trim().toLowerCase();
+    const userId = String(b.userId || '').trim();
+    if (!email && !userId) return reply.code(400).send({ error: 'Enter an email, or pick someone from search.' });
+    if (email && email === me.email) return reply.code(400).send({ error: "That's you!" });
+    const target = userId
+      ? await prisma.user.findUnique({ where: { id: userId } })
+      : await prisma.user.findUnique({ where: { email } });
     if (!target) return reply.code(404).send({ error: 'No ElavoFishAI user with that email yet — invite them to sign up!' });
+    if (target.id === me.id) return reply.code(400).send({ error: "That's you!" });
     const existing = await prisma.friendship.findFirst({
       where: { OR: [{ userId: me.id, friendId: target.id }, { userId: target.id, friendId: me.id }] },
     });
@@ -88,6 +95,95 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!f || (f.friendId !== me.id && f.userId !== me.id)) return reply.code(404).send({ error: 'No such request.' });
     await prisma.friendship.delete({ where: { id } });
     return reply.send({ ok: true });
+  });
+
+  // ---------- finding people ----------
+  // Search respects each angler's own discoverability:
+  //   everyone           — anyone signed in can find them
+  //   friends_of_friends — only someone who shares an accepted friend (default)
+  //   nobody             — never in results; an exact-email request still works
+  // Blocked pairs never see each other, and the result says what the current
+  // relationship is so the UI doesn't offer "Add" to an existing friend.
+  app.get('/api/users/search', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const q = String((req.query as { q?: string }).q || '').trim();
+    if (q.length < 2) return reply.send({ results: [] });
+    if (await overLimit(`usersearch:${me.id}`, 40, 60_000)) {
+      return reply.code(429).send({ error: 'Slow down a moment, then search again.' });
+    }
+
+    const [friends, blocked] = await Promise.all([friendIds(me.id), blockedUserIds(me.id)]);
+    const exclude = [me.id, ...blocked];
+
+    // Friends-of-friends: everyone my friends are friends with.
+    const secondDegree = friends.length
+      ? (await prisma.friendship.findMany({
+          where: { status: 'accepted', OR: [{ userId: { in: friends } }, { friendId: { in: friends } }] },
+          select: { userId: true, friendId: true },
+        })).flatMap((f) => [f.userId, f.friendId])
+      : [];
+    const fof = new Set(secondDegree);
+
+    const rows = await prisma.user.findMany({
+      where: {
+        status: 'active',
+        id: { notIn: exclude },
+        OR: [
+          // An exact email address reaches anyone, including someone who has
+          // opted out of search — knowing the address is its own introduction.
+          { email: q.toLowerCase() },
+          {
+            discoverability: { not: 'nobody' },
+            OR: [
+              { displayName: { contains: q, mode: 'insensitive' } },
+              { username: { contains: q, mode: 'insensitive' } },
+              { location: { contains: q, mode: 'insensitive' } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true, displayName: true, username: true, avatarUrl: true, location: true,
+        favoriteSpecies: true, discoverability: true, email: true,
+        favoriteLake: { select: { name: true } },
+      },
+      take: 40,
+    });
+
+    const visible = rows.filter((u) => {
+      if (u.email === q.toLowerCase()) return true;        // knew the address
+      if (u.discoverability === 'everyone') return true;
+      return fof.has(u.id) || friends.includes(u.id);       // friends of friends
+    });
+
+    // What relationship already exists, so the button is honest.
+    const rel = new Map<string, string>();
+    if (visible.length) {
+      const links = await prisma.friendship.findMany({
+        where: {
+          OR: [
+            { userId: me.id, friendId: { in: visible.map((u) => u.id) } },
+            { friendId: me.id, userId: { in: visible.map((u) => u.id) } },
+          ],
+        },
+        select: { userId: true, friendId: true, status: true, requestedBy: true },
+      });
+      for (const l of links) {
+        const other = l.userId === me.id ? l.friendId : l.userId;
+        rel.set(other, l.status === 'accepted' ? 'friend' : l.status === 'pending'
+          ? (l.requestedBy === me.id ? 'requested' : 'incoming') : 'blocked');
+      }
+    }
+
+    return reply.send({
+      results: visible.slice(0, 20).map((u) => ({
+        id: u.id, displayName: u.displayName, username: u.username, avatarUrl: u.avatarUrl,
+        location: u.location, favoriteSpecies: u.favoriteSpecies,
+        favoriteLake: u.favoriteLake?.name || null,
+        relationship: rel.get(u.id) || 'none',
+      })),
+    });
   });
 
   // ---------- blocking ----------

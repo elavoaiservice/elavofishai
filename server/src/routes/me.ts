@@ -31,7 +31,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, favoriteLakeId: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
-        plotterBrand: true, ffsBrand: true,
+        plotterBrand: true, ffsBrand: true, discoverability: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         messagePrivacy: true, createdAt: true,
       },
@@ -82,6 +82,14 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       data.avatarUrl = a;
     }
 
+    if ('discoverability' in b) {
+      const d = String(b.discoverability || '').toLowerCase();
+      if (!['everyone', 'friends_of_friends', 'nobody'].includes(d)) {
+        return reply.code(400).send({ error: 'Invalid discoverability setting.' });
+      }
+      data.discoverability = d;
+    }
+
     if ('messagePrivacy' in b) {
       const mp = String(b.messagePrivacy || '').toLowerCase();
       if (!MESSAGE_PRIVACY_CHOICES.includes(mp)) return reply.code(400).send({ error: 'Invalid message setting.' });
@@ -104,7 +112,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, messagePrivacy: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
-        plotterBrand: true, ffsBrand: true,
+        plotterBrand: true, ffsBrand: true, discoverability: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         createdAt: true,
       },

@@ -98,6 +98,13 @@ model User {
   favoriteLakeId  String?
   favoriteLake    Lake?   @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
 
+  // ---- discoverability ----
+  // Who can find this angler by searching. `friends_of_friends` (the default)
+  // means someone must share at least one accepted friend. `nobody` keeps them
+  // out of search entirely — a request by exact email still reaches them,
+  // because knowing the address is its own kind of introduction.
+  discoverability String @default("friends_of_friends") // everyone | friends_of_friends | nobody
+
   // ---- messaging ----
   messagePrivacy   String    @default("friends") // everyone | friends | nobody
   sentMessages     Message[] @relation("MsgSender")
