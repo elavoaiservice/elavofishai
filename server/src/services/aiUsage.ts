@@ -18,6 +18,9 @@ export interface Rate {
   cacheRead: number;
 }
 
+/** Server-side web search, billed per search on top of tokens. */
+export const WEB_SEARCH_USD_PER_SEARCH = 10 / 1000;
+
 export const RATES: Record<string, Rate> = {
   'claude-opus-5': { input: 15, output: 75, cacheRead: 1.5 },
   'claude-opus-4-8': { input: 15, output: 75, cacheRead: 1.5 },
@@ -34,13 +37,22 @@ export function rateFor(model: string): Rate | null {
 }
 
 /** Cost in USD for one call. Unknown model → 0, never a guess. */
-export function costOf(model: string, inputTokens: number, outputTokens: number, cacheReadTokens = 0): number {
+export function costOf(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  webSearches = 0
+): number {
   const r = rateFor(model);
-  if (!r) return 0;
+  // Searches are billed even when the model itself isn't priced here.
+  const search = webSearches * WEB_SEARCH_USD_PER_SEARCH;
+  if (!r) return Math.round(search * 1e6) / 1e6;
   const usd =
     (inputTokens / 1e6) * r.input +
     (outputTokens / 1e6) * r.output +
-    (cacheReadTokens / 1e6) * r.cacheRead;
+    (cacheReadTokens / 1e6) * r.cacheRead +
+    search;
   return Math.round(usd * 1e6) / 1e6; // to the millionth of a dollar
 }
 
@@ -50,6 +62,7 @@ export interface UsageRecord {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
+  webSearches?: number;
   userId?: string | null;
   lakeId?: string | null;
   ok?: boolean;
@@ -61,6 +74,7 @@ export async function recordUsage(u: UsageRecord): Promise<void> {
   const inputTokens = u.inputTokens || 0;
   const outputTokens = u.outputTokens || 0;
   const cacheReadTokens = u.cacheReadTokens || 0;
+  const webSearches = u.webSearches || 0;
   try {
     await prisma.aiUsage.create({
       data: {
@@ -69,7 +83,8 @@ export async function recordUsage(u: UsageRecord): Promise<void> {
         inputTokens,
         outputTokens,
         cacheReadTokens,
-        costUsd: costOf(u.model, inputTokens, outputTokens, cacheReadTokens),
+        webSearches,
+        costUsd: costOf(u.model, inputTokens, outputTokens, cacheReadTokens, webSearches),
         userId: u.userId ?? null,
         lakeId: u.lakeId ?? null,
         ok: u.ok !== false,

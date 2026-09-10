@@ -27,6 +27,8 @@ export function defaultMessagePrivacy(): string {
 export const CATALOG: ConfigItem[] = [
   { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API key', group: 'AI', secret: true, test: true, placeholder: 'sk-ant-...', help: 'Powers AI lake guides + the day planner.' },
   { key: 'AI_PROFILE_MODEL', label: 'AI model', group: 'AI', placeholder: 'claude-opus-4-8', help: 'claude-opus-4-8 (best) or claude-sonnet-5 (cheaper).' },
+  { key: 'AI_PLAN_MODEL', label: 'Day-plan model', group: 'AI', placeholder: 'claude-sonnet-5', help: 'Day plans are generated while someone waits — the fast model by default.' },
+  { key: 'AI_WEB_SEARCH', label: 'Web search in day plans', group: 'AI', choices: ['0', '1'], placeholder: '0', help: 'Let the planner search for recent fishing reports. Billed $10 per 1,000 searches on top of tokens (max 4 per plan).' },
   { key: 'RESEND_API_KEY', label: 'Resend API key', group: 'Email', secret: true, test: true, placeholder: 're_...', help: 'Sends magic-link + admin MFA emails (replaces dev/console mode).' },
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
   { key: 'PUBLIC_BASE_URL', label: 'Public base URL', group: 'App', test: true, placeholder: 'https://elavofishai.elavoai.com' },

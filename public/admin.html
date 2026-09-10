@@ -199,6 +199,7 @@ async function tAiCost(){
     [String(t.calls||0),'Model calls',(t.failures?t.failures+' failed':'none failed')],
     [tok(t.inputTokens||0),'Input tokens',(t.cacheReadTokens?tok(t.cacheReadTokens)+' from cache':'no cache reads')],
     [tok(t.outputTokens||0),'Output tokens',(t.avgMs?t.avgMs+' ms average':'')],
+    [String(t.webSearches||0),'Web searches',(t.webSearches?money(t.webSearches*0.01)+' of the spend':'search is off')],
   ];
   let h='<div class="row" style="margin:0 0 14px;gap:8px">'
     +[7,30,90].map(n=>'<button class="btn btn-sm '+(AI_DAYS===n?'btn-primary':'btn-ghost')+'" data-aidays="'+n+'">'+n+' days</button>').join('')+'</div>'

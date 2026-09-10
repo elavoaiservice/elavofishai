@@ -38,3 +38,15 @@ describe('AI cost', () => {
     assert.equal(costOf('some-other-model', 1_000_000, 1_000_000), 0);
   });
 });
+
+describe('web search cost', () => {
+  test('searches are billed on top of tokens at $10 per 1,000', () => {
+    const tokensOnly = costOf('claude-sonnet-5', 2000, 1000);
+    const withSearches = costOf('claude-sonnet-5', 2000, 1000, 0, 4);
+    assert.ok(Math.abs(withSearches - tokensOnly - 0.04) < 1e-9, `expected +$0.04, got ${withSearches - tokensOnly}`);
+  });
+
+  test('searches still cost money on a model we have no token price for', () => {
+    assert.ok(Math.abs(costOf('some-other-model', 1000, 1000, 0, 2) - 0.02) < 1e-9);
+  });
+});

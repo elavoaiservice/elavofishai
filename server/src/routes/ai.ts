@@ -21,11 +21,12 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/ai/day-plan', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    const q = req.query as { lakeId?: string; date?: string; species?: string };
+    const q = req.query as { lakeId?: string; date?: string; species?: string; goal?: string };
     const lakeId = String(q.lakeId || ''), date = String(q.date || ''), species = String(q.species || '');
-    if (!lakeId || !date || !species) return reply.code(400).send({ error: 'Need a lake, a date and a species.' });
+    const goal = q.goal === 'trophy' ? 'trophy' : 'numbers';
+    if (!lakeId || !date || !species) return reply.code(400).send({ error: 'Need a lake, a date and a target.' });
     const cached = await prisma.dayPlan.findUnique({
-      where: { lakeId_date_species: { lakeId, date, species } },
+      where: { lakeId_date_species_goal: { lakeId, date, species, goal } },
     });
     if (!cached) return reply.send({ ok: false, pending: true });
     return reply.send({
@@ -37,7 +38,10 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/ai/day-plan', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    const b = (req.body || {}) as { lakeId?: string; date?: string; species?: string; conditions?: unknown; force?: boolean };
+    const b = (req.body || {}) as {
+      lakeId?: string; date?: string; species?: string; conditions?: unknown; force?: boolean;
+      goal?: string; launch?: { name?: string; lat?: number; lon?: number; kind?: string } | null;
+    };
     // Only rate-limit calls that will actually hit the model.
     if (b.force && (await overLimit(`dayplan:${user.id}`, 30, 3600000))) {
       return reply.code(429).send({ error: 'Too many plan generations this hour — try again later.' });
@@ -49,6 +53,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       conditions: b.conditions,
       force: !!b.force,
       userId: user.id,
+      goal: b.goal === 'trophy' ? 'trophy' : 'numbers',
+      launch: b.launch || null,
     });
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);

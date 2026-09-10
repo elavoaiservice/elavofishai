@@ -351,7 +351,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         GROUP BY 1 ORDER BY 1 DESC LIMIT 30`,
       prisma.aiUsage.aggregate({
         where: { createdAt: { gte: since } },
-        _sum: { costUsd: true, inputTokens: true, outputTokens: true, cacheReadTokens: true },
+        _sum: { costUsd: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, webSearches: true },
         _count: { _all: true },
         _avg: { ms: true },
       }),
@@ -375,6 +375,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         inputTokens: totals._sum.inputTokens || 0,
         outputTokens: totals._sum.outputTokens || 0,
         cacheReadTokens: totals._sum.cacheReadTokens || 0,
+        webSearches: totals._sum.webSearches || 0,
         avgMs: Math.round(totals._avg.ms || 0),
         failures,
       },

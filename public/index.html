@@ -773,6 +773,13 @@ body.feed-loading .stat-v *{visibility:hidden}
 .tcard.hero .v{font-size:34px}
 .tcard.hero .s{color:rgba(255,255,255,.82)}
 .quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.ai-form{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.ai-f.wide{grid-column:1/-1}
+.ai-f label{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px}
+.ai-f input,.ai-f select{width:100%;min-height:44px;font-size:15px;padding:0 11px;border:1px solid var(--border);
+  border-radius:11px;background:var(--surface);color:var(--ink);font-family:inherit}
+.ai-f input:focus,.ai-f select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--accent-soft)}
 .sec{margin-top:22px;border-top:1px solid var(--border);padding-top:14px}
 .sec-t{font-size:15px;font-weight:700;color:var(--ink);cursor:pointer;list-style:none;
   display:flex;align-items:center;gap:8px;padding:6px 0;min-height:40px}
@@ -1119,26 +1126,32 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div id="wsum" class="win-b" style="margin-top:10px"></div>
   <h3>Which bank</h3>
   <div id="bank"></div>
-  <h3>When to leave</h3>
-  <div class="formfoot" style="margin-bottom:12px">
-    <label for="driveIn" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Drive time</label>
-    <input type="number" id="driveIn" min="0" max="300" step="5" placeholder="35" inputmode="numeric"
-      style="width:78px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--ink);font-family:Inter,sans-serif">
-    <span class="deg">min</span>
-    <button class="btn" id="driveGo">Work it out</button>
-  </div>
-  <div id="leaveOut"></div>
-  <h3>Before you go</h3>
-  <p class="lede" style="margin-bottom:14px">Ticks are saved. Reset when you get home.</p>
-  <div id="checkOut"></div>
-  <div class="formfoot"><button class="btn ghost" id="ckReset">Clear all ticks</button>
-    <span class="snap" id="ckMsg"></span></div>
-
   <div id="aiPlanBox" style="margin-top:22px;border:1px solid var(--border);border-radius:16px;padding:18px;background:var(--surface)">
     <h3 style="margin:0 0 4px">🧠 AI day plan</h3>
-    <p class="lede" style="margin:0 0 12px">Pick your target and get an hour-by-hour game plan for this day — tuned to the conditions, and it sharpens as the day gets closer.</p>
-    <div class="formfoot" style="flex-wrap:wrap;gap:10px">
-      <select id="aiSpecies" aria-label="Target species" style="min-height:38px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--ink);font-family:Inter,sans-serif"></select>
+    <p class="lede" style="margin:0 0 14px">Tell it when you're going, where you're launching and what you're after —
+       it builds the hour-by-hour, and sharpens as the day gets closer.</p>
+    <div class="ai-form">
+      <div class="ai-f"><label for="aiDate">Day you're going</label>
+        <input type="date" id="aiDate"></div>
+      <div class="ai-f"><label for="aiSpecies">What you're after</label>
+        <select id="aiSpecies"></select></div>
+      <div class="ai-f"><label for="aiGoal">Numbers or size</label>
+        <select id="aiGoal">
+          <option value="numbers">Numbers — keepers in the boat</option>
+          <option value="trophy">One big fish</option>
+        </select></div>
+      <div class="ai-f"><label for="aiLaunch">Launching from</label>
+        <select id="aiLaunch"><option value="">Anywhere on the lake</option></select></div>
+      <div class="ai-f wide" id="aiPinRow" hidden>
+        <label>Launch coordinates</label>
+        <div style="display:flex;gap:8px">
+          <input id="aiLat" placeholder="lat" inputmode="decimal">
+          <input id="aiLon" placeholder="lon" inputmode="decimal">
+          <button class="btn ghost" id="aiGps" style="white-space:nowrap">Use GPS</button>
+        </div>
+      </div>
+    </div>
+    <div class="formfoot" style="flex-wrap:wrap;gap:10px;margin-top:12px">
       <button class="btn" id="aiPlanBtn">Generate plan</button>
       <span class="snap" id="aiPlanMsg" style="color:var(--muted)"></span>
     </div>
@@ -2554,7 +2567,7 @@ function drawDayPlan(){
     $('astro').innerHTML='';
     $('darkwin').className='dark none';
     $('darkwin').innerHTML='<b>Needs the live forecast.</b> Sun and moon are computed locally, but the day list comes from the weather feed. Open this file directly in your browser if the feed is blocked here.';
-    $('hours').innerHTML='';$('hrlab').innerHTML='';$('bank').innerHTML='';$('windows').innerHTML='';$('whours').innerHTML='';$('wsum').innerHTML='';$('leaveOut').innerHTML='';
+    $('hours').innerHTML='';$('hrlab').innerHTML='';$('bank').innerHTML='';$('windows').innerHTML='';$('whours').innerHTML='';$('wsum').innerHTML='';
     return;
   }
   const d=FORECAST[selDay];
@@ -2621,7 +2634,6 @@ function drawDayPlan(){
     ba.txt+'</div>':'';
   $('windows').innerHTML=drawWindows(d);
   drawHourWind();
-  drawLeave();
 }
 
 function drawPressure(){
@@ -2967,19 +2979,6 @@ function drawRigs(){
 
 /* ============ checklist ============ */
 let ticked={};
-function drawCheck(){
-  $('checkOut').innerHTML=CHECKLIST.map((g,gi)=>
-    '<div class="ck-g"><div class="ck-t">'+g.g+'</div>'+
-    g.items.map((it,ii)=>{
-      const key=gi+'-'+ii, on=!!ticked[key];
-      return '<label class="ck'+(on?' done':'')+'"><input type="checkbox" data-k="'+key+'"'+(on?' checked':'')+'><span>'+it+'</span></label>';
-    }).join('')+'</div>').join('');
-  $('checkOut').querySelectorAll('input[data-k]').forEach(b=>b.onchange=async()=>{
-    ticked[b.dataset.k]=b.checked;
-    await stSet(LK('check'),JSON.stringify(ticked));
-    b.closest('.ck').classList.toggle('done',b.checked);
-  });
-}
 
 /* ============ lake level ============ */
 function drawLevel(){
@@ -3098,36 +3097,6 @@ function drawPatterns(){
 
 /* ============ leave-by ============ */
 let driveMin=null;
-function drawLeave(){
-  if(!FORECAST.length){$('leaveOut').innerHTML='';return;}
-  const d=FORECAST[selDay];
-  if(driveMin==null){
-    $('leaveOut').innerHTML='<div class="win-b">Enter your drive time and this works backward from the day\u0027s best window.</div>';
-    return;
-  }
-  const rows=[];
-  const back=(t,mins)=>new Date(t.valueOf()-mins*60000);
-  const dawn=back(d.sunrise,45);
-  rows.push(['Dawn window opens',ampm(dawn),'Launch by '+ampm(back(dawn,20))+', leave home '+ampm(back(dawn,20+driveMin))]);
-  const dusk=back(d.sunset,120);
-  rows.push(['Evening window opens',ampm(dusk),'Launch by '+ampm(back(dusk,20))+', leave home '+ampm(back(dusk,20+driveMin))]);
-  const runs=[]; let cur=null;
-  const srH=d.sunrise.getHours()+d.sunrise.getMinutes()/60, ssH=d.sunset.getHours()+d.sunset.getMinutes()/60;
-  for(let mnt=0;mnt<1440;mnt+=15){
-    const t=new Date(d.start.valueOf()+mnt*60000), hh=t.getHours()+t.getMinutes()/60;
-    const night=(hh<srH-0.5||hh>ssH+0.5), dark=night&&moonAlt(t)<0;
-    if(dark&&!cur)cur={a:t,b:t}; else if(dark)cur.b=t; else if(cur){runs.push(cur);cur=null;}
-  }
-  if(cur)runs.push(cur);
-  const good=runs.filter(r=>(r.b-r.a)>=45*60000&&r.a.getHours()>=18);
-  if(good.length){
-    const g=good[0];
-    rows.push(['Dark window opens',ampm(g.a),'Launch by '+ampm(back(g.a,45))+' to get set up, leave home '+ampm(back(g.a,45+driveMin))]);
-  }
-  $('leaveOut').innerHTML='<div class="scroll"><table class="reg"><thead><tr><th>Window</th><th>Opens</th><th>Work backward</th></tr></thead><tbody>'+
-    rows.map(r=>'<tr><td>'+r[0]+'</td><td class="mono">'+r[1]+'</td><td>'+r[2]+'</td></tr>').join('')+
-    '</tbody></table></div><div class="win-b" style="margin-top:10px">Allows 20 minutes to launch and rig in daylight, 45 minutes before a night session so lights are set and rods are tied before dark.</div>';
-}
 
 /* ============ hourly wind ============ */
 function drawHourWind(){
@@ -3400,7 +3369,34 @@ function ymd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2
 function populateAiSpecies(){
   const sel=$('aiSpecies'); if(!sel)return;
   const names=(typeof FISH!=='undefined'?FISH.map(f=>f.n):['Largemouth Bass','Crappie','Catfish','White Bass']);
-  sel.innerHTML=names.map(n=>'<option>'+escHtml(n)+'</option>').join('');
+  // "Anything biting" hands the choice to the AI, which is the honest option
+  // when you just want to catch fish and don't care what kind.
+  sel.innerHTML='<option value="any">Anything biting — you pick</option>'
+    +names.map(n=>'<option>'+escHtml(n)+'</option>').join('');
+  sel.value='any';
+}
+// Launch points: the boat ramps you've marked, then your other spots, then a pin.
+function populateAiLaunch(){
+  const sel=$('aiLaunch'); if(!sel)return;
+  const ramps=(waypoints||[]).filter(w=>w.type==='Boat ramp');
+  const others=(waypoints||[]).filter(w=>w.type!=='Boat ramp');
+  const opt=w=>'<option value="wp:'+w.id+'">'+escHtml(w.name)+'</option>';
+  sel.innerHTML='<option value="">Anywhere on the lake</option>'
+    +(ramps.length?'<optgroup label="Your boat ramps">'+ramps.map(opt).join('')+'</optgroup>':'')
+    +(others.length?'<optgroup label="Your other marks">'+others.map(opt).join('')+'</optgroup>':'')
+    +'<option value="pin">Drop a pin…</option>';
+}
+function aiLaunchPoint(){
+  const v=$('aiLaunch').value;
+  if(v==='pin'){
+    const la=parseFloat($('aiLat').value), lo=parseFloat($('aiLon').value);
+    return (isFinite(la)&&isFinite(lo))?{name:'a dropped pin',lat:la,lon:lo}:null;
+  }
+  if(v.indexOf('wp:')===0){
+    const w=(waypoints||[]).filter(x=>String(x.id)===v.slice(3))[0];
+    return w?{name:w.name,lat:w.lat,lon:w.lng,kind:w.type}:null;
+  }
+  return null;
 }
 function condSummary(){
   if(typeof FORECAST==='undefined'||!FORECAST.length)return null;
@@ -3416,12 +3412,15 @@ async function genAiPlan(force){
   if(!AUTH.user){ $('aiPlanMsg').textContent='Sign in to use the AI planner.'; return; }
   const cond=condSummary();
   if(!cond){ $('aiPlanMsg').textContent='Open Day plan with a live forecast first.'; return; }
-  const species=$('aiSpecies').value||'fish';
+  const species=$('aiSpecies').value||'any';
+  const goal=$('aiGoal').value||'numbers';
+  const launch=aiLaunchPoint();
+  const day=$('aiDate').value||cond.date;
   $('aiPlanMsg').textContent='Working on your plan… this can take up to a minute.';
   $('aiPlanBtn').disabled=true;
   try{
     const r=await apiFetch('/api/ai/day-plan',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lakeId:ACTIVE.id,date:cond.date,species:species,conditions:cond,force:!!force})});
+      body:JSON.stringify({lakeId:ACTIVE.id,date:day,species:species,goal:goal,launch:launch,conditions:cond,force:!!force})});
     const d=await r.json();
     if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
     else { $('aiPlanMsg').textContent=''; renderAiPlan(d,species); }
@@ -3429,18 +3428,18 @@ async function genAiPlan(force){
     // The connection dropped, but the server finishes the plan and caches it
     // regardless — so go back for it rather than throwing the work away.
     $('aiPlanMsg').textContent='Connection dropped mid-plan — checking whether it finished…';
-    const got=await pollDayPlan(cond.date,species);
+    const got=await pollDayPlan(day,species,goal);
     $('aiPlanMsg').textContent = got ? '' : 'Couldn’t reach the server. Your plan may still be generating — try again in a moment.';
     if(got) renderAiPlan(got,species);
   }
   $('aiPlanBtn').disabled=false;
 }
 // Collect a plan the server may have finished after our request died.
-async function pollDayPlan(date,species){
+async function pollDayPlan(date,species,goal){
   for(let i=0;i<6;i++){
     await new Promise(r=>setTimeout(r,5000));
     try{
-      const q='?lakeId='+encodeURIComponent(ACTIVE.id)+'&date='+encodeURIComponent(date)+'&species='+encodeURIComponent(species);
+      const q='?lakeId='+encodeURIComponent(ACTIVE.id)+'&date='+encodeURIComponent(date)+'&species='+encodeURIComponent(species)+'&goal='+encodeURIComponent(goal||'numbers');
       const r=await apiFetch('/api/ai/day-plan'+q);
       if(!r.ok)continue;
       const d=await r.json();
@@ -3461,6 +3460,11 @@ function renderAiPlan(d,species){
   if(Array.isArray(c.lures)&&c.lures.length)
     h+='<div style="margin-top:12px"><b>Throw:</b> '+c.lures.map(escHtml).join(' · ')+'</div>';
   if(c.notes)h+='<p style="margin:12px 0 0;color:var(--muted);font-size:13px">'+escHtml(c.notes)+'</p>';
+  // Where the recent-report claims came from, when the planner searched.
+  if(Array.isArray(c.sources)&&c.sources.length)
+    h+='<div style="margin-top:12px"><div class="snap" style="font-weight:700">What it read</div>'
+      +c.sources.slice(0,4).map(x=>'<div class="snap"><a href="'+escHtml(x.url||'#')+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">'
+        +escHtml(x.title||x.url||'source')+'</a>'+(x.asOf?' <span style="color:var(--muted)">· '+escHtml(x.asOf)+'</span>':'')+'</div>').join('')+'</div>';
   h+='<div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="snap" style="color:var(--muted)">'+(d.source==='cache'?'Saved plan':'Fresh plan')+' · '+fresh+'</span><button class="btn ghost" id="aiPlanRefresh" style="min-height:30px;padding:0 12px">Refresh as day nears</button></div></div>';
   $('aiPlanOut').innerHTML=h;
   const rb=$('aiPlanRefresh'); if(rb)rb.onclick=()=>genAiPlan(true);
@@ -4845,28 +4849,17 @@ $('lvGo').onclick=async function(){
   drawLevel();
 };
 $('lvRetry').onclick=loadLevel;
-$('driveGo').onclick=async function(){
-  const v=parseFloat($('driveIn').value);
-  if(isNaN(v)){$('driveIn').focus();return;}
-  driveMin=v; await stSet(LK('drive'),String(v)); drawLeave();
-};
-$('driveIn').addEventListener('keydown',function(e){if(e.key==='Enter')$('driveGo').click()});
 $('wtIn').addEventListener('keydown',function(e){if(e.key==='Enter')setWater()});
 $('spSave').onclick=saveSpot;
 $('spReset').onclick=async function(){
   spots=DEFAULT_SPOTS.slice(); await stSet(LK('spots'),JSON.stringify(spots));
   $('spMsg').textContent='Defaults restored.'; drawSpots();
 };
-$('ckReset').onclick=async function(){
-  ticked={}; await stSet(LK('check'),'{}'); drawCheck();
-  $('ckMsg').textContent='Cleared.'; setTimeout(()=>{$('ckMsg').textContent=''},2500);
-};
 
 /* ============ boot ============ */
 drawMoonStat();
 drawScope();
 drawRigs();
-drawCheck();
 drawWeeks();
 drawLevel();
 drawWpList();
@@ -4893,7 +4886,19 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); populateAiSpecies();
+  await checkAi(); populateAiSpecies(); populateAiLaunch();
+  // Default the plan to today, and don't offer days the forecast can't reach.
+  const dEl=$('aiDate');
+  if(dEl){
+    const t=new Date(), iso=d=>d.toISOString().slice(0,10);
+    dEl.value=iso(new Date(t.getTime()-t.getTimezoneOffset()*60000));
+    dEl.min=dEl.value;
+    dEl.max=iso(new Date(t.getTime()+6*86400000-t.getTimezoneOffset()*60000));
+  }
+  const gEl=$('aiGoal'); if(gEl)gEl.value=(MODE==='trophy'?'trophy':'numbers');
+  const lEl=$('aiLaunch');
+  if(lEl)lEl.onchange=function(){ $('aiPinRow').hidden=(lEl.value!=='pin'); };
+  const gps=$('aiGps'); if(gps)gps.onclick=()=>gpsInto('aiLat','aiLon');
   const apb=$('aiPlanBtn'); if(apb)apb.onclick=()=>genAiPlan(false);
   drawLakeGuide();
   wireFriends();
@@ -4921,7 +4926,7 @@ drawTrips();
   if(lv&&lakeLevel===null){try{const o=JSON.parse(lv);if(o&&o.v!=null){lakeLevel=o.v;lakeWhen=o.d;lakeManual=true;}}catch(e){}}
   const dm=await stGet(LK('drive'));
   if(dm){driveMin=parseFloat(dm); $('driveIn').value=dm;}
-  drawWater();drawSpots();drawCheck();drawLevel();drawLeave();drawPatterns();
+  drawWater();drawSpots();drawLevel();drawPatterns();
   // Shell last, so every panel it can open is already populated.
   renderNav();
   wireOnboard();

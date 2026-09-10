@@ -221,13 +221,14 @@ model DayPlan {
   lakeId       String
   lake         Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
   date         String // YYYY-MM-DD (the fishing day)
-  species      String
+  species      String // a species name, or "any" — let the AI choose the target
+  goal         String   @default("numbers") // numbers | trophy — changes the whole plan
   content      Json // { summary, timeline:[{time,advice}], lures:[], notes }
   daysOutAtGen Int // days between generation and the fishing day
   model        String?
   generatedAt  DateTime @default(now())
 
-  @@unique([lakeId, date, species])
+  @@unique([lakeId, date, species, goal])
   @@index([lakeId])
 }
 
@@ -419,6 +420,7 @@ model AiUsage {
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
   cacheReadTokens Int   @default(0)
+  webSearches  Int      @default(0) // billed per search on top of tokens
   costUsd      Float    @default(0)
   userId       String? // who triggered it, when known
   lakeId       String?

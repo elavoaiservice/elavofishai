@@ -322,6 +322,33 @@ typo in the nav model ships silently and blanks the page for everyone. The app
 stamps `data-js-error` on `<html>` from its own error handler, which is what the
 smoke test reads. It skips cleanly when no Chrome is installed.
 
+## The day planner
+
+You choose the day (today through the end of the forecast), what you're after,
+whether you want numbers or one big fish, and where you're launching — a boat
+ramp you've marked, any other mark, or a dropped pin. Given a launch point the
+plan is ordered around it, with rough distances from the ramp. **Anything
+biting** hands the species choice to the model, which picks the target and says
+why. Plans are cached per lake + day + species + goal, and regenerate as the day
+approaches and the forecast firms up.
+
+### Recent reports (optional, off by default)
+
+With `AI_WEB_SEARCH=1` (admin → Environment) the planner gets Anthropic's
+server-side web search — up to four searches per plan — and is told how to weigh
+what it finds, highest first:
+
+1. official state agency reports, gauge and generation data
+2. local guides, marinas and bait shops on **this** lake in the last two weeks
+3. tournament and club results from this lake this season
+4. angler forum and social posts — weak, unverified signal, never the sole basis
+
+Recency beats authority on what's biting right now; authority beats recency on
+regulations, safety and lake operations. Anything actually used comes back as
+sources with dates and is shown under the plan. Searches are billed at $10 per
+1,000 on top of tokens and are counted in admin → AI usage & cost, which is why
+it is off unless you turn it on.
+
 ## AI usage and cost
 
 Every model call is recorded with its token counts and what it cost, priced at
