@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { deleteObject } from '../services/storage';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
-import { blockedUserIds, blockState } from '../lib/social';
+import { blockedUserIds, blockState, friendIds } from '../lib/social';
+import { canManageMembers, canRemoveMember, canSetRole, roleIn, type GroupRole } from '../lib/groups';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
@@ -14,15 +15,6 @@ import {
   resolveVisibility,
   savePrefs,
 } from '../lib/sharing';
-
-// Accepted-friend user ids for a viewer.
-async function friendIds(userId: string): Promise<string[]> {
-  const fs = await prisma.friendship.findMany({
-    where: { status: 'accepted', OR: [{ userId }, { friendId: userId }] },
-    select: { userId: true, friendId: true },
-  });
-  return fs.map((f) => (f.userId === userId ? f.friendId : f.userId));
-}
 
 export async function socialRoutes(app: FastifyInstance): Promise<void> {
   // ---------- friends ----------
@@ -298,11 +290,20 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const groups = await prisma.friendGroup.findMany({
-      where: { ownerId: me.id },
-      include: { members: { include: { member: { select: { id: true, displayName: true } } } } },
+      where: { OR: [{ ownerId: me.id }, { members: { some: { memberId: me.id } } }] },
+      include: { members: { include: { member: { select: { id: true, displayName: true, avatarUrl: true } } } } },
       orderBy: { createdAt: 'asc' },
     });
-    return { groups: groups.map((g) => ({ id: g.id, name: g.name, members: g.members.map((m) => m.member) })) };
+    return {
+      groups: groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        about: g.about,
+        owner: g.ownerId === me.id,
+        role: g.ownerId === me.id ? 'owner' : g.members.find((m) => m.memberId === me.id)?.role || 'member',
+        members: g.members.map((m) => ({ ...m.member, role: m.role })),
+      })),
+    };
   });
 
   app.post('/api/groups', async (req, reply) => {
@@ -326,11 +327,18 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!me) return;
     const groupId = String((req.params as { id: string }).id);
     const userId = String((req.body as { userId?: string }).userId || '');
-    const g = await prisma.friendGroup.findFirst({ where: { id: groupId, ownerId: me.id } });
-    if (!g) return reply.code(404).send({ error: 'No such group.' });
+    const role = await roleIn(groupId, me.id);
+    if (!role) return reply.code(404).send({ error: 'No such group.' });
+    if (!canManageMembers(role)) return reply.code(403).send({ error: 'Only the owner or an editor can add members.' });
     if (!(await friendIds(me.id)).includes(userId)) return reply.code(400).send({ error: 'You can only add friends.' });
     if ((await blockState(me.id, userId)) !== 'none') return reply.code(403).send({ error: 'You cannot add this angler.' });
-    await prisma.friendGroupMember.upsert({ where: { groupId_memberId: { groupId, memberId: userId } }, create: { groupId, memberId: userId }, update: {} });
+    const wanted = String((req.body as { role?: string }).role || 'member');
+    const newRole = canSetRole(role, null, wanted as GroupRole) ? wanted : 'member';
+    await prisma.friendGroupMember.upsert({
+      where: { groupId_memberId: { groupId, memberId: userId } },
+      create: { groupId, memberId: userId, role: newRole },
+      update: {},
+    });
     return reply.send({ ok: true });
   });
 
@@ -338,8 +346,15 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const p = req.params as { id: string; userId: string };
-    const g = await prisma.friendGroup.findFirst({ where: { id: p.id, ownerId: me.id } });
-    if (!g) return reply.code(404).send({ error: 'No such group.' });
+    const [mine, theirs] = await Promise.all([roleIn(p.id, me.id), roleIn(p.id, p.userId)]);
+    if (!mine) return reply.code(404).send({ error: 'No such group.' });
+    // Leaving is always allowed; removing someone else takes rank over them.
+    if (p.userId !== me.id && !canRemoveMember(mine, theirs)) {
+      return reply.code(403).send({ error: 'You cannot remove this member.' });
+    }
+    if (p.userId === me.id && mine === 'owner') {
+      return reply.code(400).send({ error: 'Hand the group over or delete it — an owner cannot just leave.' });
+    }
     await prisma.friendGroupMember.deleteMany({ where: { groupId: p.id, memberId: p.userId } });
     return reply.send({ ok: true });
   });

@@ -1,5 +1,14 @@
 import { prisma } from '../db';
 
+// Accepted-friend user ids for a viewer.
+export async function friendIds(userId: string): Promise<string[]> {
+  const fs = await prisma.friendship.findMany({
+    where: { status: 'accepted', OR: [{ userId }, { friendId: userId }] },
+    select: { userId: true, friendId: true },
+  });
+  return fs.map((f) => (f.userId === userId ? f.friendId : f.userId));
+}
+
 // Has either user blocked the other? Blocking is stored as a Friendship row
 // with status=blocked; `requestedBy` records who did it, so only they can lift
 // it. The EFFECT is symmetric — a block hides both people from each other.

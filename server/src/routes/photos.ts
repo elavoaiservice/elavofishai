@@ -11,6 +11,7 @@ import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import { areFriends, blockState } from '../lib/social';
+import { canSee } from './posts';
 import { deleteObject, getObject, putObject, storageConfigured } from '../services/storage';
 
 // The client resizes before upload (which also strips EXIF — phone photos carry
@@ -70,7 +71,10 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
     if (!me) return;
     const photo = await prisma.photo.findUnique({
       where: { id: String((req.params as { id: string }).id) },
-      include: { trip: { select: { userId: true, visibility: true, groupId: true } } },
+      include: {
+        trip: { select: { userId: true, visibility: true, groupId: true } },
+        listing: { select: { sellerId: true } },
+      },
     });
     if (!photo) return reply.code(404).send({ error: 'No such photo.' });
 
@@ -78,17 +82,28 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
     if (!mine) {
       // Blocked either way: the photo does not exist as far as they're concerned.
       if ((await blockState(me.id, photo.userId)) !== 'none') return reply.code(404).send({ error: 'No such photo.' });
-      const trip = photo.trip;
-      // An unattached photo is private to its owner until a catch gives it a
-      // visibility — the safe default while a form is half-filled.
-      if (!trip) return reply.code(403).send({ error: 'Not your photo.' });
-      const allowed =
-        trip.visibility === 'public' ||
-        (trip.visibility === 'friends' && (await areFriends(me.id, photo.userId))) ||
-        (trip.visibility === 'group' && trip.groupId
-          ? !!(await prisma.friendGroupMember.findFirst({ where: { groupId: trip.groupId, memberId: me.id } })) ||
-            !!(await prisma.friendGroup.findFirst({ where: { id: trip.groupId, ownerId: me.id } }))
-          : false);
+
+      // A photo takes the audience of whatever it hangs on — a catch, a post,
+      // or a listing. Nothing yet means it is still private to its owner: the
+      // safe default while a form is half-filled.
+      let allowed = false;
+      if (photo.tripId && photo.trip) {
+        const trip = photo.trip;
+        allowed =
+          trip.visibility === 'public' ||
+          (trip.visibility === 'friends' && (await areFriends(me.id, photo.userId))) ||
+          (trip.visibility === 'group' && trip.groupId
+            ? !!(await prisma.friendGroupMember.findFirst({ where: { groupId: trip.groupId, memberId: me.id } })) ||
+              !!(await prisma.friendGroup.findFirst({ where: { id: trip.groupId, ownerId: me.id } }))
+            : false);
+      } else if (photo.postId) {
+        allowed = await canSee(me.id, photo.postId);
+      } else if (photo.listingId) {
+        // Classifieds are open to every signed-in angler by design.
+        allowed = true;
+      } else {
+        return reply.code(403).send({ error: 'Not your photo.' });
+      }
       if (!allowed) return reply.code(403).send({ error: 'Not shared with you.' });
     }
 
@@ -115,7 +130,7 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
 /** Orphans: uploaded, never attached to a catch. Swept after a day. */
 export async function sweepOrphanPhotos(): Promise<void> {
   const orphans = await prisma.photo.findMany({
-    where: { tripId: null, createdAt: { lt: new Date(Date.now() - 86400000) } },
+    where: { tripId: null, postId: null, listingId: null, createdAt: { lt: new Date(Date.now() - 86400000) } },
     select: { id: true, key: true },
     take: 200,
   });

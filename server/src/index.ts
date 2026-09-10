@@ -15,6 +15,9 @@ import { socialRoutes } from './routes/social';
 import { messageRoutes } from './routes/messages';
 import { clientErrorRoutes, sweepClientErrors } from './routes/clientErrors';
 import { photoRoutes, sweepOrphanPhotos } from './routes/photos';
+import { postRoutes } from './routes/posts';
+import { groupPageRoutes } from './routes/groups';
+import { marketRoutes } from './routes/market';
 import { refreshAllSources, sweepReports } from './services/reports';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
@@ -60,6 +63,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(messageRoutes);
   await app.register(clientErrorRoutes);
   await app.register(photoRoutes);
+  await app.register(postRoutes);
+  await app.register(groupPageRoutes);
+  await app.register(marketRoutes);
 
   // The planner app lives at /app — GATED: the Granbury (and all lake) data is
   // account-only. Anonymous visitors are sent to the login screen; the HTML is

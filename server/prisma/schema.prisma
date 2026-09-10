@@ -84,7 +84,7 @@ model User {
 
   // ---- profile ----
   location        String? // e.g. "Granbury, TX"
-  bio             String? @db.Text
+  bio             String?   @db.Text
   favoriteSpecies String? // e.g. "Largemouth Bass"
   favoriteLure    String? // e.g. "1/16 oz chartreuse jig"
   // ---- electronics ---- what the angler actually runs, so the app stops
@@ -98,7 +98,7 @@ model User {
   termsAcceptedAt DateTime? // when they accepted, and which version
   termsVersion    String?
   favoriteLakeId  String?
-  favoriteLake    Lake?   @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
+  favoriteLake    Lake?     @relation("UserFavoriteLake", fields: [favoriteLakeId], references: [id], onDelete: SetNull)
 
   // ---- discoverability ----
   // Who can find this angler by searching. `friends_of_friends` (the default)
@@ -129,6 +129,10 @@ model User {
   reports              LakeReport[]
   planFeedback         PlanFeedback[]
   photos               Photo[]
+  posts                Post[]
+  comments             PostComment[]
+  reactions            PostReaction[]
+  listings             Listing[]
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is
@@ -174,28 +178,30 @@ model RateLimit {
 
 // Lakes are GLOBAL and deduped — one row per real body of water, shared by all users.
 model Lake {
-  id          String      @id @default(cuid())
-  name        String
-  region      String? // state / province
-  country     String?
-  lat         Float
-  lon         Float
-  gaugeId     String?
-  gaugeSource GaugeSource @default(none)
-  fullPool    Float?
-  bbox        String? // JSON [w,s,e,n]
-  rampsJson   String? @db.Text // cached OSM boat ramps for this lake
-  rampsAt     DateTime? // when that cache was filled
+  id           String      @id @default(cuid())
+  name         String
+  region       String? // state / province
+  country      String?
+  lat          Float
+  lon          Float
+  gaugeId      String?
+  gaugeSource  GaugeSource @default(none)
+  fullPool     Float?
+  bbox         String? // JSON [w,s,e,n]
+  rampsJson    String?     @db.Text // cached OSM boat ramps for this lake
+  rampsAt      DateTime? // when that cache was filled
   corpsProject String? // "SWF:WTYT2" — nearest USACE project, "" = none nearby
   corpsAt      DateTime?
-  osmRef      String?     @unique // e.g. "way/12345678"
-  addedById   String?
-  addedBy     User?       @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime    @default(now())
+  osmRef       String?     @unique // e.g. "way/12345678"
+  addedById    String?
+  addedBy      User?       @relation("LakeAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
 
   profile       LakeProfile?
   userLakes     UserLake[]
   trips         Trip[]
+  posts         Post[]
+  listings      Listing[]
   spots         Spot[]
   waypoints     Waypoint[]
   dayPlans      DayPlan[]
@@ -227,16 +233,16 @@ model Message {
 // fishing day approaches and the forecast firms up — `daysOutAtGen` records how
 // far out the forecast was when generated.
 model DayPlan {
-  id           String   @id @default(cuid())
+  id           String         @id @default(cuid())
   lakeId       String
-  lake         Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  lake         Lake           @relation(fields: [lakeId], references: [id], onDelete: Cascade)
   date         String // YYYY-MM-DD (the fishing day)
   species      String // a species name, or "any" — let the AI choose the target
-  goal         String   @default("numbers") // numbers | trophy — changes the whole plan
+  goal         String         @default("numbers") // numbers | trophy — changes the whole plan
   content      Json // { summary, timeline:[{time,advice}], lures:[], notes }
   daysOutAtGen Int // days between generation and the fishing day
   model        String?
-  generatedAt  DateTime @default(now())
+  generatedAt  DateTime       @default(now())
   feedback     PlanFeedback[]
 
   @@unique([lakeId, date, species, goal])
@@ -373,8 +379,10 @@ model FriendGroup {
   ownerId   String
   owner     User                @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   name      String
+  about     String?             @db.Text
   createdAt DateTime            @default(now())
   members   FriendGroupMember[]
+  posts     Post[]
 
   @@index([ownerId])
 }
@@ -385,6 +393,10 @@ model FriendGroupMember {
   group    FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   memberId String
   member   User        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  // editor  — runs the group with the owner: invites, removes, moderates posts
+  // collaborator — posts to the group page
+  // member  — reads the page and comments
+  role     String      @default("member")
   addedAt  DateTime    @default(now())
 
   @@unique([groupId, memberId])
@@ -411,7 +423,7 @@ model ClientError {
   id        String   @id @default(cuid())
   message   String   @db.Text
   source    String? // file:line:col
-  stack     String? @db.Text
+  stack     String?  @db.Text
   url       String? // page the error happened on
   userAgent String?
   userId    String? // when the reporter was signed in
@@ -426,19 +438,19 @@ model ClientError {
 // expensive. Cost is computed at call time from the rate table, so a later
 // price change never rewrites history.
 model AiUsage {
-  id           String   @id @default(cuid())
-  feature      String // day_plan | lake_profile | identify_catch
-  model        String
-  inputTokens  Int      @default(0)
-  outputTokens Int      @default(0)
-  cacheReadTokens Int   @default(0)
-  webSearches  Int      @default(0) // billed per search on top of tokens
-  costUsd      Float    @default(0)
-  userId       String? // who triggered it, when known
-  lakeId       String?
-  ok           Boolean  @default(true)
-  ms           Int      @default(0)
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  feature         String // day_plan | lake_profile | identify_catch
+  model           String
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  cacheReadTokens Int      @default(0)
+  webSearches     Int      @default(0) // billed per search on top of tokens
+  costUsd         Float    @default(0)
+  userId          String? // who triggered it, when known
+  lakeId          String?
+  ok              Boolean  @default(true)
+  ms              Int      @default(0)
+  createdAt       DateTime @default(now())
 
   @@index([createdAt])
   @@index([feature, createdAt])
@@ -461,8 +473,8 @@ model LakeReport {
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
 
-  @@index([lakeId, publishedAt])
   @@unique([lakeId, url]) // one row per fetched item
+  @@index([lakeId, publishedAt])
 }
 
 // Where reports come from. A source can be pinned to one lake or to a whole
@@ -530,6 +542,10 @@ model Photo {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tripId    String? // the catch it belongs to, once attached
   trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  postId    String? // or the post it belongs to
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  listingId String? // or the classified ad it belongs to
+  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
   lakeId    String?
   mediaType String
   bytes     Int
@@ -538,6 +554,8 @@ model Photo {
   createdAt DateTime @default(now())
 
   @@index([tripId])
+  @@index([postId])
+  @@index([listingId])
   @@index([userId, createdAt])
 }
 
@@ -615,4 +633,90 @@ model ProfileContribution {
   createdAt DateTime @default(now())
 
   @@index([lakeId])
+}
+
+// ---------------------------------------------------------------------------
+// Posts: the wall. A post is what an angler says on their own page or on a
+// group's page — the part of the app that isn't a catch or a waypoint.
+// ---------------------------------------------------------------------------
+model Post {
+  id         String       @id @default(cuid())
+  authorId   String
+  author     User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  // A group post lives on that group's page and is visible to its members;
+  // groupId null means it lives on the author's own page.
+  groupId    String?
+  group      FriendGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  lakeId     String?
+  lake       Lake?        @relation(fields: [lakeId], references: [id], onDelete: SetNull)
+  body       String       @db.Text
+  // private | friends | public — ignored for group posts, where the group is
+  // the audience.
+  visibility String       @default("friends")
+  pinned     Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  photos    Photo[]
+  comments  PostComment[]
+  reactions PostReaction[]
+
+  @@index([authorId, createdAt])
+  @@index([groupId, createdAt])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model PostReaction {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind   String @default("like")
+
+  @@unique([postId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Classifieds. Gear changes hands constantly in fishing clubs; this is the
+// board for it. A listing is visible to every signed-in angler — the whole
+// point is reach — so it carries no visibility field, only a status.
+// ---------------------------------------------------------------------------
+model Listing {
+  id         String    @id @default(cuid())
+  sellerId   String
+  seller     User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title      String
+  body       String    @db.Text
+  // Cents, so no float ever touches a price. null = "make an offer".
+  priceCents Int?
+  currency   String    @default("USD")
+  category   String    @default("other") // rods | reels | electronics | boats | tackle | other
+  condition  String? // new | like_new | good | fair | parts
+  location   String? // free text: "Granbury, TX"
+  lakeId     String?
+  lake       Lake?     @relation(fields: [lakeId], references: [id], onDelete: SetNull)
+  status     String    @default("active") // active | sold | withdrawn
+  soldAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  // Bumping re-sorts without faking the creation date, so "listed 3 months ago"
+  // stays honest.
+  bumpedAt   DateTime  @default(now())
+  photos     Photo[]
+
+  @@index([status, bumpedAt])
+  @@index([sellerId])
+  @@index([category, status])
 }

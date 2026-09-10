@@ -1738,6 +1738,127 @@ body.feed-loading .stat-v *{visibility:hidden}
   <a href="/privacy.html" style="color:var(--primary-dark)">Privacy</a>
 </footer>
 </section>
+
+<!-- ============ the social side: feed, walls, group pages, classifieds ============ -->
+<style>
+  .soc-card{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:14px;margin-bottom:12px}
+  .soc-head{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+  .soc-av{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary);flex:0 0 auto;font-size:15px}
+  .soc-av.lg{width:76px;height:76px;font-size:26px}
+  .soc-who{font-weight:600;font-size:14px;cursor:pointer}
+  .soc-who:hover{color:var(--primary)}
+  .soc-when{font-size:12px;color:var(--muted)}
+  .soc-body{font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+  .soc-shots{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .soc-shots img{max-width:100%;width:180px;height:180px;object-fit:cover;border-radius:12px;cursor:zoom-in}
+  .soc-acts{display:flex;gap:6px;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap}
+  .soc-act{background:none;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;color:var(--muted)}
+  .soc-act:hover{background:var(--accent-soft);color:var(--primary)}
+  .soc-act.on{color:var(--primary);font-weight:600}
+  .soc-cmts{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+  .soc-cmt{display:flex;gap:8px;align-items:flex-start}
+  .soc-cmt .bub{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:7px 11px;font-size:13px;line-height:1.4;flex:1;word-wrap:break-word}
+  .soc-in{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+  textarea.soc-in{resize:vertical;min-height:64px}
+  .soc-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .soc-chip{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:3px 8px;border-radius:999px;background:var(--accent-mid);color:var(--primary-dark)}
+  .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+  .mk-card{border:1px solid var(--border);border-radius:16px;background:var(--surface);overflow:hidden;display:flex;flex-direction:column}
+  .mk-shot{width:100%;height:160px;object-fit:cover;background:var(--bg)}
+  .mk-noshot{height:160px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--bg);color:var(--muted)}
+  .mk-in{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .mk-price{font-weight:700;font-size:17px;color:var(--primary-dark)}
+  .mk-sold{position:relative}
+  .mk-sold .mk-shot,.mk-sold .mk-noshot{opacity:.45}
+  .grp-mem{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .grp-mem:last-child{border-bottom:none}
+  @media(max-width:680px){.soc-shots img{width:100%;height:220px}}
+</style>
+
+<section class="panel" id="p-feed" hidden>
+  <div id="fdAuth" class="lede">Sign in (top-left) to see what your crew is posting.</div>
+  <div id="fdMain" hidden>
+    <div class="soc-card">
+      <div class="soc-head"><div class="soc-av" id="fdMeAv"></div>
+        <div style="flex:1"><div class="soc-who" id="fdMeName"></div>
+          <div class="soc-when">Posting to your page</div></div></div>
+      <textarea class="soc-in" id="fdBody" rows="3" placeholder="How did it go out there?"></textarea>
+      <div class="soc-row">
+        <select class="soc-in" id="fdVis" style="max-width:190px" aria-label="Who can see this">
+          <option value="friends">Friends only</option>
+          <option value="public">Everyone on ElavoFishAI</option>
+          <option value="private">Just me</option>
+        </select>
+        <label class="btn ghost btn-sm" style="cursor:pointer">📷 Photo<input type="file" id="fdPhoto" accept="image/*" hidden></label>
+        <button class="btn" id="fdPost">Post</button>
+        <span class="snap" id="fdMsg"></span>
+      </div>
+      <div class="soc-shots" id="fdPreview" hidden></div>
+    </div>
+    <div id="fdList"></div>
+    <div style="text-align:center;margin:14px 0"><button class="btn ghost" id="fdMore" hidden>Older posts</button></div>
+  </div>
+</section>
+
+<section class="panel" id="p-wall" hidden>
+  <div id="wlBody"><p class="snap">Loading…</p></div>
+</section>
+
+<section class="panel" id="p-group" hidden>
+  <div id="gpBody"><p class="snap">Pick a group from your crew page.</p></div>
+</section>
+
+<section class="panel" id="p-market" hidden>
+  <div id="mkAuth" class="lede">Sign in (top-left) to browse and post gear.</div>
+  <div id="mkMain" hidden>
+    <p class="lede" style="margin-top:0">Rods, reels, electronics and boats, listed by other anglers.
+       ElavoFishAI takes no cut and holds no money — you message the seller and sort the deal out
+       between you, so treat it like any other classified ad: see the gear, meet somewhere sensible.</p>
+    <div class="soc-row" style="margin-bottom:12px">
+      <select class="soc-in" id="mkCat" style="max-width:170px" aria-label="Category">
+        <option value="">All categories</option>
+        <option value="rods">Rods</option><option value="reels">Reels</option>
+        <option value="electronics">Electronics</option><option value="boats">Boats &amp; motors</option>
+        <option value="tackle">Tackle</option><option value="other">Other</option>
+      </select>
+      <input class="soc-in" id="mkQ" style="max-width:220px" placeholder="Search listings" aria-label="Search listings">
+      <button class="btn ghost btn-sm" id="mkSearch">Search</button>
+      <button class="btn ghost btn-sm" id="mkMine">My listings</button>
+      <button class="btn btn-sm" id="mkNew">Sell something</button>
+    </div>
+    <div class="soc-card" id="mkForm" hidden>
+      <h3 style="margin-top:0">List an item</h3>
+      <div class="soc-row">
+        <input class="soc-in" id="mkTitle" style="flex:1;min-width:200px" placeholder="What is it? e.g. Shimano Curado 200K">
+        <input class="soc-in" id="mkPrice" style="max-width:140px" placeholder="Price, e.g. 129">
+      </div>
+      <div class="soc-row">
+        <select class="soc-in" id="mkFCat" style="max-width:170px" aria-label="Category">
+          <option value="rods">Rods</option><option value="reels">Reels</option>
+          <option value="electronics">Electronics</option><option value="boats">Boats &amp; motors</option>
+          <option value="tackle">Tackle</option><option value="other" selected>Other</option>
+        </select>
+        <select class="soc-in" id="mkCond" style="max-width:160px" aria-label="Condition">
+          <option value="">Condition…</option>
+          <option value="new">New</option><option value="like_new">Like new</option>
+          <option value="good">Good</option><option value="fair">Fair</option><option value="parts">For parts</option>
+        </select>
+        <input class="soc-in" id="mkLoc" style="max-width:190px" placeholder="Where? e.g. Granbury, TX">
+      </div>
+      <textarea class="soc-in" id="mkBody" rows="3" style="margin-top:8px" placeholder="Condition, what's included, why you're selling."></textarea>
+      <div class="soc-row">
+        <label class="btn ghost btn-sm" style="cursor:pointer">📷 Photo<input type="file" id="mkPhoto" accept="image/*" hidden></label>
+        <button class="btn" id="mkSave">Post listing</button>
+        <button class="btn ghost btn-sm" id="mkCancel">Cancel</button>
+        <span class="snap" id="mkMsg"></span>
+      </div>
+      <div class="soc-shots" id="mkPreview" hidden></div>
+    </div>
+    <div class="mk-grid" id="mkList"></div>
+    <p class="snap" id="mkEmpty" hidden>Nothing listed yet. Be the first.</p>
+  </div>
+</section>
+
   </main>
 </div>
 
@@ -3675,7 +3796,7 @@ async function loadFriends(){
 async function refreshFriends(){
   try{ const r=await apiFetch('/api/friends'); const d=await r.json(); FRIENDS=d.friends||[];
     $('frRequests').innerHTML=(d.incoming||[]).map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">wants to be friends</span></span><span><button class="btn btn-sm" data-acc="'+f.friendshipId+'">Accept</button> <button class="btn ghost btn-sm" data-dec="'+f.friendshipId+'">Decline</button></span></div>').join('');
-    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span>'+escHtml(f.displayName)+' <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button> <button class="btn ghost btn-sm" data-block="'+f.id+'" data-blockname="'+escHtml(f.displayName)+'">Block</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
+    $('frList').innerHTML=(FRIENDS.length?FRIENDS.map(f=>'<div class="fr-row"><span><span class="soc-who" data-wall="'+f.id+'">'+escHtml(f.displayName)+'</span> <span class="snap">'+escHtml(f.email)+'</span></span><span style="white-space:nowrap"><button class="btn ghost btn-sm" data-msg="'+f.id+'" data-msgname="'+escHtml(f.displayName)+'">Message</button> <button class="btn ghost btn-sm" data-rem="'+f.friendshipId+'">Remove</button> <button class="btn ghost btn-sm" data-block="'+f.id+'" data-blockname="'+escHtml(f.displayName)+'">Block</button></span></div>').join(''):'<p class="snap">No friends yet — send a request above.</p>')+((d.outgoing||[]).length?'<p class="snap" style="margin-top:8px">Pending sent: '+d.outgoing.map(f=>escHtml(f.displayName)).join(', ')+'</p>':'');
     // Blocked anglers: hidden from your feed, spots and messages until unblocked.
     const bl=d.blocked||[];
     const be=$('blockedEmpty'); if(be)be.hidden=bl.length>0;
@@ -3728,7 +3849,12 @@ async function addFriend(){ const email=$('frEmail').value.trim(); if(!email)ret
 }
 async function refreshGroups(){
   try{ const r=await apiFetch('/api/groups'); const d=await r.json(); GROUPS=d.groups||[];
-    $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button></div><div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div><select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select></div>').join('')||'<p class="snap">No groups yet.</p>';
+    $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><span>'+
+      '<button class="btn ghost btn-sm" data-group="'+g.id+'">Open page</button>'+
+      (g.owner?' <button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button>':'')+'</span></div>'+
+      '<div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div>'+
+      (g.role==='owner'||g.role==='editor'?'<select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select>':'')+
+      '</div>').join('')||'<p class="snap">No groups yet.</p>';
     const opts='<option value="">Pick a group…</option>'+GROUPS.map(g=>'<option value="'+g.id+'">'+escHtml(g.name)+'</option>').join('');
     $('shGroup').innerHTML=opts;
     renderSharing();
@@ -4569,9 +4695,11 @@ $('mTrophy').onclick=function(){setMode('trophy')};
    toggle (Eaters/Trophy) only appears on views where it changes anything. */
 const NAV=[
   {id:'today',   ic:'🎯', label:'Today',    title:'Today',    sub:'When to go, and what to do about it.'},
+  {id:'feed',    ic:'📰', label:'Feed',     title:'Feed',     sub:'What your crew is posting, newest first.'},
   {id:'plan',    ic:'🧠', label:'Day plan', title:'Day plan', sub:'Hour by hour for the day you pick.'},
   {id:'log',     ic:'📍', label:'My water', title:'My water', sub:'Your map, your spots and every trip.'},
-  {id:'friends', ic:'🎣', label:'Crew',     title:'Your crew', sub:'Friends, what they are sharing, and your messages.', badge:true},
+  {id:'friends', ic:'🎣', label:'Crew',     title:'Your crew', sub:'Friends, groups, and your messages.', badge:true},
+  {id:'market',  ic:'🏷️', label:'Classifieds', title:'Classifieds', sub:'Gear for sale from other anglers. We take no cut and hold no money.'},
   {grp:'guide', ic:'📚', label:'Lake guide', kids:[
     {id:'water',     ic:'💧', label:'Water',      title:'Water',      sub:'Temperature, level, and what the water column is doing.'},
     {id:'season',    ic:'🌿', label:'Season',     title:'Season',     sub:'Month by month on this lake.'},
@@ -4589,8 +4717,14 @@ const NAV=[
     {id:'data',    ic:'💾', label:'Data & export', title:'Data & export', sub:'GPX for your plotter, and a full backup of your log.'}
   ]}
 ];
-const VIEWS=[]; (function(){ NAV.forEach(n=>n.kids?n.kids.forEach(k=>VIEWS.push(k.id)):VIEWS.push(n.id)); })();
-const VIEW_META={}; (function(){ const add=n=>{VIEW_META[n.id]=n;}; NAV.forEach(n=>n.kids?n.kids.forEach(add):add(n)); })();
+// Reached by tapping a name or a group, never from the sidebar: real views,
+// but no nav entry, so they get their titles the same way without appearing.
+const OFF_NAV=[
+  {id:'wall',  title:'Angler', sub:'Their page — what they have posted and landed.'},
+  {id:'group', title:'Group',  sub:'The crew page only its members can see.'}
+];
+const VIEWS=[]; (function(){ NAV.forEach(n=>n.kids?n.kids.forEach(k=>VIEWS.push(k.id)):VIEWS.push(n.id)); OFF_NAV.forEach(n=>VIEWS.push(n.id)); })();
+const VIEW_META={}; (function(){ const add=n=>{VIEW_META[n.id]=n;}; NAV.forEach(n=>n.kids?n.kids.forEach(add):add(n)); OFF_NAV.forEach(add); })();
 // The goal toggle only changes these views' output.
 const MODE_VIEWS=['today','plan','water','season','species','rigs','scope'];
 const GRP_KEY='efa:navgrp';
@@ -4613,7 +4747,7 @@ function navHtml(){
       '</div>';
   }).join('');
 }
-const BOT=[['today','🎯','Today'],['plan','🧠','Plan'],['log','📍','My water'],['friends','🎣','Crew']];
+const BOT=[['today','🎯','Today'],['feed','📰','Feed'],['plan','🧠','Plan'],['friends','🎣','Crew']];
 function renderNav(){
   const h=navHtml();
   $('navMain').innerHTML=h; $('navDrawer').innerHTML=h;
@@ -4650,6 +4784,10 @@ function go(id,push){
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
+  if(id==='feed'){ loadSocialFeed(); }
+  if(id==='market'){ loadMarket(); }
+  if(id==='wall'){ loadWall(); }
+  if(id==='group'){ loadGroupPage(); }
 }
 // My water holds three sections behind sub-tabs; goSub() lets other views
 // (and the Today quick actions) land on the right one.
@@ -4681,6 +4819,393 @@ document.addEventListener('click',function(e){
 $('mobMenu').onclick=openDrawer;
 $('mobLake').onclick=function(){ toggleLakePanel(); };
 window.addEventListener('hashchange',function(){ const h=location.hash.replace('#',''); if(h&&h!==CUR)go(h,false); });
+
+/* ================= the social side =================
+   A feed, a page per angler, a page per group, and a classifieds board. All
+   four render the same post card, because a post is a post wherever it lands —
+   the only thing that changes is who is allowed to write one. */
+function initial(name){ return escHtml(String(name||'?').trim().charAt(0).toUpperCase()); }
+function avatarHtml(u,cls){
+  const c='soc-av'+(cls?' '+cls:'');
+  return u&&u.avatarUrl?'<img class="'+c+'" src="'+escHtml(u.avatarUrl)+'" alt="">'
+    :'<div class="'+c+'">'+initial(u&&u.displayName)+'</div>';
+}
+function whenAgo(iso){
+  const t=new Date(iso).getTime(); if(!t)return '';
+  const s=Math.max(0,(Date.now()-t)/1000);
+  if(s<60)return 'just now';
+  if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';
+  if(s<604800)return Math.floor(s/86400)+'d ago';
+  return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+}
+const VIS_LABEL={public:'Everyone',friends:'Friends',private:'Only you',group:'Group'};
+function shotsHtml(ids){
+  if(!ids||!ids.length)return '';
+  return '<div class="soc-shots">'+ids.map(id=>'<img src="/api/photos/'+escHtml(id)+'" alt="" loading="lazy" data-zoom="/api/photos/'+escHtml(id)+'">').join('')+'</div>';
+}
+/* One card, used by the feed, a wall and a group page. `opts.canModerate` is
+   the group case: an editor may remove a post they did not write. */
+function postCard(p,opts){
+  opts=opts||{};
+  const canDelete=p.mine||opts.canModerate;
+  return '<div class="soc-card" data-post="'+escHtml(p.id)+'">'+
+    '<div class="soc-head">'+avatarHtml(p.author)+
+      '<div style="flex:1;min-width:0"><span class="soc-who" data-wall="'+escHtml(p.author.id)+'">'+escHtml(p.author.displayName)+'</span>'+
+      '<div class="soc-when">'+whenAgo(p.createdAt)+
+        (p.group&&!opts.inGroup?' · <span class="soc-who" data-group="'+escHtml(p.group.id)+'">'+escHtml(p.group.name)+'</span>':'')+
+        (p.lake?' · '+escHtml(p.lake.name):'')+
+        (VIS_LABEL[p.visibility]&&!p.group?' · '+VIS_LABEL[p.visibility]:'')+
+        (p.pinned?' · 📌 Pinned':'')+
+      '</div></div>'+
+      (canDelete?'<button class="soc-act" data-delpost="'+escHtml(p.id)+'" title="Delete">✕</button>':'')+
+    '</div>'+
+    (p.body?'<div class="soc-body">'+escHtml(p.body)+'</div>':'')+
+    shotsHtml(p.photos)+
+    '<div class="soc-acts">'+
+      '<button class="soc-act'+(p.liked?' on':'')+'" data-like="'+escHtml(p.id)+'">'+(p.liked?'❤️':'🤍')+' <span data-likes>'+(p.likes||0)+'</span></button>'+
+      '<button class="soc-act" data-focus-cmt="'+escHtml(p.id)+'">💬 '+(p.comments?p.comments.length:0)+'</button>'+
+      (opts.canModerate?'<button class="soc-act" data-pin="'+escHtml(p.id)+'">'+(p.pinned?'Unpin':'Pin')+'</button>':'')+
+    '</div>'+
+    '<div class="soc-cmts" data-cmts>'+(p.comments||[]).map(commentHtml).join('')+'</div>'+
+    '<div class="soc-row"><input class="soc-in" data-cmt-in="'+escHtml(p.id)+'" placeholder="Write a comment" style="flex:1"></div>'+
+  '</div>';
+}
+function commentHtml(c){
+  return '<div class="soc-cmt" data-cmt="'+escHtml(c.id)+'">'+avatarHtml(c.author)+
+    '<div class="bub"><b class="soc-who" data-wall="'+escHtml(c.author.id)+'">'+escHtml(c.author.displayName)+'</b> '+escHtml(c.body)+
+    '<span class="soc-when" style="display:block">'+whenAgo(c.createdAt)+'</span></div>'+
+    (c.mine?'<button class="soc-act" data-delcmt="'+escHtml(c.id)+'">✕</button>':'')+'</div>';
+}
+
+/* ---- composing: a post can carry one photo, uploaded the same way a catch
+   photo is, so the storage rules and the EXIF stripping are shared. ---- */
+let fdPhoto=null, mkPhotoData=null;
+function bindPhotoPicker(inputId,previewId,set){
+  const el=$(inputId); if(!el)return;
+  el.onchange=function(){
+    const f=el.files&&el.files[0]; if(!f)return;
+    resizePhoto(f,1200,function(dataUrl){
+      set(dataUrl);
+      const pv=$(previewId);
+      if(pv){ pv.innerHTML=dataUrl?'<img src="'+dataUrl+'" alt="">':''; pv.hidden=!dataUrl; }
+    });
+  };
+}
+async function uploadDataUrl(dataUrl){
+  if(!dataUrl)return null;
+  try{
+    const r=await apiFetch('/api/photos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})});
+    if(!r.ok)return null;
+    return ((await r.json()).photo||{}).id||null;
+  }catch(e){ return null; }
+}
+
+/* ---- the feed ---- */
+let FD_BEFORE=null;
+async function loadSocialFeed(more){
+  const auth=$('fdAuth'), main=$('fdMain');
+  if(auth)auth.hidden=!!AUTH.user;
+  if(main)main.hidden=!AUTH.user;
+  if(!AUTH.user)return;
+  if(AUTH.user){ $('fdMeAv').outerHTML=avatarHtml(AUTH.user).replace('class="soc-av"','class="soc-av" id="fdMeAv"'); $('fdMeName').textContent=AUTH.user.displayName||'You'; }
+  if(!more)FD_BEFORE=null;
+  try{
+    const r=await apiFetch('/api/feed'+(more&&FD_BEFORE?'?before='+encodeURIComponent(FD_BEFORE):''));
+    if(!r.ok)return;
+    const d=await r.json();
+    const html=(d.posts||[]).map(p=>postCard(p)).join('');
+    if(more)$('fdList').insertAdjacentHTML('beforeend',html); else $('fdList').innerHTML=html||
+      '<p class="snap">Nothing here yet. Post something, or add a few anglers to your crew — their public and friends-only posts land here.</p>';
+    FD_BEFORE=d.nextBefore;
+    $('fdMore').hidden=!d.nextBefore;
+  }catch(e){}
+}
+async function submitPost(){
+  const body=$('fdBody').value.trim();
+  if(!body&&!fdPhoto){ $('fdMsg').textContent='Write something first.'; return; }
+  $('fdMsg').textContent='Posting…';
+  const photoId=await uploadDataUrl(fdPhoto);
+  try{
+    const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({body:body,visibility:$('fdVis').value,photoIds:photoId?[photoId]:undefined})});
+    const d=await r.json();
+    if(!r.ok){ $('fdMsg').textContent=d.error||'Could not post that.'; return; }
+    $('fdBody').value=''; fdPhoto=null; $('fdPreview').hidden=true; $('fdPreview').innerHTML='';
+    $('fdMsg').textContent='Posted ✓';
+    setTimeout(()=>{ $('fdMsg').textContent=''; },1800);
+    $('fdList').insertAdjacentHTML('afterbegin',postCard(d.post));
+  }catch(e){ $('fdMsg').textContent='Server not reachable.'; }
+}
+
+/* ---- an angler's page ---- */
+let WALL_ID=null;
+function openWall(userId){ WALL_ID=userId; go('wall'); loadWall(); }
+async function loadWall(){
+  if(!WALL_ID){ $('wlBody').innerHTML='<p class="snap">Pick an angler from your crew.</p>'; return; }
+  $('wlBody').innerHTML='<p class="snap">Loading…</p>';
+  try{
+    const r=await apiFetch('/api/users/'+encodeURIComponent(WALL_ID)+'/wall');
+    const d=await r.json();
+    if(!r.ok){ $('wlBody').innerHTML='<p class="snap">'+escHtml(d.error||'Could not open that page.')+'</p>'; return; }
+    const u=d.user;
+    const facts=[u.location,u.favoriteSpecies?'Favourite: '+u.favoriteSpecies:'',u.favoriteLake?'Home water: '+u.favoriteLake.name:'',
+      u.hasBoat===true?(u.boatType||'Fishes from a boat'):(u.hasBoat===false?'Bank & wade':''),u.yearsFishing?u.yearsFishing+' fishing':'']
+      .filter(Boolean).map(f=>'<span class="soc-chip">'+escHtml(f)+'</span>').join(' ');
+    $('wlBody').innerHTML=
+      '<div class="soc-card"><div class="soc-head">'+avatarHtml(u,'lg')+
+        '<div style="flex:1"><h3 style="margin:0">'+escHtml(u.displayName)+'</h3>'+
+        '<div class="soc-when">'+(u.friendCount||0)+' in their crew'+(u.isFriend&&!u.isMe?' · in your crew':'')+'</div></div>'+
+        (u.isMe?'':'<button class="btn ghost btn-sm" data-msg-user="'+escHtml(u.id)+'">Message</button>')+
+      '</div>'+
+      (u.bio?'<div class="soc-body">'+escHtml(u.bio)+'</div>':'')+
+      (facts?'<div class="soc-row">'+facts+'</div>':'')+'</div>'+
+      (d.catches&&d.catches.length?'<div class="soc-card"><h3 style="margin-top:0">Recent catches</h3>'+
+        d.catches.map(c=>'<div class="grp-mem">'+(c.photos.length?'<img class="soc-av" src="/api/photos/'+escHtml(c.photos[0])+'" alt="">':'<div class="soc-av">🐟</div>')+
+          '<div style="flex:1"><b>'+escHtml(c.species)+'</b>'+(c.weight?' · '+c.weight+' lb':'')+(c.lure?' · '+escHtml(c.lure):'')+
+          '<div class="soc-when">'+(c.lake?escHtml(c.lake.name)+' · ':'')+whenAgo(c.date)+'</div></div></div>').join('')+'</div>':'')+
+      ((d.posts||[]).map(p=>postCard(p)).join('')||'<p class="snap">No posts to show.</p>');
+  }catch(e){ $('wlBody').innerHTML='<p class="snap">Server not reachable.</p>'; }
+}
+
+/* ---- a group's page ---- */
+let GROUP_ID=null;
+const ROLE_LABEL={owner:'Owner',editor:'Editor',collaborator:'Collaborator',member:'Member'};
+function openGroup(id){ GROUP_ID=id; go('group'); loadGroupPage(); }
+async function loadGroupPage(){
+  if(!GROUP_ID){ $('gpBody').innerHTML='<p class="snap">Pick a group from your crew page.</p>'; return; }
+  $('gpBody').innerHTML='<p class="snap">Loading…</p>';
+  try{
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/page');
+    const d=await r.json();
+    if(!r.ok){ $('gpBody').innerHTML='<p class="snap">'+escHtml(d.error||'Could not open that group.')+'</p>'; return; }
+    const g=d.group, me=d.me;
+    const members=g.members.map(function(m){
+      const canChange=me.canAdminister&&m.role!=='owner'||(me.role==='editor'&&m.role!=='owner'&&m.role!=='editor');
+      return '<div class="grp-mem">'+avatarHtml(m)+
+        '<div style="flex:1"><span class="soc-who" data-wall="'+escHtml(m.id)+'">'+escHtml(m.displayName)+'</span>'+
+        '<div class="soc-when">'+ROLE_LABEL[m.role]+'</div></div>'+
+        (canChange?'<select class="soc-in" style="max-width:150px" data-role-for="'+escHtml(m.id)+'">'+
+          ['editor','collaborator','member'].map(rl=>'<option value="'+rl+'"'+(m.role===rl?' selected':'')+
+            (me.role==='editor'&&rl==='editor'?' disabled':'')+'>'+ROLE_LABEL[rl]+'</option>').join('')+'</select>':'')+
+        (canChange?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Remove">✕</button>':'')+
+        (m.id===(AUTH.user&&AUTH.user.id)&&m.role!=='owner'?'<button class="btn ghost btn-sm" data-leave-group="1">Leave</button>':'')+
+      '</div>';
+    }).join('');
+    $('gpBody').innerHTML=
+      '<div class="soc-card"><div class="soc-head"><div class="soc-av lg">'+initial(g.name)+'</div>'+
+        '<div style="flex:1"><h3 style="margin:0">'+escHtml(g.name)+'</h3>'+
+        '<div class="soc-when">'+g.members.length+' member'+(g.members.length===1?'':'s')+' · you are '+ROLE_LABEL[me.role].toLowerCase()+'</div></div>'+
+        (me.canAdminister?'<button class="btn ghost btn-sm" id="gpEdit">Edit</button>':'')+
+      '</div>'+
+      (g.about?'<div class="soc-body">'+escHtml(g.about)+'</div>':'')+
+      (me.canAdminister?'<div id="gpEditForm" hidden><div class="soc-row">'+
+        '<input class="soc-in" id="gpName" style="flex:1" value="'+escHtml(g.name)+'">'+
+        '</div><textarea class="soc-in" id="gpAbout" rows="2" placeholder="What is this group for?">'+escHtml(g.about||'')+'</textarea>'+
+        '<div class="soc-row"><button class="btn btn-sm" id="gpSave">Save</button><span class="snap" id="gpMsg"></span></div></div>':'')+
+      '</div>'+
+      '<div class="soc-card"><h3 style="margin-top:0">Members</h3>'+members+
+        (me.canModerate?'<div class="soc-row"><select class="soc-in" id="gpAddWho" style="max-width:220px"><option value="">Add from your crew…</option></select>'+
+          '<button class="btn ghost btn-sm" id="gpAdd">Add</button><span class="snap" id="gpAddMsg"></span></div>':'')+
+      '</div>'+
+      (me.canPost?'<div class="soc-card"><textarea class="soc-in" id="gpBodyIn" rows="2" placeholder="Post to '+escHtml(g.name)+'"></textarea>'+
+        '<div class="soc-row"><label class="btn ghost btn-sm" style="cursor:pointer">📷 Photo<input type="file" id="gpPhoto" accept="image/*" hidden></label>'+
+        '<button class="btn" id="gpPost">Post</button><span class="snap" id="gpPostMsg"></span></div>'+
+        '<div class="soc-shots" id="gpPreview" hidden></div></div>'
+        :'<p class="snap">You can read this group and comment. Ask an editor if you want to post.</p>')+
+      ((d.posts||[]).map(p=>postCard(p,{canModerate:me.canModerate,inGroup:true})).join('')||'<p class="snap">Nothing posted here yet.</p>');
+
+    if(me.canModerate)fillGroupAddList();
+    bindPhotoPicker('gpPhoto','gpPreview',function(v){ gpPhoto=v; });
+  }catch(e){ $('gpBody').innerHTML='<p class="snap">Server not reachable.</p>'; }
+}
+let gpPhoto=null;
+async function fillGroupAddList(){
+  try{
+    const r=await apiFetch('/api/friends'); if(!r.ok)return;
+    const d=await r.json(); const sel=$('gpAddWho'); if(!sel)return;
+    (d.friends||[]).forEach(function(f){ const o=document.createElement('option'); o.value=f.id; o.textContent=f.displayName; sel.appendChild(o); });
+  }catch(e){}
+}
+
+/* ---- classifieds ---- */
+let MK_MINE=false;
+const COND_LABEL={new:'New',like_new:'Like new',good:'Good',fair:'Fair',parts:'For parts'};
+async function loadMarket(){
+  const auth=$('mkAuth'), main=$('mkMain');
+  if(auth)auth.hidden=!!AUTH.user;
+  if(main)main.hidden=!AUTH.user;
+  if(!AUTH.user)return;
+  const qs=[];
+  if(MK_MINE)qs.push('mine=1');
+  if($('mkCat').value)qs.push('category='+encodeURIComponent($('mkCat').value));
+  if($('mkQ').value.trim())qs.push('q='+encodeURIComponent($('mkQ').value.trim()));
+  try{
+    const r=await apiFetch('/api/market'+(qs.length?'?'+qs.join('&'):''));
+    if(!r.ok)return;
+    const rows=(await r.json()).listings||[];
+    $('mkEmpty').hidden=!!rows.length;
+    $('mkList').innerHTML=rows.map(function(l){
+      return '<div class="mk-card'+(l.status==='sold'?' mk-sold':'')+'" data-listing="'+escHtml(l.id)+'">'+
+        (l.photos.length?'<img class="mk-shot" src="/api/photos/'+escHtml(l.photos[0])+'" alt="" loading="lazy" data-zoom="/api/photos/'+escHtml(l.photos[0])+'">':'<div class="mk-noshot">🎣</div>')+
+        '<div class="mk-in">'+
+          '<div class="mk-price">'+(l.price?escHtml(l.price):'Make an offer')+(l.status==='sold'?' <span class="soc-chip">Sold</span>':'')+
+            (l.status==='withdrawn'?' <span class="soc-chip">Hidden</span>':'')+'</div>'+
+          '<b>'+escHtml(l.title)+'</b>'+
+          '<div class="soc-when">'+[l.condition?COND_LABEL[l.condition]:'',l.location,whenAgo(l.bumpedAt)].filter(Boolean).map(escHtml).join(' · ')+'</div>'+
+          (l.body?'<div class="soc-body" style="font-size:13px">'+escHtml(l.body.slice(0,200))+(l.body.length>200?'…':'')+'</div>':'')+
+          '<div class="soc-row" style="margin-top:auto">'+
+            (l.mine
+              ? '<button class="btn ghost btn-sm" data-mk-sold="'+escHtml(l.id)+'">'+(l.status==='sold'?'Relist':'Mark sold')+'</button>'+
+                '<button class="btn ghost btn-sm" data-mk-bump="'+escHtml(l.id)+'">Bump</button>'+
+                '<button class="soc-act" data-mk-del="'+escHtml(l.id)+'">✕</button>'
+              : '<span class="soc-who" data-wall="'+escHtml(l.seller.id)+'">'+escHtml(l.seller.displayName)+'</span>'+
+                '<button class="btn btn-sm" data-mk-contact="'+escHtml(l.id)+'">Ask about it</button>')+
+          '</div>'+
+        '</div></div>';
+    }).join('');
+  }catch(e){}
+}
+async function submitListing(){
+  const title=$('mkTitle').value.trim();
+  if(!title){ $('mkMsg').textContent='Give it a title.'; return; }
+  $('mkMsg').textContent='Posting…';
+  const photoId=await uploadDataUrl(mkPhotoData);
+  try{
+    const r=await apiFetch('/api/market',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      title:title, body:$('mkBody').value.trim(), price:$('mkPrice').value.trim(),
+      category:$('mkFCat').value, condition:$('mkCond').value, location:$('mkLoc').value.trim(),
+      photoIds:photoId?[photoId]:undefined })});
+    const d=await r.json();
+    if(!r.ok){ $('mkMsg').textContent=d.error||'Could not post that.'; return; }
+    ['mkTitle','mkPrice','mkBody','mkLoc'].forEach(id=>{ $(id).value=''; });
+    mkPhotoData=null; $('mkPreview').hidden=true; $('mkPreview').innerHTML='';
+    $('mkMsg').textContent=''; $('mkForm').hidden=true;
+    loadMarket();
+  }catch(e){ $('mkMsg').textContent='Server not reachable.'; }
+}
+
+/* ---- one delegated handler for every social surface ---- */
+document.addEventListener('click',async function(e){
+  const t=e.target;
+  const wall=t.closest('[data-wall]'); if(wall){ openWall(wall.dataset.wall); return; }
+  const grp=t.closest('[data-group]'); if(grp){ openGroup(dataGroupId(grp)); return; }
+  const zoom=t.closest('[data-zoom]'); if(zoom){ window.open(zoom.dataset.zoom,'_blank','noopener'); return; }
+
+  const like=t.closest('[data-like]');
+  if(like){
+    const on=like.classList.contains('on');
+    const r=await apiFetch('/api/posts/'+encodeURIComponent(like.dataset.like)+'/like',{method:on?'DELETE':'POST'});
+    if(r.ok){ const d=await r.json(); like.classList.toggle('on',d.liked); like.firstChild.textContent=d.liked?'❤️ ':'🤍 ';
+      const n=like.querySelector('[data-likes]'); if(n)n.textContent=d.likes; }
+    return;
+  }
+  const focus=t.closest('[data-focus-cmt]');
+  if(focus){ const card=focus.closest('[data-post]'); const inp=card&&card.querySelector('[data-cmt-in]'); if(inp)inp.focus(); return; }
+  const delp=t.closest('[data-delpost]');
+  if(delp){
+    if(!confirm('Delete this post?'))return;
+    const r=await apiFetch('/api/posts/'+encodeURIComponent(delp.dataset.delpost),{method:'DELETE'});
+    if(r.ok){ const c=delp.closest('[data-post]'); if(c)c.remove(); }
+    return;
+  }
+  const delc=t.closest('[data-delcmt]');
+  if(delc){
+    const r=await apiFetch('/api/comments/'+encodeURIComponent(delc.dataset.delcmt),{method:'DELETE'});
+    if(r.ok){ const c=delc.closest('[data-cmt]'); if(c)c.remove(); }
+    return;
+  }
+  const pin=t.closest('[data-pin]');
+  if(pin){
+    const want=pin.textContent.trim()==='Pin';
+    const r=await apiFetch('/api/posts/'+encodeURIComponent(pin.dataset.pin)+'/pin',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:want})});
+    if(r.ok)loadGroupPage();
+    return;
+  }
+  const msgu=t.closest('[data-msg-user]'); if(msgu){ go('friends'); goCrew('msgs'); if(typeof openThread==='function')openThread(msgu.dataset.msgUser); return; }
+
+  // group admin
+  if(t.id==='gpEdit'){ const f=$('gpEditForm'); if(f)f.hidden=!f.hidden; return; }
+  if(t.id==='gpSave'){
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID),{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:$('gpName').value,about:$('gpAbout').value})});
+    const d=await r.json();
+    if(!r.ok){ $('gpMsg').textContent=d.error||'Could not save.'; return; }
+    loadGroupPage(); return;
+  }
+  if(t.id==='gpAdd'){
+    const who=$('gpAddWho').value; if(!who){ $('gpAddMsg').textContent='Pick someone first.'; return; }
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:who})});
+    const d=await r.json();
+    if(!r.ok){ $('gpAddMsg').textContent=d.error||'Could not add them.'; return; }
+    loadGroupPage(); return;
+  }
+  if(t.id==='gpPost'){
+    const body=$('gpBodyIn').value.trim();
+    if(!body&&!gpPhoto){ $('gpPostMsg').textContent='Write something first.'; return; }
+    $('gpPostMsg').textContent='Posting…';
+    const photoId=await uploadDataUrl(gpPhoto);
+    const r=await apiFetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({body:body,groupId:GROUP_ID,photoIds:photoId?[photoId]:undefined})});
+    const d=await r.json();
+    if(!r.ok){ $('gpPostMsg').textContent=d.error||'Could not post that.'; return; }
+    gpPhoto=null; loadGroupPage(); return;
+  }
+  const rem=t.closest('[data-remove-member]');
+  if(rem){
+    if(!confirm('Remove this member from the group?'))return;
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/members/'+encodeURIComponent(rem.dataset.removeMember),{method:'DELETE'});
+    if(r.ok)loadGroupPage(); return;
+  }
+  if(t.closest('[data-leave-group]')){
+    if(!confirm('Leave this group?'))return;
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/members/'+encodeURIComponent(AUTH.user.id),{method:'DELETE'});
+    if(r.ok){ GROUP_ID=null; go('friends'); } return;
+  }
+
+  // classifieds
+  if(t.id==='mkNew'){ $('mkForm').hidden=!$('mkForm').hidden; return; }
+  if(t.id==='mkCancel'){ $('mkForm').hidden=true; return; }
+  if(t.id==='mkSave'){ submitListing(); return; }
+  if(t.id==='mkSearch'){ loadMarket(); return; }
+  if(t.id==='mkMine'){ MK_MINE=!MK_MINE; t.textContent=MK_MINE?'All listings':'My listings'; loadMarket(); return; }
+  const sold=t.closest('[data-mk-sold]');
+  if(sold){
+    const relist=sold.textContent.trim()==='Relist';
+    const r=await apiFetch('/api/market/'+encodeURIComponent(sold.dataset.mkSold),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:relist?'active':'sold'})});
+    if(r.ok)loadMarket(); return;
+  }
+  const bump=t.closest('[data-mk-bump]');
+  if(bump){ const r=await apiFetch('/api/market/'+encodeURIComponent(bump.dataset.mkBump),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bump:true})}); if(r.ok)loadMarket(); return; }
+  const mdel=t.closest('[data-mk-del]');
+  if(mdel){ if(!confirm('Delete this listing?'))return; const r=await apiFetch('/api/market/'+encodeURIComponent(mdel.dataset.mkDel),{method:'DELETE'}); if(r.ok)loadMarket(); return; }
+  const contact=t.closest('[data-mk-contact]');
+  if(contact){
+    const msg=prompt('Message the seller about this item:');
+    if(!msg)return;
+    const r=await apiFetch('/api/market/'+encodeURIComponent(contact.dataset.mkContact)+'/contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:msg})});
+    alert(r.ok?'Sent — their reply lands in your messages.':'Could not send that message.');
+    return;
+  }
+  if(t.id==='fdPost'){ submitPost(); return; }
+  if(t.id==='fdMore'){ loadSocialFeed(true); return; }
+});
+function dataGroupId(el){ return el.dataset.group; }
+document.addEventListener('keydown',async function(e){
+  if(e.key!=='Enter')return;
+  const inp=e.target.closest('[data-cmt-in]'); if(!inp)return;
+  const body=inp.value.trim(); if(!body)return;
+  inp.disabled=true;
+  const r=await apiFetch('/api/posts/'+encodeURIComponent(inp.dataset.cmtIn)+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:body})});
+  inp.disabled=false;
+  if(!r.ok)return;
+  const d=await r.json();
+  const card=inp.closest('[data-post]'); const list=card&&card.querySelector('[data-cmts]');
+  if(list)list.insertAdjacentHTML('beforeend',commentHtml(d.comment));
+  inp.value='';
+});
+bindPhotoPicker('fdPhoto','fdPreview',function(v){ fdPhoto=v; });
+bindPhotoPicker('mkPhoto','mkPreview',function(v){ mkPhotoData=v; });
 
 /* ---- fishing reports ----
    Agency feeds and anglers who were actually there, newest first. These feed
