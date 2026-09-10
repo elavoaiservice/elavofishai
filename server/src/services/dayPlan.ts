@@ -47,7 +47,11 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY || "";
-  const model = process.env.AI_PROFILE_MODEL || "claude-opus-4-8";
+  // Day plans are generated while someone stares at a button, so they run on
+  // the fast model by default — Opus took 24-27s in production, long enough
+  // that phones and proxies gave up before the answer arrived. Lake profiles,
+  // which are generated once and cached forever, keep AI_PROFILE_MODEL.
+  const model = process.env.AI_PLAN_MODEL || "claude-sonnet-5";
   if (!apiKey) {
     // No key yet — hand back the cached plan if we have one, else signal needsKey.
     if (cached) return { ok: true, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
@@ -77,10 +81,11 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
 
   let text = '';
   try {
-    const client = new Anthropic({ apiKey });
+    // A hung call must fail rather than hold the HTTP request open forever.
+    const client = new Anthropic({ apiKey, timeout: 45_000, maxRetries: 1 });
     const stream = client.messages.stream({
       model,
-      max_tokens: 2000,
+      max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
     } as Anthropic.MessageCreateParamsStreaming);
     const msg = await stream.finalMessage();

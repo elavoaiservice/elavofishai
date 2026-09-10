@@ -15,6 +15,25 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   // AI day planner: day + lake + target species -> hour-by-hour plan (cached,
   // regenerates as the day nears).
+  // Cache-only read. Generation can outlive a phone's connection — the plan is
+  // still written to the cache when it finishes, so a client that lost the
+  // response can come back and collect it instead of burning another call.
+  app.get('/api/ai/day-plan', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const q = req.query as { lakeId?: string; date?: string; species?: string };
+    const lakeId = String(q.lakeId || ''), date = String(q.date || ''), species = String(q.species || '');
+    if (!lakeId || !date || !species) return reply.code(400).send({ error: 'Need a lake, a date and a species.' });
+    const cached = await prisma.dayPlan.findUnique({
+      where: { lakeId_date_species: { lakeId, date, species } },
+    });
+    if (!cached) return reply.send({ ok: false, pending: true });
+    return reply.send({
+      ok: true, content: cached.content, generatedAt: cached.generatedAt,
+      daysOutAtGen: cached.daysOutAtGen, source: 'cache',
+    });
+  });
+
   app.post('/api/ai/day-plan', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
