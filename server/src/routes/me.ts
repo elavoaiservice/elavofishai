@@ -13,8 +13,10 @@ const MAX_AVATAR_CHARS = 400_000; // ~300KB binary
 export async function meRoutes(app: FastifyInstance): Promise<void> {
   // Never errors for anonymous users. `user` stays a string (or null) for
   // backward-compat with the existing frontend; `account` carries the full record.
-  app.get('/api/me', async (req) => {
-    const u = await currentUser(req);
+  app.get('/api/me', async (req, reply) => {
+    // The app asks this on every load, which makes it the natural place for a
+    // session to slide forward — see currentUser().
+    const u = await currentUser(req, reply);
     return {
       user: u ? (u.displayName || u.username || u.email) : null,
       inviteRequired: false,

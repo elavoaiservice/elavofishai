@@ -6,7 +6,7 @@ import { prisma } from '../db';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
-  startAdminLogin, completeAdminLogin, endAdminSession, currentAdmin, requireAdmin, createAdminUser,
+  startAdminLogin, completeAdminLogin, endAdminSession, ADMIN_SESSION_HOURS, currentAdmin, requireAdmin, createAdminUser,
 } from '../lib/admin-auth';
 
 // Lightweight audit trail for admin actions (actor kept in meta.by; AuditLog.userId
@@ -67,7 +67,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/me', async (req) => {
     const admin = await currentAdmin(req);
-    return { admin: admin ? { username: admin.username, email: admin.email } : null };
+    // expiresAt is sent so the console can warn before it drops you, and sign
+    // you out on the dot rather than at the next failed click.
+    return {
+      admin: admin ? { username: admin.username, email: admin.email, expiresAt: admin.expiresAt } : null,
+      sessionHours: ADMIN_SESSION_HOURS,
+    };
   });
 
   // ---- metrics ----

@@ -142,6 +142,7 @@ async function main(): Promise<void> {
       .then((r) => r.stored && app.log.info(r, 'fishing reports refreshed'))
       .catch(() => {});
     await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
+    await prisma.adminSession.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   };
   await sweep();
   const timer = setInterval(sweep, 6 * hour);

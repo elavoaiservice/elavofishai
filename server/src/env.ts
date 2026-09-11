@@ -20,7 +20,10 @@ export const env = {
   // Cookies are Secure only when we know we're behind HTTPS.
   cookieSecure: bool(process.env.COOKIE_SECURE, false),
   cookieName: process.env.COOKIE_NAME || 'efa_session',
-  sessionDays: Number(process.env.SESSION_DAYS || 90),
+  // 400 days is the longest a browser will honour a cookie (RFC 6265bis), and
+  // the session slides forward on use — see lib/auth.ts. Effect: signed in
+  // until you sign out.
+  sessionDays: Number(process.env.SESSION_DAYS || 400),
   magicLinkTtlMin: Number(process.env.MAGIC_LINK_TTL_MIN || 15),
 
   // Dev/console magic-link mode: return + log the link instead of emailing it.
