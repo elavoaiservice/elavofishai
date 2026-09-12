@@ -16,3 +16,6 @@ server/dist/
 backups/
 deploy/*
 !deploy/.gitkeep
+
+# workflow tooling keeps agent worktrees here; never part of the app
+.claude/

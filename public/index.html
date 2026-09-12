@@ -1046,7 +1046,9 @@ body.feed-loading .stat-v *{visibility:hidden}
     <button class="btn ghost" data-go="log" data-sub="spots">&#128205; Spots</button>
     <button class="btn ghost" data-go="friends">&#127907; Friends' activity</button>
   </div>
+  <div id="wxAlerts"></div>
   <div class="today-grid" id="todayCards"></div>
+  <div id="wxDiscussion"></div>
 
   <details class="sec" id="secWeek">
   <summary class="sec-t">The next 7 days</summary>
@@ -2345,39 +2347,7 @@ const KNOTS=[
 ];
 
 /* ============ checklist ============ */
-const CHECKLIST=[
- {g:"Legal and safety",items:[
-  "Navigation lights working \u2014 required from sunset to sunrise, and the most common ticket on this lake",
-  "One wearable PFD per person, plus one throwable",
-  "Fire extinguisher, in date",
-  "Sound device \u2014 a whistle counts",
-  "Fishing license current \u2014 the Texas year rolls over September 1",
-  "Someone on shore knows where you launched and when you plan to be back"]},
- {g:"Night gear",items:[
-  "Green lights, two of them \u2014 one bow, one stern",
-  "Battery charged, and a way to check it mid-trip",
-  "Headlamp with a red mode. White light kills your night vision and your bite",
-  "Backup flashlight",
-  "Bug spray",
-  "Something warm \u2014 even in August it drops on the water at 3am"]},
- {g:"Tackle",items:[
-  "Rods rigged before dark. Tying knots by headlamp at midnight is how trips get wasted",
-  "Pre-tied leaders in a leader wallet",
-  "Pliers, line cutters, hook file",
-  "Landing net where you can reach it without standing up",
-  "Rags and a bucket \u2014 cut bait at night gets everywhere"]},
- {g:"Bait plan",items:[
-  "Net shad fresh at 4:45-5:00am under the lights rather than holding them overnight",
-  "Above 80 degrees threadfin will not survive a night in a tank. Catch them the morning you need them",
-  "3-4 in shad are the sweet spot for everything on this lake",
-  "Aerator running before you put bait in, not after",
-  "Backup bait \u2014 minnows or cut shad on ice \u2014 in case the net comes up empty"]},
- {g:"Electronics",items:[
-  "GLS 10 on firmware 2.57 or newer, or the LVS34 simply will not run",
-  "Chartplotter updated",
-  "Sonar transmission OFF before trailering. The transducer is water cooled and sleep mode does not stop it pinging",
-  "Compass calibrated if the transducer has been off the boat"]}
-];
+/* (the pre-launch checklist that used to live here was Granbury- and gear-specific and had no caller) */
 
 /* ============ livescope ============ */
 const SCOPE={
@@ -2703,6 +2673,16 @@ const band=s=>s>=80?5:s>=68?4:s>=55?3:s>=42?2:1;
 const bandName=b=>['','Poor','Slow','Fair','Good','Go'][b];
 
 /* ============ hourly quality ============ */
+let SOL_HOURS=null; // [{major:[[h0,h1],...], minor:[...]}] for the day being scored, set by hourQualityFor()
+function solWindows(dayStart){
+  try{
+    const sol=solunarTimes(dayStart); if(!sol)return null;
+    const hrs=t=>t?(t.getHours()+t.getMinutes()/60):null;
+    const win=(t,half)=>{ const h=hrs(t); return h==null?null:[h-half,h+half]; };
+    return { major:[win(sol.overhead,1),win(sol.underfoot,1)].filter(Boolean), minor:[win(sol.rise,0.5),win(sol.set,0.5)].filter(Boolean) };
+  }catch(e){ return null; }
+}
+function hourQualityFor(day){ SOL_HOURS=solWindows(day.start); try{ return hourQuality(day); } finally { SOL_HOURS=null; } }
 function hourQuality(day){
   const out=[];
   const sr=day.sunrise, ss=day.sunset;
@@ -2713,10 +2693,17 @@ function hourQuality(day){
     if(mid>=srH-1&&mid<=srH+2)q+=3;
     if(mid>=ssH-2&&mid<=ssH+1)q+=3;
     const night=(mid<srH-1||mid>ssH+1);
-    if(night){
+    // Night pays in warm water, when fish move shallow after dark to feed;
+    // in cold water it is the worst time there is. The old code gave every
+    // night hour a bonus year-round, against the app's own cold-water advice.
+    const wt=(typeof waterTemp!=='undefined'&&waterTemp!=null)?waterTemp:estWater();
+    if(night&&wt>=68){
       const t=new Date(day.start.valueOf()+h*3600000+1800000);
       q+= (moonAlt(t)<0) ? 2 : 1;
-    }
+    } else if(night){ q-=1; }
+    // The solunar windows the help text promises: a major overlapping this
+    // hour is worth two, a minor one.
+    if(SOL_HOURS){ if(SOL_HOURS.major.some(w=>mid>=w[0]&&mid<=w[1]))q+=2; else if(SOL_HOURS.minor.some(w=>mid>=w[0]&&mid<=w[1]))q+=1; }
     const ht=day.hourTemp[h];
     if(ht!=null){ if(ht>=100)q-=3; else if(ht>=95)q-=2; else if(ht>=90)q-=1; }
     if(!night&&mid>=11&&mid<=16&&day.cloud<25)q-=1;
@@ -2961,7 +2948,7 @@ function drawDayPlan(){
     $('hours').innerHTML='';
     $('hrlab').innerHTML='<span class="snap">Hour-by-hour quality needs the live weather feed \u2014 sun, moon and windows above are computed locally and are exact.</span>';
   } else {
-  const q=hourQuality(d);
+  const q=hourQualityFor(d);   // with the day's feeding windows applied
   const cols=['','#EAF3FB','#C3E2F4','#C98A1E','#3E8E5A','#1D6F42'];
   $('hours').innerHTML=q.map((v,h)=>'<div class="hr" style="background:'+cols[v]+
     '" title="'+((h%12)||12)+(h<12?'am':'pm')+' — '+['','poor','slow','fair','good','prime'][v]+'"></div>').join('');
@@ -3006,10 +2993,14 @@ function drawHead(){
   if(MODE==="trophy"){
     t = curHi===null
       ? '<b>'+FULL[mi]+', trophy hunting.</b> Best shot is '+top+', then '+second+'. Expect few bites &mdash; that is the trade.'
-      : curHi>=100
+      : (curHi>=100&&ACTIVE.seed)
       ? '<b>Heat favors flatheads.</b> '+Math.round(curHi)+'&deg; today. Big flatheads feed at night in exactly this weather while everything else shuts down. Live sunfish on heavy tackle, in the nastiest timber you can find. Best shot: '+top+'.'
-      : curHi<=55
+      : (curHi<=55&&ACTIVE.seed)
       ? '<b>Cold water, giant blues.</b> '+Math.round(curHi)+'&deg; today. This is the overlooked trophy window on Granbury &mdash; big blue cats feed hard now and nobody is out there. Whole fresh shad, anchored on a deep bend. Best shot: '+top+'.'
+      : curHi>=100
+      ? '<b>Heat.</b> '+Math.round(curHi)+'&deg; today. The one trophy bite in this weather is after dark &mdash; big fish feed at night when the surface cools. Best shot: '+top+'.'
+      : curHi<=55
+      ? '<b>Cold water.</b> '+Math.round(curHi)+'&deg; today. Fish are grouped up deep and slow; fewer bites, but the biggest fish of the year are catchable now. Best shot: '+top+'.'
       : '<b>'+FULL[mi]+', trophy hunting.</b> '+Math.round(curHi)+'&deg; today. '+top+' is your best shot, '+second+' second. Bigger baits, fewer bites.';
   } else {
     t = curHi===null
@@ -3215,15 +3206,28 @@ function drawTrips(){
 /* ============ water ============ */
 let waterTemp=null, waterDate=null;
 function estWater(){
-  // fall back to a seasonal estimate if nothing logged
+  // A seasonal estimate when nothing is logged and no gauge reports one.
+  // The curve is Lake Granbury's (32.4°N); further north the lake runs
+  // colder and peaks later — roughly 1.1°F per degree of latitude, and the
+  // warmest month slides from July toward August. Still a guess, and it is
+  // labelled as one everywhere it is shown.
   const seed=[50,53,60,68,76,83,87,88,83,73,62,53];
-  return seed[mi];
+  const lat=(ACTIVE&&isFinite(ACTIVE.lat))?ACTIVE.lat:32.4;
+  const shift=Math.max(-8,Math.min(8,(lat-32.4)*1.1));
+  const lag=lat>40?1:0;                       // peak later up north
+  const m=((mi-lag)%12+12)%12;
+  return Math.round(seed[m]-shift);
 }
+// Is the water still warming this month? The old code said "January to June"
+// for every lake; surface water keeps warming into July in the south and
+// into August up north.
+function waterWarming(){ const lat=(ACTIVE&&isFinite(ACTIVE.lat))?ACTIVE.lat:32.4; return mi<(lat>40?7:6); }
 function drawWater(){
-  const warming=(mi<=5);
+  const warming=waterWarming();
   const t=waterTemp!=null?waterTemp:estWater();
   const st=waterState(t,warming);
   const est=waterTemp==null;
+  const src=est?'seasonal estimate for this latitude':(WTEMP_SRC&&WTEMP_SRC.source?({usgs:'USGS gauge reading',glsea:'NOAA satellite surface temperature',ndbc:'NOAA buoy'}[WTEMP_SRC.source]||WTEMP_SRC.source)+(WTEMP_SRC.stale?' (stale)':''):'your reading');
   // distance to next state
   const S=[];for(let x=Math.round(t);x<=100;x++){if(waterState(x,warming).n!==st.n){S.push(x);break}}
   const D=[];for(let x=Math.round(t);x>=32;x--){if(waterState(x,warming).n!==st.n){D.push(x);break}}
@@ -3355,7 +3359,9 @@ let ticked={};
 function drawLevel(){
   if(lakeLevel===null){
     $('levelv').innerHTML='—';
-    $('levelOut').innerHTML='<div class="note" style="margin-top:0"><b>No reading yet.</b> The USGS gage feed is blocked in this preview. Open the file directly in your browser, or enter the elevation below \u2014 the Brazos River Authority publishes it, and USGS gage 08090900 reports it live.</div>';
+    $('levelOut').innerHTML='<div class="note" style="margin-top:0"><b>No level reading for this lake.</b> '+
+      (WATER_SRC&&WATER_SRC.reason?escHtml(WATER_SRC.reason)+' ':'No gauge we can read reports it. ')+
+      'Enter the elevation below if you know it \u2014 marinas and the operating authority usually post it.</div>';
     return;
   }
   const d=lakeLevel-FULL_POOL, mn=levelMeaning(lakeLevel);
@@ -3369,32 +3375,43 @@ function drawLevel(){
   }else if(lakeTrend!=null){ tr='<div class="wnext">Steady over the past week.</div>'; }
   $('levelOut').innerHTML=
     '<div style="display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">'+
-    '<div><div class="stat-k">'+(lakeManual?'Entered':'USGS gage 08090900')+'</div>'+
+    '<div><div class="stat-k">'+(lakeManual?'Entered by you':(WATER_SRC&&WATER_SRC.level?({usgs:'USGS gauge '+((WATER_SRC.gauge&&WATER_SRC.gauge.id)||''),twdb:'Texas Water Development Board'}[WATER_SRC.level.source]||WATER_SRC.level.source):'Gauge'))+'</div>'+
     '<div class="lvl-big">'+lakeLevel.toFixed(2)+'<small> ft msl</small></div>'+
     (lakeWhen?'<div class="wnext">'+lakeWhen+'</div>':'')+'</div>'+
     '<div><div class="stat-k">Vs full pool</div><div class="lvl-big" style="color:'+
       (Math.abs(d)<1?'var(--success)':d<-3?'var(--danger)':'var(--amber)')+'">'+sign+d.toFixed(2)+'<small> ft</small></div></div>'+
     '</div>'+tr+
     '<div class="wstate" style="margin-top:14px"><div class="wstate-t">'+mn.n+'</div><div class="wstate-s">'+mn.t+'</div></div>'+
-    '<div class="note">Full pool is '+FULL_POOL.toFixed(1)+' ft msl. Note that the USGS WaterServices feed this pulls from is scheduled for decommissioning in early 2027 \u2014 if it stops one day, that is why, and manual entry will still work.</div>';
+    '<div class="note">Full pool is '+FULL_POOL.toFixed(1)+' ft msl. What matters is usually the direction: rising water pushes fish into new cover, falling water pulls them to the first drop.</div>';
 }
+/* Level and water temperature, from the server's /water endpoint, which knows
+   which parameter each gauge actually publishes (Granbury's is 62614, and the
+   old direct request for 00062 returned nothing for the whole life of the
+   app), falls back to the Texas Water Development Board for Texas lakes, and
+   to NOAA's satellite temperature on the Great Lakes. */
+let WATER_SRC=null, WTEMP_SRC=null;
 function loadLevel(){
-  if(!USGS_SITE)return;   // no USGS gauge for this lake → manual level entry only
-  const u='https://waterservices.usgs.gov/nwis/iv/?sites='+USGS_SITE+'&parameterCd=00062&format=json&period=P7D';
-  fetch(u).then(r=>{if(!r.ok)throw 0;return r.json()})
-   .then(j=>{
-     const ts=j.value&&j.value.timeSeries&&j.value.timeSeries[0];
-     if(!ts)throw 0;
-     const vs=ts.values[0].value.filter(v=>+v.value>0);
-     if(!vs.length)throw 0;
-     const last=vs[vs.length-1];
-     lakeLevel=+last.value; lakeManual=false;
-     lakeWhen=new Date(last.dateTime).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-     lakeTrend=vs.length>4?(+last.value - +vs[0].value):null;
+  if(!AUTH.user||!ACTIVE.id){ drawLevel(); return; }
+  apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/water').then(r=>{ if(!r.ok)throw 0; return r.json(); })
+   .then(d=>{
+     WATER_SRC=d;
+     if(d.level&&isFinite(d.level.ft)){
+       lakeLevel=d.level.ft; lakeManual=false;
+       lakeWhen=new Date(d.level.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(d.level.stale?' (stale)':'');
+       lakeTrend=(d.level.deltaFt7d!=null)?d.level.deltaFt7d:null;
+       if(d.level.fullPoolFt!=null&&isFinite(d.level.fullPoolFt))FULL_POOL=d.level.fullPoolFt;
+     }
+     // A measured water temperature beats the estimate, but never a reading
+     // the angler typed in themselves today.
+     if(d.waterTemp&&isFinite(d.waterTemp.f)&&(waterTemp==null||!waterManualToday())){
+       waterTemp=Math.round(d.waterTemp.f); WTEMP_SRC=d.waterTemp;
+       if(typeof drawWater==='function')drawWater();
+     }
      drawLevel();
    })
    .catch(()=>{ drawLevel(); });
 }
+function waterManualToday(){ try{ const o=JSON.parse(localStorage.getItem(LK('water'))||'null'); return !!(o&&o.d&&String(o.d).slice(0,10)===new Date().toISOString().slice(0,10)); }catch(e){ return false; } }
 
 /* ============ best weeks ============ */
 function drawWeeks(){
@@ -3670,10 +3687,14 @@ function wireOnboard(){
   $('obSkip2').onclick=function(){ obStep(3); };
   $('obBack3').onclick=function(){ obStep(2); };
   $('obDone').onclick=function(){ $('obMsg3').textContent='Saving\u2026'; obFinish(); };
-  box.oninput=function(){
+  // Search runs when they pause typing for a full second or press Enter —
+  // OpenStreetMap's Nominatim forbids per-keystroke autocomplete, and the
+  // server caches and throttles behind this.
+  box.onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); clearTimeout(obTimer); box.oninput({force:true}); } };
+  box.oninput=function(ev){
     clearTimeout(obTimer);
     const q=box.value.trim();
-    if(q.length<2){ $('obResults').innerHTML=''; return; }
+    if(q.length<3){ $('obResults').innerHTML=''; return; }
     obTimer=setTimeout(async function(){
       $('obMsg').textContent='Searching\u2026';
       try{
@@ -3685,7 +3706,7 @@ function wireOnboard(){
           ? obHits.map((x,i)=>'<button data-ob="'+i+'"><b>'+escHtml(x.name)+'</b><span>'+escHtml(x.region||x.country||'')+'</span></button>').join('')
           : '<p class="snap" style="padding:8px 4px">No matches. Try the lake\u2019s full name, or a nearby town.</p>';
       }catch(e){ $('obMsg').textContent='Search is unavailable right now.'; }
-    },320);
+    },(ev&&ev.force)?0:1000);
   };
   $('obResults').onclick=async function(e){
     const b=e.target.closest('[data-ob]'); if(!b)return;
@@ -3717,17 +3738,19 @@ async function refreshMyLakes(){
   }catch(e){}
 }
 let lkTimer=null;
-function onLakeSearch(){
+function onLakeSearch(ev){
   clearTimeout(lkTimer); const q=$('lkSearch').value.trim();
-  if(q.length<2){$('lkResults').innerHTML='';return;}
+  if(q.length<3){$('lkResults').innerHTML='';return;}
   lkTimer=setTimeout(async()=>{
     $('lkResults').innerHTML='<i>Searching\u2026</i>';
     try{ const r=await apiFetch('/api/lakes/search?q='+encodeURIComponent(q)); const d=await r.json();
       window.__lk=d.results||[];
-      $('lkResults').innerHTML=window.__lk.map((x,i)=>'<div style="padding:4px 0"><a href="#" data-add="'+i+'" style="color:var(--primary)">+ '+escHtml(x.name)+'</a> <span class="snap">'+escHtml(x.region||'')+'</span></div>').join('')||'<i>No matches.</i>';
+      $('lkResults').innerHTML=(window.__lk.map((x,i)=>'<div style="padding:4px 0"><a href="#" data-add="'+i+'" style="color:var(--primary)">+ '+escHtml(x.name)+'</a> <span class="snap">'+escHtml(x.region||'')+'</span></div>').join('')||'<i>No matches.</i>')+
+        '<div class="snap" style="margin-top:6px">Search results © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>';
     }catch(e){$('lkResults').innerHTML='<i>Search unavailable.</i>';}
-  },350);
+  },(ev&&ev.force)?0:1000);
 }
+document.addEventListener('keydown',function(e){ if(e.key==='Enter'&&e.target&&e.target.id==='lkSearch'){ e.preventDefault(); onLakeSearch({force:true}); } });
 async function addLakeAndGo(x){
   $('lkMsg').textContent='Adding '+x.name+'\u2026';
   try{ const r=await apiFetch('/api/lakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x)});
@@ -3821,31 +3844,55 @@ function initAiMap(){
     setTimeout(()=>aiMap.invalidateSize(),80);
   }catch(e){ $('aiMapFail').hidden=false; }
 }
-function condSummary(){
+/* Everything the app knows about the day, for the planner. The date is the
+   one the angler picked in the form — the old code sent whichever day the
+   Day-plan tab happened to be showing, so a plan "for Saturday" was built on
+   Tuesday's weather. */
+function condSummary(wantDate){
   if(typeof FORECAST==='undefined'||!FORECAST.length)return null;
-  const d=FORECAST[selDay]||FORECAST[0];
+  let d=null;
+  if(wantDate){ d=FORECAST.find(x=>ymd(x.start)===wantDate)||null; }
+  if(!d) d=FORECAST[selDay]||FORECAST[0];
+  const inForecast=!wantDate||ymd(d.start)===wantDate;
   let moon=null; try{ const mp=moonPhase(new Date(d.start.valueOf()+12*3600000)); moon={pct:Math.round(mp.frac*100),phase:phaseName(mp.phase)}; }catch(e){}
   let score=null; try{ score=scoreDay(d); }catch(e){}
-  return { lake:ACTIVE.name, date:ymd(d.start),
+  // The feeding windows the prompt promises the model.
+  let solunar=null; try{ const sol=solunarTimes(d.start); const f=t=>t?ampm(t):null; solunar={majors:[f(sol.overhead),f(sol.underfoot)].filter(Boolean),minors:[f(sol.rise),f(sol.set)].filter(Boolean)}; }catch(e){}
+  let best=null; try{ const hq=hourQualityFor(d); best=hq.map((q,h)=>q>=4?h:null).filter(h=>h!=null); }catch(e){}
+  // What the angler has actually caught here lately — the strongest signal
+  // there is, and it never used to leave the phone.
+  let recent=[]; try{
+    recent=(trips||[]).filter(t=>t&&(t.species||t.big||t.count)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,10)
+      .map(t=>({date:t.date,species:t.species,count:t.count,big:t.big,depth:t.depth,bait:t.bait,water:t.water,spot:t.spot,notes:(t.notes||'').slice(0,120)}));
+  }catch(e){}
+  const wt=(typeof waterTemp!=='undefined'&&waterTemp!=null)?waterTemp:null;
+  return { lake:ACTIVE.name, date:wantDate||ymd(d.start), forecastCovers:inForecast,
     hi:Math.round(d.hi), lo:Math.round(d.lo),
     sunrise:(typeof ampm==='function'?ampm(d.sunrise):''), sunset:(typeof ampm==='function'?ampm(d.sunset):''),
-    moon, waterTempF:(typeof waterTemp!=='undefined'?waterTemp:null), score, weather:d };
+    moon, solunar, bestHours:best,
+    windMph:Math.round(d.wind), windMaxMph:d.windMax!=null?Math.round(d.windMax):null, windFrom:dirName(d.windDir), pressureTrend:d.trend, cloudPct:Math.round(d.cloud), rainPct:d.rain,
+    waterTempF:wt!=null?wt:estWater(), waterTempIsEstimate:wt==null, waterTempSource:wt==null?'seasonal estimate':(WTEMP_SRC?WTEMP_SRC.source:'angler'),
+    lakeLevelFt:(typeof lakeLevel!=='undefined')?lakeLevel:null, fullPoolFt:(typeof FULL_POOL!=='undefined')?FULL_POOL:null, levelTrend7dFt:(typeof lakeTrend!=='undefined')?lakeTrend:null,
+    thermoclineFt:(typeof thermo!=='undefined'&&thermo&&isFinite(thermo.ft))?thermo.ft:null,
+    alerts:(NWS_ALERTS||[]).map(a=>a.event+': '+(a.headline||'')),
+    recentCatches:recent, score };
 }
 async function genAiPlan(force){
   if(!AUTH.user){ $('aiPlanMsg').textContent='Sign in to use the AI planner.'; return; }
-  const cond=condSummary();
+  const day=$('aiDate').value||'';
+  const cond=condSummary(day||null);
   if(!cond){ $('aiPlanMsg').textContent='Open Day plan with a live forecast first.'; return; }
+  if(day&&!cond.forecastCovers){ $('aiPlanMsg').textContent='That date is beyond the 7-day forecast — the plan will lean on the season, not the weather.'; }
   const species=$('aiSpecies').value||'any';
   const goal=$('aiGoal').value||'numbers';
   const launch=aiLaunchPoint();
-  const day=$('aiDate').value||cond.date;
   const window={from:$('aiFrom').value||'',to:$('aiTo').value||''};
   const platform=$('aiPlatform').value||'boat';
   $('aiPlanMsg').textContent='Working on your plan… this can take up to a minute.';
   $('aiPlanBtn').disabled=true;
   try{
     const r=await apiFetch('/api/ai/day-plan',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lakeId:ACTIVE.id,date:day,species:species,goal:goal,launch:launch,
+      body:JSON.stringify({lakeId:ACTIVE.id,date:day||cond.date,species:species,goal:goal,launch:launch,
         window:window,platform:platform,conditions:cond,force:!!force})});
     const d=await r.json();
     if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
@@ -5006,7 +5053,7 @@ function go(id,push){
   if(push!==false&&location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   window.scrollTo({top:0,behavior:'instant'});
   // per-view work
-  if(id==='today'){ renderToday(); }
+  if(id==='today'){ renderToday(); loadAlerts_nws(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
   if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); loadSuggested(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
@@ -5852,7 +5899,7 @@ const HELP={
     '<p>It earns a small say in the score — capped well below weather, because a full moon in a post-frontal bluebird is still a hard day.</p>'},
   watertemp:{t:'Water temperature',b:
     '<p>The number that governs how often a fish eats. Below about 48°F most species slow right down; 58–82°F is where they feed hardest; above 88°F warm water carries less oxygen and the daytime bite falls apart.</p>'+
-    '<p>Where we can, this is a <b>real reading</b> from the nearest USGS gauge, dated. Where there is no gauge we fall back to a <b>seasonal estimate</b> and label it as one — and an estimate counts for half as much in the score, because being confidently wrong about water temperature is worse than being vague.</p>'+
+    '<p>Very few lakes have a gauge that measures water temperature. Where one exists (a USGS monitor, a NOAA buoy, or the satellite reading on the Great Lakes) you get a <b>real reading</b>, dated and named. Everywhere else it is a <b>seasonal estimate for this latitude</b>, labelled as one — and an estimate counts for half as much in the score, because being confidently wrong about water temperature is worse than being vague.</p>'+
     '<p>Log your own reading from your graph and it replaces the estimate.</p>'},
   level:{t:'Lake level',b:
     '<p>Surface elevation from the nearest gauge, against normal pool. What matters is usually the <b>direction</b>: water coming up pushes fish shallow into newly flooded cover; water falling pulls them off the bank and onto the first drop.</p>'+
@@ -6088,6 +6135,25 @@ document.addEventListener('click',async function(e){
   }
 });
 
+/* ---- National Weather Service alerts ----
+   A Lake Wind Advisory or a thunderstorm warning is not a scoring input, it
+   is a reason not to launch. Shown at the top of Today, and sent to the
+   planner as a hard constraint. */
+let NWS_ALERTS=[];
+async function loadAlerts_nws(){
+  const box=$('wxAlerts'); if(!box||!AUTH.user||!ACTIVE.id){ if(box)box.innerHTML=''; return; }
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/alerts'); if(!r.ok)return;
+    const d=await r.json(); NWS_ALERTS=d.alerts||[];
+    box.innerHTML=NWS_ALERTS.length?NWS_ALERTS.map(a=>'<div class="note" style="border-color:#e5484d;background:#fff5f5;margin:0 0 10px"><b>⚠ '+escHtml(a.event)+'</b>'+
+      (a.headline?' — '+escHtml(a.headline):'')+(a.ends?' <span class="snap">until '+new Date(a.ends).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})+'</span>':'')+
+      ' <span class="snap">· National Weather Service</span></div>').join(''):'';
+    if(d.discussion&&d.discussion.text&&$('wxDiscussion')){
+      $('wxDiscussion').innerHTML='<details class="sec"><summary class="sec-t">What the forecaster says <span class="snap">NWS '+escHtml(d.discussion.office||'')+' · '+whenAgo(d.discussion.issued)+'</span></summary><p class="snap" style="white-space:pre-wrap">'+escHtml(d.discussion.text)+'</p></details>';
+    }
+  }catch(e){}
+}
+
 /* ---- dam release ----
    On a regulated lake, current is the day's biggest variable — the planner has
    used this for months, and until now the angler could not see it. Cached
@@ -6271,10 +6337,13 @@ function dayTrend(delta){
   if(delta<=-3)return'fallfast'; if(delta<=-1)return'fall';
   if(delta>=3)return'risefast';  if(delta>=1)return'rise'; return'steady';
 }
+// Over six hours (see loadWeather). ±1.5 hPa clears the diurnal tide; ±3.5 is
+// a front on the move.
 function shortTrend(delta){
-  if(delta<=-2)return'fallfast'; if(delta<=-0.7)return'fall';
-  if(delta>=2)return'risefast';  if(delta>=0.7)return'rise'; return'steady';
+  if(delta<=-3.5)return'fallfast'; if(delta<=-1.5)return'fall';
+  if(delta>=3.5)return'risefast';  if(delta>=1.5)return'rise'; return'steady';
 }
+let LAKE_TZ=null, LAKE_UTC_OFFSET=null;
 function loadWeather(){
   setFeedState('loading');
   $('stamp').textContent=DATESTR+' \u2014 checking conditions\u2026';
@@ -6282,8 +6351,12 @@ function loadWeather(){
     '&current=temperature_2m,wind_speed_10m,wind_direction_10m,pressure_msl'+
     '&hourly=pressure_msl,cloud_cover,temperature_2m,wind_speed_10m'+
     '&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant'+
-    '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FChicago&past_days=1&forecast_days=7';
-  fetch(url).then(function(r){if(!r.ok)throw 0;return r.json()})
+    // timezone=auto: sunrise, sunset and the hourly curve come back in the
+    // LAKE's zone. Hard-coding Chicago was fine for Granbury and two hours off
+    // for Lake Havasu — and the app now takes any lake.
+    '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&past_days=1&forecast_days=7';
+  const wxAbort=new AbortController(); const wxTimer=setTimeout(function(){ wxAbort.abort(); },12000);
+  fetch(url,{signal:wxAbort.signal}).then(function(r){clearTimeout(wxTimer);if(!r.ok)throw 0;return r.json()})
    .then(function(d){
      // ---- current ----
      const t=d.current.temperature_2m, w=Math.round(d.current.wind_speed_10m);
@@ -6295,11 +6368,21 @@ function loadWeather(){
      const hT=d.hourly.time, hP=d.hourly.pressure_msl, hC=d.hourly.cloud_cover, hTemp=d.hourly.temperature_2m, hW=d.hourly.wind_speed_10m||[];
      const nowKey=d.current.time.slice(0,13);
      let ni=-1; for(let i=0;i<hT.length;i++){if(hT[i].slice(0,13)===nowKey){ni=i;break}}
-     curTrend=(ni>=3&&hP[ni]!=null&&hP[ni-3]!=null)?shortTrend(hP[ni]-hP[ni-3]):'steady';
+     // Six hours, not three. The atmosphere has a tide — pressure rises and
+     // falls about a millibar twice a day on its own — and a 3-hour delta is
+     // mostly that tide, so "today's trend" flipped with the clock. Over six
+     // hours a real front shows through it; the thresholds are raised to
+     // match (see shortTrend).
+     curTrend=(ni>=6&&hP[ni]!=null&&hP[ni-6]!=null)?shortTrend(hP[ni]-hP[ni-6]):'steady';
+     LAKE_TZ=d.timezone||null; LAKE_UTC_OFFSET=(typeof d.utc_offset_seconds==='number')?d.utc_offset_seconds:null;
 
      // ---- per-day ----
      const dd=d.daily, days=[];
-     const todayKey=new Date(now.valueOf()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+     // "Today" in the lake's zone, not the phone's — someone planning a Texas
+     // trip from a hotel in Denver should still see Texas's today.
+     const todayKey=(LAKE_UTC_OFFSET!=null)
+       ? new Date(now.valueOf()+LAKE_UTC_OFFSET*1000).toISOString().slice(0,10)
+       : new Date(now.valueOf()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
      const dayMean=key=>{let s=0,n=0;for(let i=0;i<hT.length;i++){
        if(hT[i].slice(0,10)===key&&hP[i]!=null){s+=hP[i];n++}} return n?s/n:null;};
      for(let i=0;i<dd.time.length;i++){
@@ -6322,12 +6405,16 @@ function loadWeather(){
          const a=dayMean(key), b=prevKey?dayMean(prevKey):null;
          trend=(a!=null&&b!=null)?dayTrend(a-b):'steady';
        }
+       // The wind that matters for the score is what you fish in — the
+       // daytime average — not the day's single peak gust, which is what
+       // wind_speed_10m_max is and why "ideal breeze" almost never fired.
+       let wSum=0,wN=0; for(let h=7;h<=19;h++){ if(winds[h]!=null){ wSum+=winds[h]; wN++; } }
        days.push({
          key:key, start:new Date(key+'T00:00:00'),
          hi:dd.temperature_2m_max[i], lo:dd.temperature_2m_min[i],
          sunrise:new Date(dd.sunrise[i]), sunset:new Date(dd.sunset[i]),
          rain:dd.precipitation_probability_max[i]||0,
-         wind:dd.wind_speed_10m_max[i], windDir:dd.wind_direction_10m_dominant[i],
+         wind:wN?wSum/wN:dd.wind_speed_10m_max[i], windMax:dd.wind_speed_10m_max[i], windDir:dd.wind_direction_10m_dominant[i],
          cloud:cN?cSum/cN:50, hourTemp:hours, hourWind:winds, trend:trend
        });
        if(days.length>=7)break;
