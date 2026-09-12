@@ -16,25 +16,25 @@ import webpush from 'web-push';
 import { prisma } from '../db';
 import type { NotifyType } from './notify';
 
-let configured: boolean | null = null;
+// Remember which keys we configured, not whether we ever managed to — the
+// admin can paste keys in at any moment, and caching a "no" would leave push
+// switched off until someone happened to restart the server.
+let appliedKey = '';
 
 /** VAPID is how a push service knows the message really came from us. */
 export function pushConfigured(): boolean {
-  if (configured !== null) return configured;
   const pub = process.env.VAPID_PUBLIC_KEY || '';
   const priv = process.env.VAPID_PRIVATE_KEY || '';
   const subject = process.env.VAPID_SUBJECT || 'mailto:support@elavoai.com';
-  if (!pub || !priv) {
-    configured = false;
-    return false;
-  }
+  if (!pub || !priv) return false;
+  if (appliedKey === pub) return true;
   try {
     webpush.setVapidDetails(subject, pub, priv);
-    configured = true;
+    appliedKey = pub;
+    return true;
   } catch {
-    configured = false;
+    return false;
   }
-  return configured;
 }
 
 /** The public half, which the browser needs to subscribe. */
