@@ -411,13 +411,14 @@ export async function refreshAllSources(): Promise<{ sources: number; stored: nu
 /** Recent reports for a lake, freshest first — what the planner reads. */
 export async function recentReports(lakeId: string, days = 21, take = 8) {
   return prisma.lakeReport.findMany({
-    // Dated reports from the window, plus any standing profile — a lake
-    // description has no date and would otherwise never be seen again.
+    // Dated reports from the window, plus anything that has no date at all —
+    // a lake description and a stocking history are standing facts, not news,
+    // and filtering on a date window would hide them forever.
     where: {
       lakeId,
       OR: [
         { publishedAt: { gte: new Date(Date.now() - days * 86400000) } },
-        { source: 'profile' },
+        { publishedAt: null },
       ],
     },
     orderBy: { publishedAt: 'desc' },
@@ -444,7 +445,9 @@ export function reportsForPrompt(rows: Awaited<ReturnType<typeof recentReports>>
         ? `angler ${r.sourceName || ''}`.trim()
         : r.source === 'profile'
           ? `${r.sourceName || 'agency'} — standing lake description, UNDATED, background only`
-          : r.sourceName || r.source;
+          : r.source === 'stocking'
+            ? `${r.sourceName || 'agency'} — stocking history, the years are in the text`
+            : r.sourceName || r.source;
       return `- [${day(r.publishedAt)}] (${who}) ${r.title ? r.title + ': ' : ''}${r.body.slice(0, 500)}`;
     })
     .join('\n');
