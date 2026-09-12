@@ -112,6 +112,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     index: ['landing.html'],
     cacheControl: true,
     maxAge: '1h',
+    setHeaders(res, path) {
+      // An hour of browser cache on the HTML means a fix can take an hour to
+      // reach someone who already has the page — including a fix for something
+      // that is actively wrong. Pages revalidate every time (a 304 is cheap and
+      // the payload is gzipped anyway); the icons and the manifest, which
+      // change about once a year, keep the long cache.
+      if (/\.html$/.test(path)) res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      else if (/\.(png|ico|webmanifest|css)$/.test(path)) res.setHeader('Cache-Control', 'public, max-age=604800');
+      // The service worker must never be cached: a stale one keeps serving a
+      // stale app and cannot be replaced.
+      if (/sw\.js$/.test(path)) res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    },
   });
 
   // Unknown non-API GETs fall back to the marketing landing (never expose data dirs).
