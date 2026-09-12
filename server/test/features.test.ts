@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { buildQuery, digest, kindOf, snapStops } from '../src/services/features';
+import { buildQuery, digest, kindOf, metresToShore, snapStops, splitResponse } from '../src/services/features';
 
 const LAKE = { lat: 32.43, lon: -97.78 };
 const BBOX: [number, number, number, number] = [-97.90, 32.35, -97.65, 32.50];
@@ -96,21 +96,59 @@ describe('snapStops', () => {
 });
 
 describe('buildQuery', () => {
-  test('anchors the search on the lake"s own water polygon, found by its distinctive name', () => {
+  test('finds the lake by its distinctive name and asks for the shoreline geometry', () => {
     const q = buildQuery('Lake Granbury', 32.43, -97.78, 15000, null);
     assert.match(q, /"name"~"Granbury",i/);
-    assert.match(q, /around\.w:150/);        // creeks within 150 m of the shoreline
-    assert.match(q, /"bridge"="yes"\]\["name"\]\(around\.w:60\)/);
-    assert.doesNotMatch(q, /around:15000\)/); // plain-radius search is gone from the feature clauses
+    assert.match(q, /\.shore out geom;/);
+    assert.match(q, /"bridge"="yes"\]\["name"\]\(/);
+    assert.doesNotMatch(q, /around\.w/); // the geometry test moved into Node — around.w timed out at 26 s
   });
 
   test('a regex-hostile lake name is escaped rather than breaking the query', () => {
     const q = buildQuery("O.H. Ivie (Lake)", 31.5, -99.7, 15000, null);
-    assert.match(q, /O\\\.H\\\. Ivie|OH Ivie|O\\\.H\\\.\\s\+Ivie/);
+    assert.match(q, /O\\\.H\\\.\\s\+Ivie/);
   });
 
   test('big water with a launch point limits the shoreline to 15 km of the ramp', () => {
     const q = buildQuery('Lake Michigan', 43.85, -87.08, 60000, { lat: 43.0, lon: -87.9 });
-    assert.match(q, /way\.parts\(around:15000,43,-87\.9\)->\.w/);
+    assert.match(q, /\(around:15000,43,-87\.9\)->\.shore/);
+  });
+});
+
+describe('the shoreline test', () => {
+  // A straight north–south shoreline at lon -97.78.
+  const shore = [[[32.40, -97.78], [32.46, -97.78]]] as [number, number][][];
+
+  test('measures metres from a point to the nearest segment', () => {
+    const m = metresToShore(32.43, -97.78 + 0.001, shore); // ~94 m east of the line
+    assert.ok(m > 85 && m < 105, `got ${m}`);
+  });
+
+  test('a bridge 2 km from the water is not on the lake; one 40 m away is', () => {
+    const raw = [
+      { type: 'way', id: 1, center: { lat: 32.43, lon: -97.78 + 0.02 }, tags: { bridge: 'yes', name: 'Main Street' } },
+      { type: 'way', id: 2, center: { lat: 32.43, lon: -97.78 + 0.0004 }, tags: { bridge: 'yes', name: 'US 377' } },
+    ];
+    assert.deepEqual(digest(raw, 32.43, -97.78, null, shore).map((f) => f.name), ['US 377']);
+  });
+
+  test('with a shoreline, a creek"s mouth is the segment nearest the WATER, not the lake centre', () => {
+    const raw = [
+      { type: 'way', id: 1, center: { lat: 32.43, lon: -97.78 + 0.0012 }, tags: { waterway: 'stream', name: 'Rough Creek' } }, // ~110 m from water, near centre
+      { type: 'way', id: 2, center: { lat: 32.455, lon: -97.78 + 0.0002 }, tags: { waterway: 'stream', name: 'Rough Creek' } }, // ~20 m from water, far from centre
+    ];
+    const out = digest(raw, 32.43, -97.78, null, shore);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].lat, 32.455);
+  });
+
+  test('splitResponse separates shoreline geometry from candidates', () => {
+    const raw = [
+      { type: 'way', id: 1, tags: { natural: 'water', name: 'Lake X' }, geometry: [{ lat: 1, lon: 1 }, { lat: 2, lon: 2 }] },
+      { type: 'way', id: 2, center: { lat: 1.5, lon: 1.5 }, tags: { waterway: 'stream', name: 'A Creek' } },
+    ] as never[];
+    const { cand, shore: sh } = splitResponse(raw);
+    assert.equal(cand.length, 1);
+    assert.equal(sh.length, 1);
   });
 });
