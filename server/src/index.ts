@@ -186,6 +186,13 @@ async function main(): Promise<void> {
     await sweepReports().catch(() => {});
     await sweepOrphanPhotos().catch(() => {});
     await sweepNotifications().catch(() => {});
+    // Accounts marked for deletion a month ago. The window exists so a mistake
+    // can be undone; once it closes the cascade has to actually run, or
+    // "deleted" quietly means "hidden".
+    await prisma.user
+      .findMany({ where: { scheduledDeleteAt: { lt: new Date() } }, select: { id: true } })
+      .then((rows) => Promise.all(rows.map((r) => prisma.user.delete({ where: { id: r.id } }).catch(() => {}))))
+      .catch(() => {});
     // Pull fishing reports on the same cadence as the sweeps (every 6h).
     await refreshAllSources()
       .then((r) => r.stored && app.log.info(r, 'fishing reports refreshed'))

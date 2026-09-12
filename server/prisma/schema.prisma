@@ -71,16 +71,22 @@ enum ShareDataType {
 }
 
 model User {
-  id          String    @id @default(cuid())
-  email       String    @unique
-  displayName String
-  username    String?   @unique
-  avatarUrl   String?   @db.Text // data URL (client-resized square) or external URL
-  role        Role      @default(user)
-  status      String    @default("active") // active | suspended
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  lastLoginAt DateTime?
+  id                String    @id @default(cuid())
+  email             String    @unique
+  displayName       String
+  username          String?   @unique
+  avatarUrl         String?   @db.Text // data URL (client-resized square) or external URL
+  role              Role      @default(user)
+  status            String    @default("active") // active | suspended | deleted
+  // Deleting an angler cascades their lakes, trips, spots, messages and
+  // friendships — there is no undo and nothing left to hand back to whoever
+  // asked. So a delete marks the row and schedules the cascade for later;
+  // scheduledDeleteAt is when it actually happens.
+  deletedAt         DateTime?
+  scheduledDeleteAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastLoginAt       DateTime?
 
   // ---- profile ----
   location        String? // e.g. "Granbury, TX"
@@ -145,6 +151,8 @@ model User {
   tournamentsRun       Tournament[]          @relation("TournamentHost")
   tournamentEntries    TournamentEntry[]
   inviteAccepted       Invite[]              @relation("InviteAcceptor")
+
+  @@index([scheduledDeleteAt])
 }
 
 // Magic-link tokens. Unified login+signup: purpose distinguishes; displayName is

@@ -23,6 +23,9 @@ import { rateFor, recalculateCosts } from '../services/aiUsage';
 import { fetchSource, refreshAllSources } from '../services/reports';
 import { buildIndex } from '../services/corps';
 import { attachOfficialSourcesForAll } from '../services/agencySources';
+import { attention, featureCounts, funnel, latestBackup } from '../services/adminInsight';
+import { storageConfigured } from '../services/storage';
+import { pushConfigured } from '../services/push';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
 import {
@@ -82,6 +85,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /** Everything wanting a decision. Empty when there is nothing, on purpose. */
+  app.get('/api/admin/attention', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    return { items: await attention() };
+  });
+
+  /** Does the product work, and is anyone using the parts we built? */
+  app.get('/api/admin/pulse', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const [steps, features, backup] = await Promise.all([funnel(), featureCounts(), Promise.resolve(latestBackup())]);
+    return { funnel: steps, features, backup };
+  });
+
   // ---- metrics ----
   app.get('/api/admin/metrics', async (req, reply) => {
     if (!(await requireAdmin(req, reply))) return;
@@ -107,13 +123,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ---- users ----
   app.get('/api/admin/users', async (req, reply) => {
     if (!(await requireAdmin(req, reply))) return;
-    const q = String((req.query as { q?: string }).q || '').trim();
-    const where = q ? { OR: [{ email: { contains: q, mode: 'insensitive' as const } }, { displayName: { contains: q, mode: 'insensitive' as const } }] } : {};
-    const users = await prisma.user.findMany({
-      where, orderBy: { createdAt: 'desc' }, take: 100,
-      select: { id: true, email: true, displayName: true, role: true, status: true, createdAt: true, lastLoginAt: true, _count: { select: { userLakes: true } } },
-    });
-    return { users: users.map((u) => ({ ...u, lakes: u._count.userLakes, _count: undefined })) };
+    const qs = req.query as { q?: string; page?: string; size?: string; status?: string };
+    const q = String(qs.q || '').trim();
+    const size = Math.min(Math.max(Number(qs.size) || 50, 10), 200);
+    const page = Math.max(Number(qs.page) || 1, 1);
+    const where = {
+      ...(q ? { OR: [{ email: { contains: q, mode: 'insensitive' as const } }, { displayName: { contains: q, mode: 'insensitive' as const } }] } : {}),
+      ...(qs.status === 'deleted' ? { deletedAt: { not: null } } : qs.status ? { status: qs.status } : {}),
+    };
+    // The total matters as much as the rows: a list silently capped at 100 is
+    // a list that stops being the list on the day you get your 101st angler.
+    const [total, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size,
+        select: { id: true, email: true, displayName: true, role: true, status: true, createdAt: true, lastLoginAt: true, deletedAt: true, scheduledDeleteAt: true, _count: { select: { userLakes: true, trips: true } } },
+      }),
+    ]);
+    return {
+      users: users.map((u) => ({ ...u, lakes: u._count.userLakes, trips: u._count.trips, _count: undefined })),
+      total, page, size, pages: Math.max(1, Math.ceil(total / size)),
+    };
   });
 
   app.post('/api/admin/users/:id/status', async (req, reply) => {
@@ -139,6 +169,141 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await prisma.user.update({ where: { id }, data: { role: role as 'user' | 'pro' | 'guide' | 'admin' } });
     await audit(admin.username, 'user.role', id, { role });
     return reply.send({ ok: true });
+  });
+
+  /**
+   * One angler, in full.
+   *
+   * The portal could list users and suspend them and nothing else, so
+   * "the app lost my trip" had nowhere to be looked into. Read-only, and it
+   * shows what the angler HAS rather than what they wrote: counts, lakes,
+   * recent catches, groups, and whether anything they own has been reported.
+   */
+  app.get('/api/admin/users/:id', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, email: true, displayName: true, username: true, role: true, status: true,
+        createdAt: true, lastLoginAt: true, deletedAt: true, scheduledDeleteAt: true,
+        location: true, favoriteSpecies: true, hasBoat: true, boatType: true, yearsFishing: true,
+        discoverability: true, messagePrivacy: true, postDefault: true, onboardedAt: true,
+        termsAcceptedAt: true, avatarUrl: true,
+        favoriteLake: { select: { name: true } },
+      },
+    });
+    if (!user) return reply.code(404).send({ error: 'No such angler.' });
+
+    const [lakes, trips, spots, waypoints, posts, photos, groups, friends, invites, plans, flagsAgainst, flagsBy, sessions, push, recentTrips] =
+      await Promise.all([
+        prisma.userLake.findMany({ where: { userId: id }, include: { lake: { select: { name: true, region: true } } }, take: 20 }),
+        prisma.trip.count({ where: { userId: id } }),
+        prisma.spot.count({ where: { userId: id } }),
+        prisma.waypoint.count({ where: { userId: id } }),
+        prisma.post.count({ where: { authorId: id } }),
+        prisma.photo.count({ where: { userId: id } }),
+        prisma.friendGroupMember.findMany({ where: { memberId: id, status: 'active' }, include: { group: { select: { name: true } } }, take: 20 }),
+        prisma.friendship.count({ where: { status: 'accepted', OR: [{ userId: id }, { friendId: id }] } }),
+        prisma.invite.count({ where: { inviterId: id } }),
+        prisma.planRequest.count({ where: { userId: id } }),
+        prisma.contentFlag.count({ where: { targetType: 'user', targetId: id } }),
+        prisma.contentFlag.count({ where: { reporterId: id } }),
+        prisma.session.count({ where: { userId: id, expiresAt: { gt: new Date() } } }),
+        prisma.pushSubscription.count({ where: { userId: id } }),
+        prisma.trip.findMany({
+          where: { userId: id },
+          orderBy: { date: 'desc' },
+          take: 10,
+          select: { date: true, species: true, weight: true, visibility: true, lake: { select: { name: true } } },
+        }),
+      ]);
+
+    const owned = await prisma.friendGroup.findMany({ where: { ownerId: id }, select: { name: true }, take: 20 });
+    return {
+      user,
+      counts: { trips, spots, waypoints, posts, photos, friends, invites, plans, sessions, push, flagsAgainst, flagsBy },
+      lakes: lakes.map((l) => ({ name: l.lake.name, region: l.lake.region, home: l.isHome })),
+      groups: [...owned.map((g) => ({ name: g.name, role: 'owner' })), ...groups.map((g) => ({ name: g.group.name, role: g.role }))],
+      recentTrips: recentTrips.map((t) => ({ date: t.date, species: t.species, weight: t.weight, lake: t.lake?.name || null, visibility: t.visibility })),
+    };
+  });
+
+  /**
+   * Everything we hold about an angler, as one file.
+   *
+   * Needed twice: when somebody asks for their data, and before deleting them —
+   * a cascade with nothing to hand back is how a support request becomes an
+   * apology.
+   */
+  app.get('/api/admin/users/:id/export', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return reply.code(404).send({ error: 'No such angler.' });
+    const [trips, spots, waypoints, posts, comments, kv, photos, reports, invites] = await Promise.all([
+      prisma.trip.findMany({ where: { userId: id } }),
+      prisma.spot.findMany({ where: { userId: id } }),
+      prisma.waypoint.findMany({ where: { userId: id } }),
+      prisma.post.findMany({ where: { authorId: id } }),
+      prisma.postComment.findMany({ where: { authorId: id } }),
+      prisma.kv.findMany({ where: { userId: id } }),
+      prisma.photo.findMany({ where: { userId: id }, select: { id: true, key: true, createdAt: true, bytes: true } }),
+      prisma.lakeReport.findMany({ where: { userId: id } }),
+      prisma.invite.findMany({ where: { inviterId: id }, select: { email: true, createdAt: true, acceptedAt: true } }),
+    ]);
+    await audit(admin.username, 'user.export', id, { email: user.email });
+    const { ...safe } = user;
+    reply.header('Content-Disposition', `attachment; filename="elavofishai-${id}.json"`);
+    return reply.send({ exportedAt: new Date().toISOString(), user: safe, trips, spots, waypoints, posts, comments, kv, photos, reports, invites });
+  });
+
+  /**
+   * What this angler sees.
+   *
+   * Not impersonation — no session is issued and nothing can be written. It
+   * assembles the same answers their own app would get: which lakes they have,
+   * what their sharing settings actually mean, which groups they are in, and
+   * what their feed would hold. Enough to answer "it is not working" without
+   * asking somebody to photograph their phone.
+   *
+   * Loudly audited, because looking through someone's account is a thing that
+   * should leave a mark whatever the reason.
+   */
+  app.get('/api/admin/users/:id/view-as', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, displayName: true, email: true, status: true, discoverability: true, messagePrivacy: true, postDefault: true, onboardedAt: true },
+    });
+    if (!user) return reply.code(404).send({ error: 'No such angler.' });
+    await audit(admin.username, 'user.viewAs', id, { email: user.email });
+
+    const [prefs, lakes, groups, feedCount, unreadCount, pendingInvites, followups] = await Promise.all([
+      prisma.sharingPref.findMany({ where: { userId: id }, select: { dataType: true, scope: true, groupIds: true } }),
+      prisma.userLake.findMany({ where: { userId: id }, include: { lake: { select: { id: true, name: true, region: true, gaugeId: true } } } }),
+      prisma.friendGroupMember.findMany({ where: { memberId: id }, include: { group: { select: { name: true, dataSharing: true } } } }),
+      prisma.post.count({ where: { authorId: id } }),
+      prisma.notification.count({ where: { userId: id, readAt: null } }),
+      prisma.friendGroupMember.count({ where: { memberId: id, status: 'pending' } }),
+      prisma.planRequest.count({ where: { userId: id, skippedAt: null } }),
+    ]);
+
+    return {
+      user,
+      // The settings in the words the app uses, not the column values.
+      sharing: prefs.map((p) => ({
+        what: p.dataType,
+        who: p.scope === 'none' ? 'just them' : p.scope === 'groups' ? `${p.groupIds.length} group(s)` : p.scope,
+      })),
+      lakes: lakes.map((l) => ({ name: l.lake.name, region: l.lake.region, home: l.isHome, hasGauge: !!l.lake.gaugeId })),
+      groups: groups.map((g) => ({ name: g.group.name, role: g.role, status: g.status, sharesData: g.group.dataSharing !== 'off', theyShare: { spots: g.shareSpots, catches: g.shareCatches, waypoints: g.shareWaypoints } })),
+      state: { posts: feedCount, unreadNotifications: unreadCount, groupInvitesWaiting: pendingInvites, plansAwaitingFeedback: followups },
+    };
   });
 
   // ---- settings (config GUI) ----
@@ -220,8 +385,37 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const id = String((req.params as { id: string }).id);
     const u = await prisma.user.findUnique({ where: { id } });
     if (!u) return reply.code(404).send({ error: 'No such user.' });
-    await prisma.user.delete({ where: { id } }); // cascades sessions/lakes/trips/spots/kv/friendships
-    await audit(admin.username, 'user.delete', id, { email: u.email });
+    const purge = (req.query as { purge?: string }).purge === '1';
+
+    if (purge) {
+      // The real thing. Only reachable deliberately, and only for an account
+      // already marked — so a mis-click can never reach it.
+      if (!u.deletedAt) return reply.code(400).send({ error: 'Mark the account for deletion first, then purge it.' });
+      await prisma.user.delete({ where: { id } }); // cascades sessions/lakes/trips/spots/kv/friendships
+      await audit(admin.username, 'user.purge', id, { email: u.email });
+      return reply.send({ ok: true, purged: true });
+    }
+
+    // Mark, sign them out, and schedule the cascade for a month's time. The
+    // account stops working immediately — which is what "delete" has to mean to
+    // the person who asked — while the data stays recoverable for a month.
+    const scheduled = new Date(Date.now() + 30 * 86400_000);
+    await prisma.user.update({ where: { id }, data: { deletedAt: new Date(), scheduledDeleteAt: scheduled, status: 'deleted' } });
+    await prisma.session.deleteMany({ where: { userId: id } });
+    await audit(admin.username, 'user.delete', id, { email: u.email, scheduledFor: scheduled.toISOString() });
+    return reply.send({ ok: true, scheduledFor: scheduled.toISOString() });
+  });
+
+  /** Changed your mind, or deleted the wrong row. */
+  app.post('/api/admin/users/:id/restore', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const u = await prisma.user.findUnique({ where: { id }, select: { email: true, deletedAt: true } });
+    if (!u) return reply.code(404).send({ error: 'No such angler.' });
+    if (!u.deletedAt) return reply.code(400).send({ error: 'That account is not deleted.' });
+    await prisma.user.update({ where: { id }, data: { deletedAt: null, scheduledDeleteAt: null, status: 'active' } });
+    await audit(admin.username, 'user.restore', id, { email: u.email });
     return reply.send({ ok: true });
   });
 
@@ -323,9 +517,31 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (s) disk = { total: s.blocks * s.bsize, free: s.bavail * s.bsize };
     } catch { /* ignore */ }
 
+    // Everything else that can fail quietly. Each of these has taken the app
+    // down or lost data at some point in its life, and none of them was on
+    // this page until it did.
+    const backup = latestBackup();
+    const [photoAgg, pushCount, sourcesFailing, sourcesTotal, lastReading] = await Promise.all([
+      prisma.photo.aggregate({ _count: { _all: true }, _sum: { bytes: true } }).catch(() => null),
+      prisma.pushSubscription.count({ where: { failedAt: null } }).catch(() => 0),
+      prisma.reportSource.count({ where: { active: true, lastError: { not: null } } }).catch(() => 0),
+      prisma.reportSource.count({ where: { active: true } }).catch(() => 0),
+      prisma.waterReading.findFirst({ orderBy: { at: 'desc' }, select: { at: true } }).catch(() => null),
+    ]);
+
     return {
       status: db === 'ok' ? 'ok' : 'down',
       db, dbBytes, dbConns, counts,
+      storage: {
+        configured: storageConfigured(),
+        objects: photoAgg?._count._all || 0,
+        bytes: photoAgg?._sum.bytes || 0,
+      },
+      push: { configured: pushConfigured(), devices: pushCount },
+      backup: backup ? { name: backup.name, at: new Date(backup.at).toISOString(), bytes: backup.bytes, ageHours: Math.round((Date.now() - backup.at) / 3600_000) } : null,
+      feeds: { active: sourcesTotal, failing: sourcesFailing },
+      water: { lastReadingAt: lastReading?.at || null },
+      heartbeat: { configured: !!process.env.HEARTBEAT_URL },
       // Whether sign-in email actually WORKS — `email` below is only "a key is
       // set". A broken sender locks every user out silently, so the delivery
       // record belongs on the health page.

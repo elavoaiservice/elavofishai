@@ -83,3 +83,25 @@ describe('sessions in practice', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL
     assert.equal((await as(user, { method: 'GET', url: '/api/friends' })).statusCode, 401);
   });
 });
+
+describe('a deleted account stops working immediately', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('marking an account deleted ends its sessions and refuses the cookie', async () => {
+    await resetDb();
+    const me = await signIn('going@example.com');
+    assert.equal((await as(me, { method: 'GET', url: '/api/friends' })).statusCode, 200);
+    // What the admin's delete does: mark, set a purge date, drop sessions.
+    await prisma.user.update({ where: { id: me.id }, data: { deletedAt: new Date(), status: 'deleted' } });
+    await prisma.session.deleteMany({ where: { userId: me.id } });
+    assert.equal((await as(me, { method: 'GET', url: '/api/friends' })).statusCode, 401);
+  });
+
+  test('a status the app does not know is not treated as active', async () => {
+    await resetDb();
+    const me = await signIn('odd@example.com');
+    await prisma.user.update({ where: { id: me.id }, data: { status: 'deleted' } });
+    assert.equal((await as(me, { method: 'GET', url: '/api/friends' })).statusCode, 401);
+  });
+});

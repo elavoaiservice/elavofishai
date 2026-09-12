@@ -581,9 +581,59 @@ function clRow(c){
     + '</div><div class="cl-side">'+when+'<span class="cl-sha">'+esc(c.shortSha)+'</span></div></div>';
 }
 
-async function tDashboard(){ const m=await (await api('/api/admin/metrics')).json();
-  const cards=[['Users',m.users,m.new7+' new this week'],['Active (7d)',m.active7,m.active30+' in 30d'],['Lakes',m.lakes,m.userLakes+' saved'],['Trip logs',m.tripLogs,''],['AI profiles',m.profiles,''],['Day plans',m.dayPlans,''],['KV entries',m.kvTotal,''],['Admins',m.admins,'']];
-  $('content').innerHTML='<div class="metrics">'+cards.map(c=>'<div class="metric"><div class="n">'+c[1]+'</div><div class="k">'+c[0]+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('')+'</div>';
+async function tDashboard(){
+  const [m,p,att]=await Promise.all([
+    (await api('/api/admin/metrics')).json(),
+    (await api('/api/admin/pulse')).json().catch(()=>({})),
+    (await api('/api/admin/attention')).json().catch(()=>({items:[]})),
+  ]);
+  // Counts that describe the plumbing (KV rows) told you nothing. These are
+  // the ones you would actually act on.
+  const cards=[['Users',m.users,m.new7+' new this week'],['Active (7d)',m.active7,m.active30+' in 30d'],
+    ['Lakes',m.lakes,m.userLakes+' saved'],['Trip logs',m.tripLogs,''],['Day plans',m.dayPlans,'']];
+  const f=p.features||{};
+  const featureCards=[['Posts',f.posts],['Groups',f.groups],['Tournaments',f.tournaments],['Listings',f.listings],
+    ['Photos',f.photos],['Invites sent',f.invites],['Push devices',f.pushSubs],['Reports held',f.reports]];
+
+  $('content').innerHTML=
+    attentionHtml(att.items||[])
+    +'<div class="metrics">'+cards.map(c=>'<div class="metric"><div class="n">'+c[1]+'</div><div class="k">'+c[0]+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('')+'</div>'
+    +funnelHtml(p.funnel||[])
+    +'<div class="card" style="margin-top:16px"><h2>What is being used</h2>'
+      +'<div class="snap" style="margin-bottom:10px">Everything the app can do, and whether anyone is doing it. A zero here is a feature nobody found.</div>'
+      +'<div class="metrics">'+featureCards.map(c=>'<div class="metric"><div class="n">'+(c[1]??0)+'</div><div class="k">'+c[0]+'</div></div>').join('')+'</div></div>';
+}
+
+/* Things wanting a decision. Silent when there are none — a banner that is
+   always there is a banner nobody reads. */
+function attentionHtml(items){
+  if(!items.length){
+    return '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--ok,#10B981)"><b>Nothing needs you.</b> '
+      +'<span class="snap">No open reports, no failing feeds, backups current, services configured.</span></div>';
+  }
+  const bad=items.filter(i=>i.level==='bad'), warn=items.filter(i=>i.level!=='bad');
+  const row=i=>'<div class="fr-row" style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border)">'
+    +'<span>'+(i.level==='bad'?'🔴':'🟠')+'</span>'
+    +'<span style="flex:1"><b>'+esc(i.title)+'</b> <span class="snap">'+esc(i.detail)+'</span></span>'
+    +(i.tab?'<button class="btn btn-ghost btn-sm" data-tab="'+esc(i.tab)+'">Open</button>':'')+'</div>';
+  return '<div class="card" style="margin-bottom:16px;border-left:4px solid '+(bad.length?'#e5484d':'#F59E0B')+'">'
+    +'<h2>Needs attention</h2>'+bad.concat(warn).map(row).join('')+'</div>';
+}
+
+/* Where people stop. The gap between two steps is the thing to fix. */
+function funnelHtml(steps){
+  if(!steps.length)return '';
+  return '<div class="card" style="margin-top:16px"><h2>How far anglers get</h2>'
+    +'<div class="snap" style="margin-bottom:10px">Each bar is the share of everyone who signed up that reached that step. The biggest drop is where the product is losing people.</div>'
+    +steps.map((s,i)=>{
+      const prev=i?steps[i-1].pct:100, drop=prev-s.pct;
+      return '<div style="display:flex;align-items:center;gap:10px;margin:6px 0">'
+        +'<span class="snap" style="min-width:170px">'+esc(s.step)+'</span>'
+        +'<span style="flex:1;background:var(--border);height:16px;border-radius:8px;overflow:hidden">'
+          +'<span style="display:block;height:100%;width:'+Math.max(1,s.pct)+'%;background:'+(s.pct>=50?'#29ABE2':s.pct>=20?'#F59E0B':'#e5484d')+'"></span></span>'
+        +'<span class="snap" style="min-width:96px;text-align:right">'+s.n+' · '+s.pct+'%'
+        +(i&&drop>=25?' <span class="pill down">-'+drop+'</span>':'')+'</span></div>';
+    }).join('')+'</div>';
 }
 async function tActivity(){ const d=await (await api('/api/admin/activity')).json();
   const ic={signup:'👤',lake:'🗺️',catch:'🐟',friend:'🤝'};
@@ -596,26 +646,119 @@ async function tUsers(){
    '<div style="flex:1;min-width:150px"><label>Name</label><input id="nuName" placeholder="optional"></div>'+
    '<div><label>Role</label><select id="nuRole" style="width:auto">'+['user','pro','guide','admin'].map(r=>'<option>'+r+'</option>').join('')+'</select></div>'+
    '<button class="btn btn-primary" id="nuAdd">Create</button><span class="msg" id="nuMsg"></span></div></div>'+
-   '<div class="row" style="margin:0 0 14px"><input id="uSearch" placeholder="Search email or name…" style="max-width:280px"><button class="btn btn-ghost btn-sm" id="uReload">Refresh</button></div>'+
-   '<div class="card" style="padding:6px 10px;overflow:auto"><table id="uTable"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Lakes</th><th>Joined</th><th>Last seen</th><th></th></tr></thead><tbody></tbody></table></div>';
-  $('nuAdd').onclick=createUser; $('uReload').onclick=loadUsers; $('uSearch').addEventListener('keydown',e=>{if(e.key==='Enter')loadUsers();});
+   '<div class="row" style="margin:0 0 14px"><input id="uSearch" placeholder="Search email or name…" style="max-width:280px">'+
+   '<select id="uStatus" style="width:auto"><option value="">All</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="deleted">Deleted</option></select>'+
+   '<button class="btn btn-ghost btn-sm" id="uReload">Refresh</button><span class="snap" id="uCount"></span></div>'+
+   '<div class="card" style="padding:6px 10px;overflow:auto"><table id="uTable"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Lakes</th><th>Trips</th><th>Joined</th><th>Last seen</th><th></th></tr></thead><tbody></tbody></table></div>'+
+   '<div class="row" id="uPager" style="margin-top:12px"></div><div id="uDetail"></div>';
+  $('nuAdd').onclick=createUser; $('uReload').onclick=()=>{U_PAGE=1;loadUsers();};
+  $('uStatus').onchange=()=>{U_PAGE=1;loadUsers();};
+  $('uSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){U_PAGE=1;loadUsers();}});
   $('uTable').addEventListener('click',onUserAction); $('uTable').addEventListener('change',onUserRole);
   loadUsers();
 }
-async function loadUsers(){ const q=$('uSearch')?$('uSearch').value.trim():''; const d=await (await api('/api/admin/users'+(q?'?q='+encodeURIComponent(q):''))).json();
-  $('uTable').querySelector('tbody').innerHTML=(d.users||[]).map(u=>'<tr><td><b>'+esc(u.displayName||'')+'</b><br><span class="snap">'+esc(u.email)+'</span></td>'+
+let U_PAGE=1;
+async function loadUsers(){
+  const q=$('uSearch')?$('uSearch').value.trim():'';
+  const st=$('uStatus')?$('uStatus').value:'';
+  const qs=['page='+U_PAGE,'size=50',q?'q='+encodeURIComponent(q):'',st?'status='+st:''].filter(Boolean).join('&');
+  const d=await (await api('/api/admin/users?'+qs)).json();
+  $('uTable').querySelector('tbody').innerHTML=(d.users||[]).map(u=>{
+    const gone=!!u.deletedAt;
+    return '<tr'+(gone?' style="opacity:.55"':'')+'><td><b class="ulink" data-uid="'+u.id+'" style="cursor:pointer;color:var(--primary)">'+esc(u.displayName||'(no name)')+'</b><br><span class="snap">'+esc(u.email)+'</span></td>'+
     '<td><select class="role" data-id="'+u.id+'" style="width:auto;padding:4px 8px;font-size:12px">'+['user','pro','guide','admin'].map(r=>'<option'+(r===u.role?' selected':'')+'>'+r+'</option>').join('')+'</select></td>'+
-    '<td><span class="pill '+u.status+'">'+u.status+'</span></td><td>'+u.lakes+'</td><td>'+dt(u.createdAt)+'</td><td>'+dt(u.lastLoginAt)+'</td>'+
-    '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm us" data-id="'+u.id+'" data-s="'+(u.status==='active'?'suspended':'active')+'">'+(u.status==='active'?'Suspend':'Reactivate')+'</button> '+
-    '<button class="btn btn-danger btn-sm ud" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">Delete</button></td></tr>').join('')||'<tr><td colspan="7" class="muted">No users.</td></tr>';
+    '<td><span class="pill '+esc(u.status)+'">'+esc(u.status)+'</span>'+(gone?'<br><span class="snap">purges '+dt(u.scheduledDeleteAt)+'</span>':'')+'</td>'+
+    '<td>'+u.lakes+'</td><td>'+(u.trips||0)+'</td><td>'+dt(u.createdAt)+'</td><td>'+dt(u.lastLoginAt)+'</td>'+
+    '<td style="white-space:nowrap">'+
+      '<button class="btn btn-ghost btn-sm uview" data-id="'+u.id+'">Open</button> '+
+      (gone
+        ? '<button class="btn btn-ghost btn-sm ur" data-id="'+u.id+'">Restore</button>'
+        : '<button class="btn btn-ghost btn-sm us" data-id="'+u.id+'" data-s="'+(u.status==='active'?'suspended':'active')+'">'+(u.status==='active'?'Suspend':'Reactivate')+'</button> '+
+          '<button class="btn btn-danger btn-sm ud" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">Delete</button>')+
+    '</td></tr>';
+  }).join('')||'<tr><td colspan="8" class="muted">No users.</td></tr>';
+  // A list that silently stops at 100 is not the list. Say how many there are.
+  $('uCount').textContent=(d.total||0)+' angler'+(d.total===1?'':'s')+(d.pages>1?' · page '+d.page+' of '+d.pages:'');
+  $('uPager').innerHTML=(d.pages>1)
+    ? '<button class="btn btn-ghost btn-sm" id="uPrev"'+(d.page<=1?' disabled':'')+'>← Newer</button>'+
+      '<button class="btn btn-ghost btn-sm" id="uNext"'+(d.page>=d.pages?' disabled':'')+'>Older →</button>'
+    : '';
+  if($('uPrev'))$('uPrev').onclick=()=>{U_PAGE=Math.max(1,U_PAGE-1);loadUsers();};
+  if($('uNext'))$('uNext').onclick=()=>{U_PAGE=U_PAGE+1;loadUsers();};
+}
+
+/* One angler, in full. "The app lost my trip" had nowhere to be looked into
+   before this — you could list somebody and suspend them, and that was all. */
+async function openUser(id){
+  const box=$('uDetail'); if(!box)return;
+  box.innerHTML='<div class="card" style="margin-top:16px"><div class="muted">Loading…</div></div>';
+  const [d,v]=await Promise.all([
+    (await api('/api/admin/users/'+encodeURIComponent(id))).json(),
+    (await api('/api/admin/users/'+encodeURIComponent(id)+'/view-as')).json().catch(()=>null),
+  ]);
+  if(!d||!d.user){ box.innerHTML='<div class="card" style="margin-top:16px" class="muted">Could not open that angler.</div>'; return; }
+  const u=d.user, c=d.counts||{};
+  const num=(k,label)=>'<div class="metric"><div class="n">'+(c[k]??0)+'</div><div class="k">'+label+'</div></div>';
+  box.innerHTML='<div class="card" style="margin-top:16px">'
+    +'<div class="row" style="justify-content:space-between;align-items:flex-start">'
+      +'<div><h2 style="margin:0">'+esc(u.displayName||'(no name)')+'</h2>'
+      +'<div class="snap">'+esc(u.email)+' · joined '+dt(u.createdAt)+' · last seen '+dt(u.lastLoginAt)+'</div>'
+      +(u.deletedAt?'<div class="snap" style="color:#e5484d">Marked for deletion — purges '+dt(u.scheduledDeleteAt)+'</div>':'')+'</div>'
+      +'<div><a class="btn btn-ghost btn-sm" href="/api/admin/users/'+encodeURIComponent(id)+'/export" target="_blank" rel="noopener">Export their data</a> '
+      +'<button class="btn btn-ghost btn-sm" id="uClose">Close</button></div>'
+    +'</div>'
+    +'<div class="metrics" style="margin-top:12px">'+num('trips','Catches')+num('spots','Spots')+num('waypoints','Waypoints')
+      +num('posts','Posts')+num('photos','Photos')+num('friends','Crew')+num('plans','Plans')+num('push','Devices')+'</div>'
+    +((c.flagsAgainst||c.flagsBy)?'<div class="snap" style="margin-top:8px">⚑ reported '+(c.flagsAgainst||0)+' time'+(c.flagsAgainst===1?'':'s')+' · has reported others '+(c.flagsBy||0)+' time'+(c.flagsBy===1?'':'s')+'</div>':'')
+    +'<div class="row" style="margin-top:14px;align-items:flex-start;gap:20px">'
+      +'<div style="flex:1;min-width:240px"><h2>Their lakes</h2>'
+        +((d.lakes||[]).map(l=>'<div class="snap">'+(l.home?'🏠 ':'')+esc(l.name)+(l.region?' <span class="muted">'+esc(l.region)+'</span>':'')+'</div>').join('')||'<div class="muted">None yet.</div>')+'</div>'
+      +'<div style="flex:1;min-width:240px"><h2>Their groups</h2>'
+        +((d.groups||[]).map(g=>'<div class="snap">'+esc(g.name)+' <span class="muted">'+esc(g.role)+'</span></div>').join('')||'<div class="muted">None.</div>')+'</div>'
+    +'</div>'
+    +'<h2 style="margin-top:16px">Recent catches</h2>'
+    +((d.recentTrips||[]).map(t=>'<div class="snap">'+dt(t.date)+' — '+esc(t.species||'(no species)')+(t.weight?' '+t.weight+' lb':'')
+        +(t.lake?' · '+esc(t.lake):'')+' <span class="muted">'+esc(t.visibility)+'</span></div>').join('')||'<div class="muted">No catches logged.</div>')
+    +(v?viewAsHtml(v):'')
+    +'</div>';
+  if($('uClose'))$('uClose').onclick=()=>{ box.innerHTML=''; };
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* What they see. Not impersonation — nothing here can be written, and looking
+   is written to the audit log. It exists so "it isn't working" can be answered
+   without asking somebody to photograph their phone. */
+function viewAsHtml(v){
+  const st=v.state||{};
+  return '<h2 style="margin-top:16px">What they see <span class="snap">read-only, and logged</span></h2>'
+    +'<div class="snap">Settings: posts default to <b>'+esc(v.user.postDefault||'friends')+'</b> · findable by <b>'+esc(v.user.discoverability||'')+'</b> · messages from <b>'+esc(v.user.messagePrivacy||'')+'</b>'
+    +(v.user.onboardedAt?'':' · <b>has not finished onboarding</b>')+'</div>'
+    +'<div class="snap">Sharing: '+((v.sharing||[]).map(x=>esc(x.what)+' → '+esc(x.who)).join(' · ')||'defaults')+'</div>'
+    +'<div class="snap">State: '+(st.unreadNotifications||0)+' unread · '+(st.groupInvitesWaiting||0)+' group invite(s) waiting · '+(st.plansAwaitingFeedback||0)+' plan(s) unrated</div>'
+    +((v.groups||[]).filter(g=>g.status!=='active').length?'<div class="snap">Pending group invites: '+v.groups.filter(g=>g.status!=='active').map(g=>esc(g.name)).join(', ')+'</div>':'')
+    +((v.groups||[]).length?'<div class="snap">Shares with groups: '+v.groups.filter(g=>g.status==='active').map(g=>esc(g.name)+' ('+[g.theyShare.spots?'spots':'',g.theyShare.catches?'catches':'',g.theyShare.waypoints?'waypoints':''].filter(Boolean).join('/')+(g.sharesData?'':' — group sharing off')+')').join(' · ')+'</div>':'');
 }
 async function createUser(){ const email=$('nuEmail').value.trim(); if(!email){$('nuMsg').textContent='Email required.';return;}
   const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({email,displayName:$('nuName').value.trim(),role:$('nuRole').value})}); const d=await r.json();
   $('nuMsg').className='msg '+(r.ok?'ok':'err'); $('nuMsg').textContent=r.ok?'Created ✓':(d.error||'Failed'); if(r.ok){$('nuEmail').value='';$('nuName').value='';loadUsers();}
 }
-async function onUserAction(e){ const s=e.target.closest('.us'),del=e.target.closest('.ud');
+async function onUserAction(e){
+  const open=e.target.closest('.ulink,.uview');
+  if(open){ openUser(open.dataset.uid||open.dataset.id); return; }
+  const rest=e.target.closest('.ur');
+  if(rest){
+    const r=await api('/api/admin/users/'+rest.dataset.id+'/restore',{method:'POST'});
+    if(r.ok)loadUsers();
+    return;
+  } const s=e.target.closest('.us'),del=e.target.closest('.ud');
   if(s){ await api('/api/admin/users/'+s.dataset.id+'/status',{method:'POST',body:JSON.stringify({status:s.dataset.s})}); loadUsers(); }
-  if(del){ if(!confirm('Delete '+del.dataset.n+'? This removes their account and all their data. This cannot be undone.'))return; await api('/api/admin/users/'+del.dataset.id,{method:'DELETE'}); loadUsers(); }
+  if(del){
+    if(!confirm('Delete '+del.dataset.n+'?\n\nTheir account stops working straight away and they are signed out. The data is kept for 30 days so this can be undone, then it is purged for good.\n\nExport their data first if they asked for it.'))return;
+    const r=await api('/api/admin/users/'+del.dataset.id,{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.scheduledFor)alert('Done. '+del.dataset.n+' is signed out now; the data purges on '+new Date(d.scheduledFor).toLocaleDateString()+'. Restore it before then from the Deleted filter.');
+    loadUsers();
+  }
 }
 async function onUserRole(e){ const s=e.target.closest('.role'); if(s)await api('/api/admin/users/'+s.dataset.id+'/role',{method:'POST',body:JSON.stringify({role:s.value})}); }
 
@@ -672,6 +815,29 @@ async function tHealth(){ $('content').innerHTML='<div class="muted">Loading sys
       + '</table></div>'
     + '<div class="card" style="flex:1;min-width:260px"><h2>Integrations & runtime</h2><table>'
       + '<tr><td class="muted">AI (Anthropic)</td><td style="text-align:right">'+yn(h.ai)+'</td></tr>'
+      // The parts that fail quietly. Each of these has cost data or taken the
+      // app down at some point, and none of them was on this page until it did.
+      + '<tr><td class="muted">Photo storage (R2)</td><td style="text-align:right">'
+        +((h.storage&&h.storage.configured)
+          ? '<span class="pill ok">on</span> <span class="snap">'+(h.storage.objects||0)+' photos · '+fmtBytes(h.storage.bytes||0)+'</span>'
+          : '<span class="pill down">off</span> <span class="snap">catch photos cannot be kept</span>')+'</td></tr>'
+      + '<tr><td class="muted">Push notifications</td><td style="text-align:right">'
+        +((h.push&&h.push.configured)
+          ? '<span class="pill ok">on</span> <span class="snap">'+(h.push.devices||0)+' device'+(h.push.devices===1?'':'s')+'</span>'
+          : '<span class="pill down">off</span> <span class="snap">the bell only works in-app</span>')+'</td></tr>'
+      + '<tr><td class="muted">Last backup</td><td style="text-align:right">'
+        +(h.backup
+          ? ((h.backup.ageHours<48?'<span class="pill ok">'+h.backup.ageHours+'h ago</span>':'<span class="pill down">'+Math.round(h.backup.ageHours/24)+'d ago</span>')
+             +' <span class="snap">'+fmtBytes(h.backup.bytes)+'</span>')
+          : '<span class="pill down">none found</span>')+'</td></tr>'
+      + '<tr><td class="muted">Report feeds</td><td style="text-align:right">'
+        +((h.feeds&&h.feeds.failing)
+          ? '<span class="pill down">'+h.feeds.failing+' of '+h.feeds.active+' failing</span>'
+          : '<span class="pill ok">'+((h.feeds&&h.feeds.active)||0)+' healthy</span>')+'</td></tr>'
+      + '<tr><td class="muted">Outside heartbeat</td><td style="text-align:right">'
+        +((h.heartbeat&&h.heartbeat.configured)
+          ? '<span class="pill ok">on</span>'
+          : '<span class="pill down">off</span> <span class="snap">nothing would notice if this machine died</span>')+'</td></tr>'
       + '<tr><td class="muted">Email (Resend)</td><td style="text-align:right">'+emailPill(h.emailHealth,h.email)+'</td></tr>'
       + (h.emailHealth&&h.emailHealth.fromIsDefault&&h.emailHealth.configured?'<tr><td colspan="2" class="snap" style="color:#b7791f">⚠ No EMAIL_FROM set — Resend\'s shared sender only delivers to your own address. Verify a domain and set EMAIL_FROM, or nobody else can sign in.</td></tr>':'')
       + (h.emailHealth&&h.emailHealth.lastError?'<tr><td colspan="2" class="snap" style="color:var(--bear)">Last send failed '+ago(h.emailHealth.lastErrorAt)+': '+esc(h.emailHealth.lastError)+'</td></tr>':'')
