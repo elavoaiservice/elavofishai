@@ -3,7 +3,7 @@
    then refreshes the cache in the background. Live data (weather, lake
    level, map tiles) goes network-only; the app already degrades honestly
    when those are unreachable. */
-const CACHE = 'elavofishai-v41';
+const CACHE = 'elavofishai-v42';
 // NOTE: the planner (/app, index.html) is intentionally NOT cached — it's an
 // account-gated page and must always hit the server so the auth gate runs. The
 // public marketing/login pages + static assets are safe to cache.
@@ -63,4 +63,37 @@ self.addEventListener('fetch', e => {
     return;
   }
   // Everything else (weather, USGS, map tiles): straight to network.
+});
+
+/* ---- push ----
+   The bell inside the app only works while the app is open, which is almost
+   never. A push reaches the phone in the pocket.
+
+   The payload is deliberately thin — a nudge, not the content. A lock screen
+   is a public place, and none of this is worth showing to whoever is sitting
+   next to you. */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = {}; }
+  const title = d.title || 'ElavoFishAI';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    // Same tag replaces an older one rather than stacking six buzzes.
+    tag: d.tag || 'efa',
+    data: { url: d.url || '/app' }
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/app';
+  // Focus a tab that is already open rather than piling up new ones.
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) {
+      if (c.url.indexOf('/app') !== -1 && 'focus' in c) { c.navigate(url); return c.focus(); }
+    }
+    return self.clients.openWindow(url);
+  }));
 });

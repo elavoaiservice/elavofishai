@@ -1046,6 +1046,7 @@ body.feed-loading .stat-v *{visibility:hidden}
     <button class="btn ghost" data-go="log" data-sub="spots">&#128205; Spots</button>
     <button class="btn ghost" data-go="friends">&#127907; Friends' activity</button>
   </div>
+  <div id="planFollowup"></div>
   <div id="wxAlerts"></div>
   <div class="today-grid" id="todayCards"></div>
   <div id="wxDiscussion"></div>
@@ -1866,6 +1867,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 <section class="panel" id="p-alerts" hidden>
   <div id="ntAuth" class="lede">Sign in (top-left) to see what you have missed.</div>
   <div id="ntMain" hidden>
+    <div id="pushSetting" style="margin-bottom:12px"></div>
     <div class="soc-row" style="margin-bottom:10px">
       <button class="btn ghost btn-sm" id="ntReadAll">Mark all read</button>
       <button class="btn ghost btn-sm" id="ntClear">Clear read</button>
@@ -5070,7 +5072,7 @@ function go(id,push){
   if(push!==false&&location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   window.scrollTo({top:0,behavior:'instant'});
   // per-view work
-  if(id==='today'){ renderToday(); loadAlerts_nws(); }
+  if(id==='today'){ renderToday(); loadAlerts_nws(); loadFollowup(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
   if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); loadSuggested(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
@@ -5083,7 +5085,7 @@ function go(id,push){
   if(id==='reports'){ loadReports(); }
   if(id==='water'){ loadRelease(); drawWaterLakeNote(); }
   if(id==='feed'){ loadSocialFeed(); }
-  if(id==='alerts'){ loadAlerts(); }
+  if(id==='alerts'){ loadAlerts(); drawPushSetting(); }
   if(id==='market'){ loadMarket(); }
   if(id==='wall'){ loadWall(); }
   if(id==='group'){ loadGroupPage(); }
@@ -6262,6 +6264,121 @@ document.addEventListener('click',async function(e){
     if(note===null)return;
     const r=await apiFetch('/api/tournaments/'+encodeURIComponent(close.dataset.tclose),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'done',resultsNote:note})});
     if(r.ok)loadGroupPage(); return;
+  }
+});
+
+/* ---- how did it actually go? ----
+   The 👍/👎 under a plan is asked before the trip, when nobody can answer it
+   honestly — which is why fewer than one plan in ten was ever rated, and why
+   the rating we do have is closer to an anecdote than a measurement. Ask on
+   the Today page once the day has been and gone. */
+async function loadFollowup(){
+  const box=$('planFollowup'); if(!box||!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/plans/followup'); if(!r.ok)return;
+    const list=(await r.json()).followups||[];
+    if(!list.length){ box.innerHTML=''; return; }
+    const f=list[0];
+    const when=new Date(f.date+'T12:00:00');
+    const day=when.toLocaleDateString(undefined,{weekday:'long'});
+    box.innerHTML='<div class="note" style="margin:0 0 14px;border-color:var(--accent-ring);background:var(--accent-soft)">'+
+      '<b>How did '+escHtml(day)+' go on '+escHtml(f.lake)+'?</b> '+
+      '<span class="snap">You planned for '+escHtml(f.species)+'. Telling us whether the plan held up is the only way it gets better.</span>'+
+      '<div class="soc-row" style="margin-top:8px">'+
+        '<button class="btn btn-sm" data-fup="up" data-fup-plan="'+escHtml(f.planId)+'">👍 It was about right</button>'+
+        '<button class="btn ghost btn-sm" data-fup="down" data-fup-plan="'+escHtml(f.planId)+'">👎 Not really</button>'+
+        '<button class="btn ghost btn-sm" data-fup-skip="'+escHtml(f.requestId)+'">I didn’t go</button>'+
+        '<span class="snap" id="fupMsg"></span>'+
+      '</div></div>';
+  }catch(e){}
+}
+document.addEventListener('click',async function(e){
+  const skip=e.target.closest('[data-fup-skip]');
+  if(skip){
+    await apiFetch('/api/plans/followup/'+encodeURIComponent(skip.dataset.fupSkip)+'/skip',{method:'POST'});
+    loadFollowup(); return;
+  }
+  const v=e.target.closest('[data-fup]');
+  if(!v)return;
+  const helpful=v.dataset.fup==='up';
+  // A 👎 is worth far more with a sentence attached, so ask — but never insist.
+  const note=helpful?'':(prompt('What did it miss? (optional, but this is the bit that actually helps)')||'');
+  const r=await apiFetch('/api/ai/day-plan/'+encodeURIComponent(v.dataset.fupPlan)+'/feedback',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({helpful:helpful,note:note})});
+  const msg=$('fupMsg');
+  if(msg)msg.textContent=r.ok?'Thank you — that goes straight into how the next one is built.':'Could not save that.';
+  if(r.ok)setTimeout(loadFollowup,1200);
+});
+
+/* ---- push notifications ----
+   Asked for at a moment that explains itself. The browser gives exactly one
+   chance at the permission prompt, and a prompt on page load — before anyone
+   knows what the app even does — is how that chance gets wasted. */
+let PUSH_KEY=null;
+function pushSupported(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function urlB64ToUint8(b64){
+  const pad='='.repeat((4-b64.length%4)%4);
+  const raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  const out=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+async function pushStatus(){
+  if(!pushSupported()||!AUTH.user)return {supported:false};
+  try{
+    const r=await apiFetch('/api/push/key'); if(!r.ok)return {supported:false};
+    const d=await r.json(); PUSH_KEY=d.publicKey||null;
+    const reg=await navigator.serviceWorker.getRegistration();
+    const sub=reg?await reg.pushManager.getSubscription():null;
+    return {supported:!!d.configured, permission:Notification.permission, subscribed:!!sub};
+  }catch(e){ return {supported:false}; }
+}
+async function pushEnable(){
+  if(!pushSupported()||!PUSH_KEY)return {ok:false,error:'This browser cannot do push notifications.'};
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')return {ok:false,error:perm==='denied'
+    ? 'Notifications are blocked for this site. Your browser settings are the only place that can undo that.'
+    : 'No answer given, so nothing changed.'};
+  const reg=await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8(PUSH_KEY)});
+  const r=await apiFetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON())});
+  return r.ok?{ok:true}:{ok:false,error:'The server would not accept the subscription.'};
+}
+async function pushDisable(){
+  try{
+    const reg=await navigator.serviceWorker.getRegistration();
+    const sub=reg?await reg.pushManager.getSubscription():null;
+    if(sub){ await apiFetch('/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})}); await sub.unsubscribe(); }
+  }catch(e){}
+}
+async function drawPushSetting(){
+  const box=$('pushSetting'); if(!box)return;
+  const st=await pushStatus();
+  if(!st.supported){
+    box.innerHTML='<div class="snap">Push notifications are not set up on this server yet.</div>';
+    return;
+  }
+  const on=st.subscribed&&st.permission==='granted';
+  box.innerHTML='<div class="fr-row"><span><b>🔔 Notifications on this device</b> '+
+    '<span class="snap">'+(on?'On — you will be told when someone comments, invites you, or changes a tournament you entered.'
+      :(st.permission==='denied'?'Blocked in your browser settings for this site.':'Off. The bell only works while the app is open.'))+'</span></span>'+
+    (st.permission==='denied'?''
+      :'<button class="btn '+(on?'ghost ':'')+'btn-sm" id="pushToggle">'+(on?'Turn off':'Turn on')+'</button>')+
+    '</div>'+(on?'<div class="soc-row"><button class="btn ghost btn-sm" id="pushTest">Send a test</button><span class="snap" id="pushMsg"></span></div>':'<div class="snap" id="pushMsg"></div>');
+}
+document.addEventListener('click',async function(e){
+  if(e.target&&e.target.id==='pushToggle'){
+    e.target.disabled=true;
+    const st=await pushStatus();
+    if(st.subscribed){ await pushDisable(); }
+    else { const r=await pushEnable(); if(!r.ok&&$('pushMsg'))$('pushMsg').textContent=r.error||'Could not turn that on.'; }
+    drawPushSetting(); return;
+  }
+  if(e.target&&e.target.id==='pushTest'){
+    const r=await apiFetch('/api/push/test',{method:'POST'});
+    const d=await r.json().catch(()=>({}));
+    if($('pushMsg'))$('pushMsg').textContent=d.ok?'Sent — it should appear in a second.':'Nothing was sent; this device may not be subscribed any more.';
+    return;
   }
 });
 

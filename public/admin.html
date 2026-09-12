@@ -213,6 +213,31 @@ function go(tab){
    Coverage says how much of the work is actually being judged, and the lake
    breakdown says where the advice is weakest — which is the part you can act
    on. */
+/* Which model to pay for.
+   Cost alone picks the cheapest and quality alone picks the dearest; the
+   question is always both at once. This says it in a sentence, and refuses to
+   say anything at all when the votes are too few to mean it — a model with
+   three thumbs up is not "better", it is three people. */
+function modelAdvice(d){
+  const usable=(d.models||[]).filter(m=>(m.up+m.down)>=10);
+  if(usable.length<2){
+    return '<div class="snap" style="margin-top:12px">Not enough votes to compare models yet — ten per model is the point where a percentage stops being a coincidence.</div>';
+  }
+  const best=usable.slice().sort((a,b)=>(b.helpfulPct-a.helpfulPct)||0)[0];
+  const cheapest=usable.slice().sort((a,b)=>(a.costPerPlan||0)-(b.costPerPlan||0))[0];
+  let line;
+  if(best.model===cheapest.model){
+    line='<b>'+esc(best.model)+'</b> is both the best rated ('+best.helpfulPct+'% 👍) and the cheapest. There is nothing to trade off — use it.';
+  } else if(best.helpfulPct-cheapest.helpfulPct<=5){
+    line='<b>'+esc(cheapest.model)+'</b> rates within '+(best.helpfulPct-cheapest.helpfulPct)+' points of '+esc(best.model)+
+      ' and costs less. On this evidence the cheaper model is the better buy; anglers cannot tell them apart.';
+  } else {
+    line='<b>'+esc(best.model)+'</b> rates '+(best.helpfulPct-cheapest.helpfulPct)+' points better than '+esc(cheapest.model)+
+      '. That is a real difference — worth paying for if the plans are what people come back for.';
+  }
+  return '<div class="note" style="margin-top:12px">'+line+' <span class="snap">Change it under Environment → AI model.</span></div>';
+}
+
 async function loadPlanQuality(){
   const box=$('planQuality'); if(!box)return;
   try{
@@ -226,6 +251,7 @@ async function loadPlanQuality(){
       + metricCard((d.models||[]).length?((d.models[0].helpfulPct??'—')+'%'):'—','Top model 👍',(d.models[0]||{}).model||'no votes yet')
       +'</div>'
       +((d.coverage||0)<10?'<div class="snap" style="margin-top:10px">Fewer than one plan in ten is rated, so treat these percentages as anecdotes rather than a measurement. Asking for the rating after a trip — rather than under the plan — is the change that would fix that.</div>':'')
+      +modelAdvice(d)
       +(weak.length?'<h2 style="margin-top:16px">Where the advice is weakest</h2><table><thead><tr><th>Lake</th><th>👍</th><th>👎</th><th style="text-align:right">Helpful</th></tr></thead><tbody>'
         +weak.map(l=>'<tr><td>'+esc(l.lake)+'</td><td>'+l.up+'</td><td>'+l.down+'</td><td style="text-align:right"><span class="pill down">'+l.helpfulPct+'%</span></td></tr>').join('')
         +'</tbody></table>':'')

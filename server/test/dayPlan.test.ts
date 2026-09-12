@@ -6,8 +6,10 @@
  * response could not be read" for a response that was entirely fine.
  */
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
+import { prisma } from '../src/db';
 import { extractJson } from '../src/services/dayPlan';
+import { as, closeApp, getApp, HAS_DB, makeLake, resetDb, signIn } from './helpers';
 
 const plan = '{"summary":"Fish the shade","timeline":[{"time":"6am","advice":"Start shallow"}],"lures":["jig"],"notes":"hot"}';
 
@@ -38,5 +40,73 @@ describe('extractJson', () => {
   test('no object at all is null', () => {
     assert.equal(extractJson(''), null);
     assert.equal(extractJson('I could not build a plan today.'), null);
+  });
+});
+
+describe('asking how it went', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('a plan is only followed up after its day has passed, and only once rated is it dropped', async () => {
+    await resetDb();
+    const me = await signIn('angler@example.com');
+    const lakeId = await makeLake();
+    const plan = await prisma.dayPlan.create({
+      data: { lakeId, date: '2026-01-10', species: 'Crappie', goal: 'numbers', content: {}, daysOutAtGen: 2 },
+    });
+    // Yesterday's plan: worth asking about.
+    await prisma.planRequest.create({
+      data: { planId: plan.id, userId: me.id, lakeId, forDate: new Date(Date.now() - 86400_000) },
+    });
+    const before = (await as(me, { method: 'GET', url: '/api/plans/followup' })).json() as { followups: unknown[] };
+    assert.equal(before.followups.length, 1);
+
+    await as(me, { method: 'POST', url: `/api/ai/day-plan/${plan.id}/feedback`, payload: { helpful: true } });
+    const after = (await as(me, { method: 'GET', url: '/api/plans/followup' })).json() as { followups: unknown[] };
+    assert.equal(after.followups.length, 0);
+  });
+
+  test('a plan for a day still to come is not asked about', async () => {
+    await resetDb();
+    const me = await signIn('angler@example.com');
+    const lakeId = await makeLake();
+    const plan = await prisma.dayPlan.create({
+      data: { lakeId, date: '2099-01-01', species: 'Crappie', goal: 'numbers', content: {}, daysOutAtGen: 2 },
+    });
+    await prisma.planRequest.create({
+      data: { planId: plan.id, userId: me.id, lakeId, forDate: new Date(Date.now() + 3 * 86400_000) },
+    });
+    const d = (await as(me, { method: 'GET', url: '/api/plans/followup' })).json() as { followups: unknown[] };
+    assert.equal(d.followups.length, 0);
+  });
+
+  test('a plain "I did not go" stops the asking', async () => {
+    await resetDb();
+    const me = await signIn('angler@example.com');
+    const lakeId = await makeLake();
+    const plan = await prisma.dayPlan.create({
+      data: { lakeId, date: '2026-01-10', species: 'Crappie', goal: 'numbers', content: {}, daysOutAtGen: 2 },
+    });
+    const req = await prisma.planRequest.create({
+      data: { planId: plan.id, userId: me.id, lakeId, forDate: new Date(Date.now() - 86400_000) },
+    });
+    await as(me, { method: 'POST', url: `/api/plans/followup/${req.id}/skip` });
+    const d = (await as(me, { method: 'GET', url: '/api/plans/followup' })).json() as { followups: unknown[] };
+    assert.equal(d.followups.length, 0);
+  });
+
+  test('one angler is never asked about another angler"s plan', async () => {
+    await resetDb();
+    const me = await signIn('angler@example.com');
+    const other = await signIn('other@example.com');
+    const lakeId = await makeLake();
+    const plan = await prisma.dayPlan.create({
+      data: { lakeId, date: '2026-01-10', species: 'Crappie', goal: 'numbers', content: {}, daysOutAtGen: 2 },
+    });
+    await prisma.planRequest.create({
+      data: { planId: plan.id, userId: me.id, lakeId, forDate: new Date(Date.now() - 86400_000) },
+    });
+    const d = (await as(other, { method: 'GET', url: '/api/plans/followup' })).json() as { followups: unknown[] };
+    assert.equal(d.followups.length, 0);
   });
 });

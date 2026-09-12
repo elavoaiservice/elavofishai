@@ -696,13 +696,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
     const rate = (t: { up: number; down: number }) => (t.up + t.down ? Math.round((t.up / (t.up + t.down)) * 100) : null);
 
+    // What each model costs per plan, so quality can be weighed against price
+    // in the same breath rather than on two different screens.
+    const spend = await prisma.aiUsage.groupBy({
+      by: ['model'],
+      where: { createdAt: { gte: since }, feature: 'day_plan' },
+      _sum: { costUsd: true },
+      _count: { _all: true },
+    });
+    const perPlan = new Map(
+      spend.map((m) => [m.model, m._count._all ? (m._sum.costUsd || 0) / m._count._all : 0])
+    );
+
     return {
       plans,
       rated: rows.length,
       // How much of the work is actually being judged. A rate computed from
       // six votes out of four hundred plans is not a measurement.
       coverage: plans ? Math.round((rows.length / plans) * 100) : 0,
-      models: [...tally.values()].map((t) => ({ ...t, helpfulPct: rate(t) })).sort((a, b) => b.up + b.down - (a.up + a.down)),
+      models: [...tally.values()]
+        .map((t) => ({ ...t, helpfulPct: rate(t), costPerPlan: Math.round((perPlan.get(t.model) || 0) * 10000) / 10000 }))
+        .sort((a, b) => b.up + b.down - (a.up + a.down)),
       lakes: [...byLake.values()].map((l) => ({ ...l, helpfulPct: rate(l) })).sort((a, b) => (rate(a) ?? 100) - (rate(b) ?? 100)).slice(0, 10),
       notes: rows
         .filter((r) => r.note)

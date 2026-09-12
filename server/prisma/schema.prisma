@@ -140,6 +140,8 @@ model User {
   actedNotifications   Notification[]        @relation("NotifyActor")
   flagsRaised          ContentFlag[]         @relation("FlagReporter")
   invitesSent          Invite[]              @relation("InviteSender")
+  planRequests         PlanRequest[]
+  pushSubscriptions    PushSubscription[]
   tournamentsRun       Tournament[]          @relation("TournamentHost")
   tournamentEntries    TournamentEntry[]
   inviteAccepted       Invite[]              @relation("InviteAcceptor")
@@ -267,6 +269,7 @@ model DayPlan {
   model        String?
   generatedAt  DateTime       @default(now())
   feedback     PlanFeedback[]
+  requests     PlanRequest[]
 
   @@unique([lakeId, date, species, goal])
   @@index([lakeId])
@@ -783,6 +786,48 @@ model Listing {
 // that caused them, never derived on read — a feed that has to recompute "what
 // changed since you last looked" gets slower every month.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Who asked for a plan, and whether we have asked them how it went.
+//
+// A DayPlan is cached per lake+date+species+goal and shared between anglers,
+// so the plan row itself cannot say who wanted it. Without that we could never
+// follow up — and a rating asked for under the plan, before the trip, is the
+// reason fewer than one plan in ten was ever rated.
+// ---------------------------------------------------------------------------
+model PlanRequest {
+  id        String    @id @default(cuid())
+  planId    String
+  plan      DayPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId    String
+  // The day the plan was FOR, which is when it becomes worth asking about.
+  forDate   DateTime
+  askedAt   DateTime? // when we put the question in front of them
+  // They said "I didn't go" — a real answer, and not one to keep asking about.
+  skippedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([planId, userId])
+  @@index([userId, forDate])
+}
+
+// A browser this angler wants notifications on. One row per device.
+model PushSubscription {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String    @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  // Push services tell us when a subscription is dead; we stop using it then.
+  failedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
 model Notification {
   id           String    @id @default(cuid())
   userId       String // who is being told

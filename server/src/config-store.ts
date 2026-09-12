@@ -55,6 +55,10 @@ export const CATALOG: ConfigItem[] = [
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
   { key: 'PUBLIC_BASE_URL', label: 'Public base URL', group: 'App', test: true, placeholder: 'https://elavofishai.elavoai.com' },
   // ---- object storage (Cloudflare R2 or any S3-compatible service) ----
+  { key: 'HEARTBEAT_URL', label: 'Heartbeat ping URL', group: 'Notifications', placeholder: 'https://hc-ping.com/…', help: 'The app pings this every 5 minutes. Point it at a dead-man\'s-switch service (healthchecks.io, Better Stack) and it will alert you when the pings stop — the only way to find out the whole machine has gone, since a watchdog on the machine cannot report its own death.' },
+  { key: 'VAPID_PUBLIC_KEY', label: 'Push public key', group: 'Notifications', placeholder: 'B…', help: 'Web-push VAPID keys. Generate a pair with: npx web-push generate-vapid-keys — paste the public half here and the private half below. Without them the app falls back to in-app notifications only.' },
+  { key: 'VAPID_PRIVATE_KEY', label: 'Push private key', group: 'Notifications', secret: true, placeholder: '…' },
+  { key: 'VAPID_SUBJECT', label: 'Push contact', group: 'Notifications', placeholder: 'mailto:support@elavoai.com', help: 'Where a push service should complain if something is wrong. An email address or a URL.' },
   { key: 'R2_ACCOUNT_ID', label: 'R2 account ID', group: 'Storage', placeholder: 'a1b2c3…', help: 'From the Cloudflare dashboard. The endpoint is built from this; or set S3_ENDPOINT for a non-R2 service.' },
   { key: 'R2_BUCKET', label: 'Bucket name', group: 'Storage', placeholder: 'elavofishai', help: 'Keep it PRIVATE — photos are served through the app so sharing rules are enforced.' },
   { key: 'R2_ACCESS_KEY_ID', label: 'Access key ID', group: 'Storage', secret: true, placeholder: '…' },

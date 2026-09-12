@@ -20,6 +20,7 @@ import { groupPageRoutes } from './routes/groups';
 import { marketRoutes } from './routes/market';
 import { notificationRoutes } from './routes/notifications';
 import { flagRoutes } from './routes/flags';
+import { pushRoutes } from './routes/push';
 import { inviteRoutes } from './routes/invites';
 import { tournamentRoutes } from './routes/tournaments';
 import { refreshAllSources, sweepReports } from './services/reports';
@@ -76,6 +77,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(marketRoutes);
   await app.register(notificationRoutes);
   await app.register(flagRoutes);
+  await app.register(pushRoutes);
   await app.register(tournamentRoutes);
   await app.register(inviteRoutes, { baseUrlFor: (req: unknown) => baseUrlFor(req as { headers: Record<string, unknown>; protocol: string }) });
 
@@ -132,6 +134,29 @@ async function main(): Promise<void> {
   // Overlay admin-managed config onto process.env, then seed the admin from env.
   await loadOverlay().catch((e) => app.log.warn({ err: e }, 'config overlay skipped'));
   await bootstrapAdmin().catch((e) => app.log.warn({ err: e }, 'admin bootstrap skipped'));
+
+  /**
+   * Tell an outside service we are still alive.
+   *
+   * Everything else that watches this app runs ON this app's machine, so none
+   * of it can tell anyone when the machine itself is gone — which is the
+   * outage that lasts longest, because nobody finds out until they try to use
+   * the site. A dead-man's-switch service (healthchecks.io and friends) works
+   * the other way round: it alerts when the pings STOP. No ping URL configured
+   * means this does nothing at all, quietly.
+   */
+  const heartbeat = async () => {
+    const url = process.env.HEARTBEAT_URL || '';
+    if (!url) return;
+    try {
+      await fetch(url, { method: 'GET', signal: AbortSignal.timeout(10_000) });
+    } catch {
+      /* the whole point is that a missed ping is the signal — never log noise */
+    }
+  };
+  await heartbeat();
+  const beat = setInterval(heartbeat, 5 * 60_000);
+  beat.unref?.();
 
   // Periodic bounded-table sweeps.
   const hour = 3600000;

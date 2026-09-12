@@ -10,6 +10,7 @@
  * one notification, not a stream.
  */
 import { prisma } from '../db';
+import { messageFor, sendToUser } from './push';
 
 export type NotifyType =
   | 'comment'
@@ -70,7 +71,7 @@ export async function notify(input: NotifyInput): Promise<void> {
       }
     }
 
-    await prisma.notification.create({
+    const row = await prisma.notification.create({
       data: {
         userId: input.userId,
         actorId: input.actorId ?? null,
@@ -83,8 +84,27 @@ export async function notify(input: NotifyInput): Promise<void> {
         snippet: preview(input.snippet) ?? null,
       },
     });
+    await pushFor(row.id, input);
   } catch {
     // Deliberately swallowed — see the doc comment.
+  }
+}
+
+/**
+ * The same notification, delivered to the phone. Separate from writing the row
+ * so a push service having a bad day can never cost someone their notification
+ * — the bell is the record, the push is a courtesy.
+ */
+async function pushFor(notificationId: string, input: NotifyInput): Promise<void> {
+  try {
+    const [actor, group] = await Promise.all([
+      input.actorId ? prisma.user.findUnique({ where: { id: input.actorId }, select: { displayName: true } }) : null,
+      input.groupId ? prisma.friendGroup.findUnique({ where: { id: input.groupId }, select: { name: true } }) : null,
+    ]);
+    const msg = messageFor(input.type, actor?.displayName || null, group?.name || null);
+    if (msg) await sendToUser(input.userId, { ...msg, tag: `${msg.tag || input.type}:${notificationId.slice(0, 8)}` });
+  } catch {
+    /* a push that fails is not a notification that failed */
   }
 }
 
@@ -108,6 +128,9 @@ export async function notifyGroup(groupId: string, actorId: string, postId: stri
         snippet: preview(snippet),
       })),
     });
+    const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { displayName: true } });
+    const msg = messageFor('group_post', actor?.displayName || null, group.name);
+    if (msg) for (const userId of ids) await sendToUser(userId, msg);
   } catch {
     // As above.
   }

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Is the app answering? Checks every two minutes; restarts a wedged container
+  once; emails if that does not fix it.
+
+    cp scripts/com.elavofishai.watchdog.plist ~/Library/LaunchAgents/
+    # fill in ALERT_* below first, or it can restart but cannot tell you
+    launchctl load ~/Library/LaunchAgents/com.elavofishai.watchdog.plist
+
+  The alert credentials are deliberately separate from the app's own config:
+  the app's email key is encrypted in the database and only the app can read
+  it, which is no use at the moment the app is the thing that is broken.
+
+  This catches a wedged app on a healthy Mac, which is the common case. It
+  cannot tell you the Mac itself is gone — nothing running ON the Mac can.
+  For that, set HEARTBEAT_URL in the app's Environment settings and point it
+  at a dead-man's-switch service.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.elavofishai.watchdog</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/CHANGEME/elavofishai/scripts/watchdog.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/CHANGEME/elavofishai</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>REPO_DIR</key>
+    <string>/Users/CHANGEME/elavofishai</string>
+    <key>ALERT_RESEND_KEY</key>
+    <string></string>
+    <key>ALERT_EMAIL_TO</key>
+    <string></string>
+    <key>ALERT_EMAIL_FROM</key>
+    <string>alerts@elavoai.com</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>120</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CHANGEME/efa-deploy/watchdog.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/CHANGEME/efa-deploy/watchdog.out</string>
+</dict>
+</plist>
