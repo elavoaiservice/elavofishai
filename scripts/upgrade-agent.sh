@@ -57,9 +57,19 @@ run_upgrade() {
     return 1
   fi
   # Fast-forward only: local edits on the Mini stop the deploy rather than being
-  # silently merged or clobbered.
+  # silently merged or clobbered. When that happens, say WHICH files — "local
+  # changes on the host?" sent me looking at the wrong thing for ten minutes
+  # while two commits sat undeployed.
   if ! git merge --ff-only "origin/$BRANCH" >>"$LOG" 2>&1; then
-    log "FAILED: cannot fast-forward to origin/$BRANCH (local changes on the host?)"
+    log "FAILED: cannot fast-forward to origin/$BRANCH"
+    DIRTY="$(git status --porcelain --untracked-files=no | head -10)"
+    if [ -n "$DIRTY" ]; then
+      log "  tracked files modified on this host:"
+      echo "$DIRTY" | while read -r line; do log "    $line"; done
+      log "  fix with: git -C $(pwd) checkout -- <file>   (then trigger again)"
+    else
+      log "  the working tree is clean, so this is a diverged branch — check git log"
+    fi
     return 1
   fi
 
