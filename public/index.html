@@ -2163,6 +2163,7 @@ let FULL_POOL=ACTIVE.fullPool;   // conservation pool elevation, ft msl (null if
 let USGS_SITE=ACTIVE.gauge;      // USGS gauge id, or null → manual level entry only
 let lakeLevel=null, lakeWhen=null, lakeTrend=null, lakeManual=false;
 function levelMeaning(ft){
+  if(FULL_POOL==null||!isFinite(FULL_POOL))return {n:'Current level',t:'No full-pool elevation on record for this lake, so there is nothing to measure this against yet.'};
   const d=ft-FULL_POOL;
   if(d>=0.5) return {n:"Above full pool",t:"High water. Fish push into flooded shoreline cover that is normally dry, and they will be shallower than your waypoints suggest. Watch for floating debris and check that ramps are not submerged past the safe point."};
   if(d>=-1) return {n:"Essentially full",t:"Normal. Your logged depths and waypoints should read true."};
@@ -3375,9 +3376,12 @@ function drawLevel(){
       'Enter the elevation below if you know it \u2014 marinas and the operating authority usually post it.</div>';
     return;
   }
-  const d=lakeLevel-FULL_POOL, mn=levelMeaning(lakeLevel);
-  const sign=d>=0?'+':'';
-  $('levelv').innerHTML=lakeLevel.toFixed(1)+'<small> '+sign+d.toFixed(1)+' ft</small>';
+  // Without a known full pool there is nothing to compare against — and
+  // subtracting null quietly produced "+690.5 ft above full pool".
+  const known=(FULL_POOL!=null&&isFinite(FULL_POOL));
+  const d=known?(lakeLevel-FULL_POOL):null, mn=levelMeaning(lakeLevel);
+  const sign=(d!=null&&d>=0)?'+':'';
+  $('levelv').innerHTML=lakeLevel.toFixed(1)+(known?'<small> '+sign+d.toFixed(1)+' ft</small>':'<small> ft</small>');
   let tr='';
   if(lakeTrend!=null&&Math.abs(lakeTrend)>=0.15){
     tr=lakeTrend<0
@@ -3389,11 +3393,12 @@ function drawLevel(){
     '<div><div class="stat-k">'+(lakeManual?'Entered by you':(WATER_SRC&&WATER_SRC.level?({usgs:'USGS gauge '+((WATER_SRC.gauge&&WATER_SRC.gauge.id)||''),twdb:'Texas Water Development Board'}[WATER_SRC.level.source]||WATER_SRC.level.source):'Gauge'))+'</div>'+
     '<div class="lvl-big">'+lakeLevel.toFixed(2)+'<small> ft msl</small></div>'+
     (lakeWhen?'<div class="wnext">'+lakeWhen+'</div>':'')+'</div>'+
-    '<div><div class="stat-k">Vs full pool</div><div class="lvl-big" style="color:'+
-      (Math.abs(d)<1?'var(--success)':d<-3?'var(--danger)':'var(--amber)')+'">'+sign+d.toFixed(2)+'<small> ft</small></div></div>'+
+    (known?'<div><div class="stat-k">Vs full pool</div><div class="lvl-big" style="color:'+
+      (Math.abs(d)<1?'var(--success)':d<-3?'var(--danger)':'var(--amber)')+'">'+sign+d.toFixed(2)+'<small> ft</small></div></div>':'')+
     '</div>'+tr+
     '<div class="wstate" style="margin-top:14px"><div class="wstate-t">'+mn.n+'</div><div class="wstate-s">'+mn.t+'</div></div>'+
-    '<div class="note">Full pool is '+FULL_POOL.toFixed(1)+' ft msl. What matters is usually the direction: rising water pushes fish into new cover, falling water pulls them to the first drop.</div>';
+    '<div class="note">'+(known?'Full pool is '+FULL_POOL.toFixed(1)+' ft msl. ':'We do not know this lake\u2019s full-pool elevation, so the reading stands alone. ')+
+    'What matters is usually the direction: rising water pushes fish into new cover, falling water pulls them to the first drop.</div>';
 }
 /* Level and water temperature, from the server's /water endpoint, which knows
    which parameter each gauge actually publishes (Granbury's is 62614, and the

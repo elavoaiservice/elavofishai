@@ -50,7 +50,13 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
 
     const listings = await prisma.listing.findMany({
       where: {
-        sellerId: q.mine === '1' ? me.id : q.sellerId ? String(q.sellerId) : { notIn: blocked },
+        // Asking for one seller's listings used to replace the block filter
+        // outright, so a blocked angler's board was one query parameter away.
+        sellerId: q.mine === '1'
+          ? me.id
+          : q.sellerId
+            ? (blocked.includes(String(q.sellerId)) ? '__blocked__' : String(q.sellerId))
+            : { notIn: blocked },
         // Your own withdrawn ads stay visible to you; everyone else sees the board.
         status: q.mine === '1' ? undefined : { in: ['active', 'sold'] },
         category: q.category && (CATEGORIES as readonly string[]).includes(q.category) ? q.category : undefined,

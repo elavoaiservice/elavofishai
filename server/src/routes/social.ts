@@ -425,6 +425,18 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const p = req.params as { id: string; userId: string };
     const [mine, theirs] = await Promise.all([roleIn(p.id, me.id), roleIn(p.id, p.userId)]);
     if (!mine) return reply.code(404).send({ error: 'No such group.' });
+    // Withdrawing an invitation nobody has answered yet. roleIn() reports a
+    // pending invitee as no role at all — correctly, they are not a member —
+    // which meant the "cancel invite" button next to them always failed.
+    const pendingInvite = await prisma.friendGroupMember.findFirst({
+      where: { groupId: p.id, memberId: p.userId, status: 'pending' },
+      select: { id: true },
+    });
+    if (pendingInvite && p.userId !== me.id) {
+      if (!canManageMembers(mine)) return reply.code(403).send({ error: 'You cannot withdraw this invitation.' });
+      await prisma.friendGroupMember.delete({ where: { id: pendingInvite.id } });
+      return reply.send({ ok: true, withdrawn: true });
+    }
     // Leaving is always allowed; removing someone else takes rank over them.
     if (p.userId !== me.id && !canRemoveMember(mine, theirs)) {
       return reply.code(403).send({ error: 'You cannot remove this member.' });

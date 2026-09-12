@@ -174,3 +174,36 @@ describe('what a member shares with a group', { skip: HAS_DB ? false : 'set TEST
     assert.equal(r.statusCode, 400);
   });
 });
+
+describe('withdrawing an invitation', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  let owner: TestUser, friend: TestUser, groupId: string;
+
+  before(getApp);
+  after(closeApp);
+
+  beforeEach(async () => {
+    await resetDb();
+    owner = await signIn('owner@example.com');
+    friend = await signIn('friend@example.com');
+    await befriend(owner, friend);
+    groupId = ((await as(owner, { method: 'POST', url: '/api/groups', payload: { name: 'Crew' } })).json() as {
+      group: { id: string };
+    }).group.id;
+    await as(owner, { method: 'POST', url: `/api/groups/${groupId}/members`, payload: { userId: friend.id } });
+  });
+
+  test('the owner can take back an invitation nobody has answered', async () => {
+    // roleIn() reports a pending invitee as no role at all, which is right —
+    // and used to make the cancel button fail with 403 every time.
+    const r = await as(owner, { method: 'DELETE', url: `/api/groups/${groupId}/members/${friend.id}` });
+    assert.equal(r.statusCode, 200);
+    const left = (await as(friend, { method: 'GET', url: '/api/groups/invites' })).json() as { invites: unknown[] };
+    assert.equal(left.invites.length, 0);
+  });
+
+  test('once withdrawn it cannot be accepted', async () => {
+    await as(owner, { method: 'DELETE', url: `/api/groups/${groupId}/members/${friend.id}` });
+    const r = await as(friend, { method: 'POST', url: `/api/groups/${groupId}/accept`, payload: {} });
+    assert.equal(r.statusCode, 404);
+  });
+});

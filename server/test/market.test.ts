@@ -98,3 +98,22 @@ describe('the board', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' },
     assert.equal(r.statusCode, 400);
   });
 });
+
+describe('a blocked seller stays hidden', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('asking for one seller"s listings does not get around the block', async () => {
+    await resetDb();
+    const seller = await signIn('seller@example.com');
+    const buyer = await signIn('buyer@example.com');
+    await as(seller, { method: 'POST', url: '/api/market', payload: { title: 'Curado', body: '', price: '129' } });
+    await as(buyer, { method: 'POST', url: `/api/friends/${seller.id}/block` });
+
+    const board = (await as(buyer, { method: 'GET', url: '/api/market' })).json() as { listings: unknown[] };
+    assert.equal(board.listings.length, 0);
+    // The seller's own page is the way round it used to be.
+    const direct = (await as(buyer, { method: 'GET', url: `/api/market?sellerId=${seller.id}` })).json() as { listings: unknown[] };
+    assert.equal(direct.listings.length, 0);
+  });
+});
