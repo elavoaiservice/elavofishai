@@ -16,6 +16,12 @@
 # change to this script):  ./scripts/verify-backup.sh backups/<file>.sql.gz
 set -e
 
+# launchd hands a job almost no PATH, and this script ran fine by hand and then
+# could not find `docker` from a plain ssh shell. Same lesson as the watchdog:
+# put the usual places back rather than depending on how it was invoked.
+PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH
+
 DEST="${1:-$(dirname "$0")/../backups}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
