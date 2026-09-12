@@ -124,7 +124,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   // angler's own spots — and anything else it returns is dropped by
   // snapStops() before it reaches the map.
   const [features, rampList, ownSpots, ownWps] = await Promise.all([
-    featuresForLake(lakeId).catch(() => []),
+    featuresForLake(lakeId, req.launch && Number.isFinite(Number(req.launch.lat)) ? { lat: Number(req.launch.lat), lon: Number(req.launch.lon) } : null).catch(() => []),
     rampsForLake(lakeId).then((r) => r.ramps).catch(() => []),
     req.userId ? prisma.spot.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, notes: true }, take: 25 }) : Promise.resolve([]),
     req.userId ? prisma.waypoint.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, kind: true }, take: 25 }) : Promise.resolve([]),

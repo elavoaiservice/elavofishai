@@ -71,8 +71,8 @@ export function kindOf(tags: Record<string, string>): FeatureKind | null {
  */
 export function digest(raw: OverpassEl[], lakeLat: number, lakeLon: number, bbox: [number, number, number, number] | null): LakeFeature[] {
   const inBox = (la: number, lo: number) =>
-    bbox ? la >= bbox[1] - 0.01 && la <= bbox[3] + 0.01 && lo >= bbox[0] - 0.01 && lo <= bbox[2] + 0.01
-         : milesBetween(lakeLat, lakeLon, la, lo) < 6;
+    bbox ? la >= bbox[1] - 0.02 && la <= bbox[3] + 0.02 && lo >= bbox[0] - 0.02 && lo <= bbox[2] + 0.02
+         : milesBetween(lakeLat, lakeLon, la, lo) < 25;
   const best = new Map<string, LakeFeature & { d: number }>();
   for (const el of raw) {
     const t = el.tags || {};
@@ -116,45 +116,105 @@ function parseBbox(bbox: string | null): [number, number, number, number] | null
   }
 }
 
-async function fetchFromOverpass(lat: number, lon: number, radius: number): Promise<OverpassEl[]> {
-  const r = `(around:${radius},${lat},${lon})`;
-  const query =
-    `[out:json][timeout:25];(` +
-    `node["natural"~"bay|cape|peninsula|beach"]["name"]${r};way["natural"~"bay|cape|peninsula|beach"]["name"]${r};` +
-    `way["waterway"~"stream|river"]["name"]${r};` +
-    `node["waterway"="dam"]${r};way["waterway"="dam"]${r};` +
-    `way["bridge"="yes"]["name"]${r};` +
-    `node["leisure"="marina"]${r};way["leisure"="marina"]${r};` +
-    `node["man_made"="pier"]${r};way["man_made"="pier"]${r};` +
-    `way["place"~"island|islet"]["name"]${r};node["place"~"island|islet"]["name"]${r};` +
-    `);out center tags 300;`;
+/**
+ * The Overpass query, anchored on the lake's own water polygon.
+ *
+ * Asking for "bridges within 12 km of the centre" returned every road bridge
+ * in the town of Granbury; asking for "bridges within 60 m of the lake's
+ * shoreline" returns the ones that cross the lake. So: find the water body by
+ * name, recurse to its member ways (a reservoir is usually a multipolygon
+ * relation), and search AROUND THOSE WAYS. A creek segment that touches the
+ * shoreline is the mouth; a pier within 60 m of it is on the lake.
+ *
+ * Big water is handled differently: Lake Michigan's shoreline is thousands of
+ * ways, so when a launch point is known the polygon ways are limited to those
+ * within 15 km of it. Exported for tests.
+ */
+export function buildQuery(lakeName: string, lat: number, lon: number, radius: number, launch?: { lat: number; lon: number } | null): string {
+  // "Lake Granbury" → "Granbury"; "Possum Kingdom Lake" → "Possum Kingdom".
+  // Keep the dots in "O.H. Ivie" — they are in the OSM name too — and escape
+  // them; only brackets and quotes are stripped, since they cannot be in a name.
+  const token = lakeName.replace(/\b(lake|reservoir|res\.?|pool)\b/gi, '').replace(/[()\[\]{}"]/g, '').trim();
+  const re = (token || lakeName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const near = launch ? `(around:15000,${launch.lat},${launch.lon})` : '';
+  return (
+    `[out:json][timeout:25];` +
+    // The water body: by name first; failing that, any lake/reservoir polygon
+    // close to the centre (small lakes are often unnamed in OSM).
+    `(nwr["natural"="water"]["name"~"${re}",i](around:${radius},${lat},${lon});)->.byname;` +
+    `(nwr["natural"="water"]["water"~"reservoir|lake"](around:2500,${lat},${lon});)->.nearby;` +
+    `(.byname; .nearby;)->.water;` +
+    `(.water; .water >;)->.parts;` +
+    `way.parts${near}->.w;` +
+    `(` +
+    `way["waterway"~"stream|river"]["name"](around.w:150);` +
+    `way["bridge"="yes"]["name"](around.w:60);` +
+    `nwr["waterway"="dam"](around.w:150);` +
+    `nwr["man_made"="pier"](around.w:60);` +
+    `nwr["leisure"="marina"](around.w:120);` +
+    `nwr["natural"~"bay|cape|peninsula|beach"]["name"](around.w:250);` +
+    `nwr["place"~"island|islet"]["name"](around.w:250);` +
+    `);out center tags 300;`
+  );
+}
+
+async function fetchFromOverpass(query: string): Promise<OverpassEl[]> {
   const res = await fetch(OVERPASS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ElavoFishAI/1.0 (elavofishai.elavoai.com)' },
     body: `data=${encodeURIComponent(query)}`,
-    signal: AbortSignal.timeout(25_000),
+    signal: AbortSignal.timeout(28_000),
   });
   if (!res.ok) throw new Error(`Overpass ${res.status}`);
   return ((await res.json()) as { elements?: OverpassEl[] }).elements || [];
 }
 
+/** Big water: the whole shoreline is too much, so anchor on the launch point. */
+function isBigWater(bbox: [number, number, number, number] | null): boolean {
+  if (!bbox) return false;
+  return (bbox[3] - bbox[1]) * 111 > 60 || (bbox[2] - bbox[0]) * 111 > 60;
+}
+const launchMemo = new Map<string, { at: number; features: LakeFeature[] }>();
+
 /** Cached named features for a lake. Never throws — an empty list is a fine answer. */
-export async function featuresForLake(lakeId: string): Promise<LakeFeature[]> {
+export async function featuresForLake(lakeId: string, launch?: { lat?: number; lon?: number } | null): Promise<LakeFeature[]> {
   const lake = await prisma.lake.findUnique({
     where: { id: lakeId },
-    select: { id: true, lat: true, lon: true, bbox: true, featuresJson: true, featuresAt: true },
+    select: { id: true, name: true, lat: true, lon: true, bbox: true, featuresJson: true, featuresAt: true },
   });
   if (!lake) return [];
+  const bbox = parseBbox(lake.bbox);
+  const radius = bbox
+    ? Math.min(60_000, Math.max(10_000, Math.round(Math.max((bbox[3] - bbox[1]) * 111_000, (bbox[2] - bbox[0]) * 111_000 * Math.cos((lake.lat * Math.PI) / 180)) / 2 + 2000)))
+    : 15_000;
+
+  // Big water with a launch point: features near where they are putting in,
+  // memoised in-process rather than written to the lake row, since it differs
+  // per ramp.
+  const at = launch && Number.isFinite(Number(launch.lat)) && Number.isFinite(Number(launch.lon))
+    ? { lat: Number(launch.lat), lon: Number(launch.lon) } : null;
+  if (isBigWater(bbox) && at) {
+    const key = `${lake.id}:${at.lat.toFixed(2)},${at.lon.toFixed(2)}`;
+    const memo = launchMemo.get(key);
+    if (memo && Date.now() - memo.at < CACHE_DAYS * 86400000) return memo.features;
+    try {
+      const raw = await fetchFromOverpass(buildQuery(lake.name, lake.lat, lake.lon, radius, at));
+      // Distances are measured from the launch, not the lake centre, so
+      // "nearest segment" means nearest to where the angler actually is.
+      const out = digest(raw, at.lat, at.lon, null);
+      launchMemo.set(key, { at: Date.now(), features: out });
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   const fresh = lake.featuresAt && Date.now() - lake.featuresAt.getTime() < CACHE_DAYS * 86400000;
   if (fresh && lake.featuresJson) {
     try { return JSON.parse(lake.featuresJson) as LakeFeature[]; } catch { /* refetch */ }
   }
-  const bbox = parseBbox(lake.bbox);
-  const radius = bbox
-    ? Math.min(40_000, Math.max(10_000, Math.round(Math.max((bbox[3] - bbox[1]) * 111_000, (bbox[2] - bbox[0]) * 111_000 * Math.cos((lake.lat * Math.PI) / 180)) / 2 + 2000)))
-    : 12_000;
   try {
-    const raw = await fetchFromOverpass(lake.lat, lake.lon, radius);
+    const raw = await fetchFromOverpass(buildQuery(lake.name, lake.lat, lake.lon, radius, null));
     const out = digest(raw, lake.lat, lake.lon, bbox);
     await prisma.lake.update({ where: { id: lake.id }, data: { featuresJson: JSON.stringify(out), featuresAt: new Date() } }).catch(() => {});
     return out;

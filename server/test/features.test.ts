@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { digest, kindOf, snapStops } from '../src/services/features';
+import { buildQuery, digest, kindOf, snapStops } from '../src/services/features';
 
 const LAKE = { lat: 32.43, lon: -97.78 };
 const BBOX: [number, number, number, number] = [-97.90, 32.35, -97.65, 32.50];
@@ -92,5 +92,25 @@ describe('snapStops', () => {
   test('anything that is not a list is no stops at all', () => {
     assert.deepEqual(snapStops('Rough Creek', cands), []);
     assert.deepEqual(snapStops(undefined, cands), []);
+  });
+});
+
+describe('buildQuery', () => {
+  test('anchors the search on the lake"s own water polygon, found by its distinctive name', () => {
+    const q = buildQuery('Lake Granbury', 32.43, -97.78, 15000, null);
+    assert.match(q, /"name"~"Granbury",i/);
+    assert.match(q, /around\.w:150/);        // creeks within 150 m of the shoreline
+    assert.match(q, /"bridge"="yes"\]\["name"\]\(around\.w:60\)/);
+    assert.doesNotMatch(q, /around:15000\)/); // plain-radius search is gone from the feature clauses
+  });
+
+  test('a regex-hostile lake name is escaped rather than breaking the query', () => {
+    const q = buildQuery("O.H. Ivie (Lake)", 31.5, -99.7, 15000, null);
+    assert.match(q, /O\\\.H\\\. Ivie|OH Ivie|O\\\.H\\\.\\s\+Ivie/);
+  });
+
+  test('big water with a launch point limits the shoreline to 15 km of the ramp', () => {
+    const q = buildQuery('Lake Michigan', 43.85, -87.08, 60000, { lat: 43.0, lon: -87.9 });
+    assert.match(q, /way\.parts\(around:15000,43,-87\.9\)->\.w/);
   });
 });
