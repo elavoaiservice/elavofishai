@@ -2762,12 +2762,36 @@ async function stSet(k,v){
     if(synced){ delete stStale[k]; return true; }   // on the server is durable enough
     const wasStale=stStale[k];
     stStale[k]=true;
+    // Size is the failure people actually hit, and "not synced yet" sounds
+    // temporary when it is permanent — the value will never fit.
+    const tooBig=(v||'').length>1.9*1024*1024;
     toast(!local?'Saved for this session only':
+          tooBig?'Too large to sync \u2014 export your log and remove some old trips':
           wasStale?'Not synced \u2014 your account may hold newer data':
                    'Saved on this device \u2014 not synced yet');
     return false;
   }
   return local;
+}
+
+/* A log written before photos moved to object storage carries the pictures
+   inline, which is what stopped it syncing. Once each has been uploaded the
+   inline copy is dead weight; drop it and the log fits again. Runs once. */
+async function slimTripsOnce(){
+  if(!AUTH.user||!PHOTOS_ON||!Array.isArray(trips)||!trips.length)return;
+  const fat=trips.filter(t=>t&&t.photo&&!t.photoId);
+  if(!fat.length)return;
+  let moved=0;
+  for(const t of fat.slice(0,20)){
+    const up=await uploadDataUrl(t.photo);
+    if(!up.ok)break;             // storage is unhappy — leave the log alone
+    if(up.id){ t.photoId=up.id; t.photo=null; moved++; }
+  }
+  if(moved){
+    await stSet(LK('trips'),JSON.stringify(trips));
+    drawTrips();
+    toast(moved+' catch photo'+(moved===1?'':'s')+' moved to your account — your log will sync again');
+  }
 }
 
 /* ============ renderers ============ */
@@ -3058,12 +3082,25 @@ async function saveTrip(){
     depth:$('lgDepth').value, bait:$('lgBait').value,
     water:$('lgWater').value, clarity:$('lgClarity').value, notes:$('lgNotes').value,
     time:new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),
-    photo:pendingCatchPhoto||null,
+    // A reference, not the picture. The whole trip log is stored as ONE value
+    // capped at 2MB, and a resized photo is 150-450KB as a data URL — so after
+    // four or five catches the log silently stopped syncing and every trip
+    // after that lived on one device only. The photo itself is in object
+    // storage; this is its id. Only when storage is unconfigured is the data
+    // URL kept, because losing the picture entirely would be worse.
+    photoId:pendingPhotoId||null,
+    photo:(PHOTOS_ON?null:(pendingCatchPhoto||null)),
     lat:pendingCatchGeo?pendingCatchGeo.lat:null, lon:pendingCatchGeo?pendingCatchGeo.lon:null,
     cond:{hi:curHi,trend:curTrend,wind:curWindSpd,dir:curWindDir,
           moon:Math.round(moonPhase($('lgDate').value?new Date($('lgDate').value+'T12:00:00'):now).frac*100)}
   };
   if(!t.date){$('lgDate').focus();return;}
+  // Put the photo in object storage first so the log can just carry its id.
+  if(PHOTOS_ON&&pendingCatchPhoto&&!pendingPhotoId){
+    const up=await uploadPendingPhoto();
+    if(!up.ok){ $('ioMsg').textContent=up.error+' The catch was not saved — try again without the photo.'; return; }
+    t.photoId=up.id; t.photo=null;
+  }
   trips.unshift(t);
   const ok=await stSet(LK('trips'),JSON.stringify(trips));
   drawTrips(); drawWpList(); if(map)drawMarkers(); drawBrief();
@@ -3177,7 +3214,9 @@ function drawTrips(){
     if(t.bait)b.push('on <b>'+esc(t.bait)+'</b>');
     if(t.water)b.push('water <b>'+esc(t.water)+'\u00b0</b>');
     if(t.clarity)b.push(esc(t.clarity).toLowerCase());
-    const thumb=t.photo?'<img src="'+esc(t.photo)+'" alt="catch" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--border);flex:0 0 auto;cursor:pointer" onclick="window.open(this.src)">':'';
+    // Newer trips carry a photo id; older ones still hold the data URL.
+    const src=t.photoId?('/api/photos/'+encodeURIComponent(t.photoId)):(t.photo||'');
+    const thumb=src?'<img src="'+esc(src)+'" alt="catch" loading="lazy" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid var(--border);flex:0 0 auto;cursor:pointer" data-zoom="'+esc(src)+'">':'';
     const body='<div class="trip-h"><span class="trip-d">'+esc(t.date)+(t.time?' <span class="snap">'+esc(t.time)+'</span>':'')+
       '</span><span class="trip-s">'+esc(t.spot)+' \u00b7 '+esc(t.species)+
       '</span><button class="trip-x" data-id="'+t.id+'" aria-label="Delete trip">\u00d7</button></div>'+
@@ -4463,8 +4502,22 @@ function wireMessages(){
 }
 
 async function migrateLocalUp(){
-  // one-time seed: push local data for keys the server doesn't have yet
+  /* One-time seed: push this device's local data up for keys the account does
+     not have yet.
+
+     Only for the account that created it. A phone lent to a friend, or a
+     family sharing a tablet, would otherwise hand the first angler's trips,
+     spots and waypoints to whoever signed in next — the server has no such
+     keys for the new account, so every one of them looks like something worth
+     migrating. The device records whose data it is holding; a different
+     account leaves it alone. */
   try{
+    const me=(AUTH.account&&AUTH.account.id)||null;
+    if(!me)return;
+    let owner=null;
+    try{ owner=localStorage.getItem('efa:localowner'); }catch(e){}
+    if(owner&&owner!==me)return;      // somebody else's data — not ours to move
+    if(!owner){ try{ localStorage.setItem('efa:localowner',me); }catch(e){} }
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
       // Migrate any per-lake app key (namespaced <lakeKey>:<suffix>) up to the server.
@@ -6920,7 +6973,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); checkPhotos(); startAlertPoll(); populateAiSpecies(); populateAiLaunch(); loadRamps(); loadPostDefault(); loadActiveTourneys(); firstRunPlan();
+  await checkAi(); await checkPhotos(); startAlertPoll(); slimTripsOnce(); populateAiSpecies(); populateAiLaunch(); loadRamps(); loadPostDefault(); loadActiveTourneys(); firstRunPlan();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){
