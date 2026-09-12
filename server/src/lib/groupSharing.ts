@@ -33,7 +33,7 @@ export interface GroupClause {
  * Returns [] when the viewer is in no groups — callers must treat that as "no
  * group-shared records", not "no filter".
  */
-export async function groupClauses(viewerId: string, type: DataType): Promise<GroupClause[]> {
+export async function groupClauses(viewerId: string, type: DataType, blocked: string[] = []): Promise<GroupClause[]> {
   const [owned, memberships] = await Promise.all([
     prisma.friendGroup.findMany({ where: { ownerId: viewerId }, select: { id: true } }),
     prisma.friendGroupMember.findMany({
@@ -65,6 +65,11 @@ export async function groupClauses(viewerId: string, type: DataType): Promise<Gr
   }
 
   return [...byGroup.entries()]
-    .filter(([, users]) => users.length > 0)
-    .map(([groupId, users]) => ({ visibility: 'group' as const, groupId, userId: { in: [...new Set(users)] } }));
+    .map(([groupId, users]) => ({
+      visibility: 'group' as const,
+      groupId,
+      // A blocked angler is invisible even inside a shared group.
+      userId: { in: [...new Set(users)].filter((id) => id !== viewerId && !blocked.includes(id)) },
+    }))
+    .filter((c) => c.userId.in.length > 0);
 }

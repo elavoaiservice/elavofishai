@@ -207,3 +207,78 @@ describe('withdrawing an invitation', { skip: HAS_DB ? false : 'set TEST_DATABAS
     assert.equal(r.statusCode, 404);
   });
 });
+
+describe('a group shares with the GROUP, not only with friends', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  let owner: TestUser, mate: TestUser, stranger: TestUser, groupId: string, lakeId: string;
+
+  before(getApp);
+  after(closeApp);
+
+  beforeEach(async () => {
+    await resetDb();
+    owner = await signIn('owner@example.com');
+    mate = await signIn('mate@example.com');
+    stranger = await signIn('stranger@example.com');
+    lakeId = await makeLake();
+    // owner and mate are friends; the club also has someone neither knows.
+    await befriend(owner, mate);
+    groupId = ((await as(owner, { method: 'POST', url: '/api/groups', payload: { name: 'Club' } })).json() as {
+      group: { id: string };
+    }).group.id;
+    for (const u of [mate, stranger]) {
+      // The owner can only invite friends, so befriend first, then let the
+      // stranger and the owner fall out of friendship is not possible — so
+      // instead put the stranger in by hand, as a real club roster would.
+      if (u === mate) {
+        await as(owner, { method: 'POST', url: `/api/groups/${groupId}/members`, payload: { userId: u.id } });
+        await as(u, { method: 'POST', url: `/api/groups/${groupId}/accept`, payload: {} });
+      }
+    }
+    await prisma.friendGroupMember.create({
+      data: { groupId, memberId: stranger.id, status: 'active', role: 'member' },
+    });
+  });
+
+  const feedOf = async (u: TestUser) =>
+    (await as(u, { method: 'GET', url: `/api/lakes/${lakeId}/feed` })).json() as { spots: { name: string }[] };
+
+  test('a club member who is not your friend still sees what you shared with the club', async () => {
+    await as(owner, {
+      method: 'POST',
+      url: `/api/lakes/${lakeId}/spots`,
+      payload: { name: 'Club brush pile', lat: 32.4, lon: -97.7, visibility: 'group', groupId },
+    });
+    assert.deepEqual((await feedOf(stranger)).spots.map((s) => s.name), ['Club brush pile']);
+  });
+
+  test('having no friends at all does not empty the club feed', async () => {
+    await as(owner, {
+      method: 'POST',
+      url: `/api/lakes/${lakeId}/spots`,
+      payload: { name: 'Club brush pile', lat: 32.4, lon: -97.7, visibility: 'group', groupId },
+    });
+    // stranger has no accepted friendships whatsoever.
+    assert.equal(await prisma.friendship.count({ where: { OR: [{ userId: stranger.id }, { friendId: stranger.id }] } }), 0);
+    assert.equal((await feedOf(stranger)).spots.length, 1);
+  });
+
+  test('a friends-only spot still does not reach a club member who is not a friend', async () => {
+    await as(owner, {
+      method: 'POST',
+      url: `/api/lakes/${lakeId}/spots`,
+      payload: { name: 'Friends only', lat: 32.4, lon: -97.7, visibility: 'friends' },
+    });
+    assert.equal((await feedOf(stranger)).spots.length, 0);
+    assert.equal((await feedOf(mate)).spots.length, 1);
+  });
+
+  test('blocking someone hides them even inside a shared group', async () => {
+    await as(owner, {
+      method: 'POST',
+      url: `/api/lakes/${lakeId}/spots`,
+      payload: { name: 'Club brush pile', lat: 32.4, lon: -97.7, visibility: 'group', groupId },
+    });
+    await as(stranger, { method: 'POST', url: `/api/friends/${owner.id}/block` });
+    assert.equal((await feedOf(stranger)).spots.length, 0);
+  });
+});

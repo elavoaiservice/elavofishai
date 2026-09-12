@@ -9,7 +9,8 @@ import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 import { rampsForLake } from '../services/ramps';
 import { releaseFor, summarizeRelease } from '../services/corps';
 import { waterFor } from '../services/water';
-import { alertsFor, discussionFor } from '../services/nws';
+import { knowledgeFor } from '../services/localKnowledge';
+import { alertsFor, discussionFor, outlookFor } from '../services/nws';
 
 const GRANBURY_OSM_REF = 'seed:lake-granbury';
 
@@ -234,11 +235,19 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     if (!user) return;
     const lake = await prisma.lake.findUnique({ where: { id: String((req.params as { id: string }).id) }, select: { lat: true, lon: true } });
     if (!lake) return reply.code(404).send({ error: 'Lake not found.' });
-    const [alerts, discussion] = await Promise.all([
+    const [alerts, discussion, outlook] = await Promise.all([
       alertsFor(lake.lat, lake.lon).catch(() => []),
       discussionFor(lake.lat, lake.lon).catch(() => null),
+      outlookFor(lake.lat, lake.lon).catch(() => null),
     ]);
-    return reply.send({ alerts, discussion });
+    return reply.send({ alerts, discussion, outlook });
+  });
+
+  /** What this lake's own anglers have caught — the species pages read this. */
+  app.get('/api/lakes/:id/knowledge', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    return reply.send({ knowledge: await knowledgeFor(String((req.params as { id: string }).id)) });
   });
 
   // Lake detail + its profile (AI or hand-verified).

@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { parseAlerts, shortTermOf } from '../src/services/nws';
+import { durationHours, expandSeries, parseAlerts, readGrid, shortTermOf } from '../src/services/nws';
 
 // Trimmed from the live AFD for office FWD, 2026-09-12.
 const AFD = `000
@@ -92,5 +92,40 @@ describe('alerts', () => {
   test('no alerts is an empty list, not an error', () => {
     assert.deepEqual(parseAlerts({ features: [] }), []);
     assert.deepEqual(parseAlerts(null), []);
+  });
+});
+
+describe('the forecast grid', () => {
+  test('an interval is spread across every hour it covers', () => {
+    const from = Date.parse('2026-09-12T05:00:00Z');
+    const m = expandSeries({ values: [{ validTime: '2026-09-12T05:00:00+00:00/PT3H', value: 40 }] }, from);
+    assert.equal(m.get('2026-09-12T05'), 40);
+    assert.equal(m.get('2026-09-12T07'), 40);
+    assert.equal(m.get('2026-09-12T08'), undefined);
+  });
+
+  test('a day-and-hours duration is read correctly', () => {
+    assert.equal(durationHours('P1DT19H'), 43);
+    assert.equal(durationHours('PT2H'), 2);
+    assert.equal(durationHours('PT30M'), 1);
+    assert.equal(durationHours('nonsense'), 1);
+  });
+
+  test('gusts come back in mph, and the peak is the peak', () => {
+    const from = Date.parse('2026-09-12T05:00:00Z');
+    const out = readGrid({
+      windGust: { values: [{ validTime: '2026-09-12T05:00:00+00:00/PT2H', value: 22.224 }, { validTime: '2026-09-12T07:00:00+00:00/PT2H', value: 48.28 }] },
+      probabilityOfThunder: { values: [{ validTime: '2026-09-12T05:00:00+00:00/PT4H', value: 55 }] },
+    }, from);
+    assert.equal(out?.gustMph, 30);      // 48.28 km/h
+    assert.equal(out?.thunderPct, 55);
+    assert.equal(out?.hours[0].gustMph, 14);
+  });
+
+  test('a grid with nothing in it is null, not zeroes pretending to be a forecast', () => {
+    assert.equal(readGrid(null, Date.now()), null);
+    const empty = readGrid({}, Date.now());
+    assert.equal(empty?.thunderPct, null);
+    assert.equal(empty?.gustMph, null);
   });
 });

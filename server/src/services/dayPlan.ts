@@ -2,7 +2,8 @@ import { complete } from './llm';
 import { recentReports, reportsForPrompt } from './reports';
 import { releaseFor, summarizeRelease } from './corps';
 import { featuresForLake, snapStops, type Candidate } from './features';
-import { alertsFor, discussionFor } from './nws';
+import { alertsFor, discussionFor, outlookFor } from './nws';
+import { knowledgeFor, knowledgeForPrompt } from './localKnowledge';
 import { rampsForLake } from './ramps';
 import { prisma } from '../db';
 import { env } from '../env';
@@ -140,6 +141,11 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     ? candidates.map((c) => `- ${c.name} [${c.kind}] ${c.lat.toFixed(4)},${c.lon.toFixed(4)}${c.hint ? ` — ${c.hint}` : ''}`).join('\n')
     : '';
 
+  // What this lake's own anglers have caught. Evidence about THIS water beats
+  // general knowledge about lakes in general — that is the whole reason the
+  // log exists.
+  const localLines = knowledgeForPrompt(await knowledgeFor(lakeId).catch(() => []));
+
   // Real reports about this water beat anything a model can infer. Agency feeds
   // and angler reports are already collected; put the recent ones in front of
   // it, dated and attributed.
@@ -153,14 +159,26 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   // What the National Weather Service is saying. An advisory outranks every
   // other input: a plan that reads well and puts someone on the water in a
   // thunderstorm is a bad plan.
-  const [alerts, discussion] = await Promise.all([
+  const [alerts, discussion, outlook] = await Promise.all([
     alertsFor(lake.lat, lake.lon).catch(() => []),
     discussionFor(lake.lat, lake.lon).catch(() => null),
+    outlookFor(lake.lat, lake.lon).catch(() => null),
   ]);
   const nwsLine = alerts.length
     ? `ACTIVE NATIONAL WEATHER SERVICE ALERTS: ${alerts.map((a) => `${a.event}${a.ends ? ` (until ${a.ends})` : ''} — ${a.headline}`).join(' | ')}\n` +
       `Treat any wind, storm, flood or heat alert as a hard safety limit. Say it FIRST in "summary", in plain words, and build the day around it — or say plainly that the day is not fishable.\n\n`
     : '';
+  // Thunder and gusts, which the general forecast does not carry. A 12 mph
+  // average with 30 mph gusts is a different day from a steady 12.
+  const outlookLine = outlook && (outlook.thunderPct || outlook.gustMph)
+    ? `NWS forecast grid for the next 24h: thunder probability peaks at ${outlook.thunderPct ?? 0}%, ` +
+      `gusts to ${outlook.gustMph ?? '?'} mph, cloud to ${outlook.skyPct ?? '?'}%, rain chance ${outlook.rainPct ?? 0}%.` +
+      (outlook.hours.some((h) => (h.thunderPct || 0) >= 30)
+        ? ` Thunder is likely from about ${outlook.hours.find((h) => (h.thunderPct || 0) >= 30)?.at?.slice(11, 16)}Z — plan the day around it and say so.`
+        : '') +
+      `\nGusts matter more than the average for boat handling and for casting; if they top 20 mph, favour protected water and say which bank.\n\n`
+    : '';
+
   const afdLine = discussion
     ? `The local NWS forecaster's own reasoning (${discussion.office}, issued ${discussion.issued}):\n${discussion.text}\n` +
       `This is a human forecaster on the ground; where it disagrees with the raw numbers, trust it on timing.\n\n`
@@ -173,12 +191,19 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     `Lake profile (JSON, may be empty): ${profileText}\n` +
     `Conditions for the day (JSON: weather/solunar/moon/water temp/best hours, may be sparse): ${condText}\n\n` +
     nwsLine +
+    outlookLine +
     afdLine +
     (releaseLine
       ? `Dam release / hydropower generation (USACE, last 24h): ${releaseLine}\n` +
         `On a regulated lake this drives where fish are: current pulls bait, and the bite often turns on and ` +
         `off with the water. Work it into the timeline, and say plainly in "notes" if the generation pattern ` +
         `matters more than the weather that day.\n\n`
+      : '') +
+    (localLines
+      ? `WHAT ANGLERS HAVE ACTUALLY CAUGHT HERE (this lake's own log — the only source that is only about this water):\n${localLines}\n` +
+        `Weigh this above general knowledge and above anything you search for. Where a species is marked "too few to be a pattern", ` +
+        `treat it as a hint, not a fact, and do not build the day around it. If the log contradicts the season's usual advice, follow ` +
+        `the log and say so in "notes".\n\n`
       : '') +
     (reports
       ? `Recent reports about THIS lake — dated, newest first. An angler report is someone who was actually ` +

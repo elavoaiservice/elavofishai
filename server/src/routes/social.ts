@@ -596,21 +596,35 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     // friendIds is accepted-only so a block already drops out, but filter
     // explicitly: a blocked angler's data must never surface here.
     const friends = allFriends.filter((id) => !blocked.includes(id));
-    if (!friends.length) return reply.send({ spots: [], catches: [], waypoints: [] });
     // Group-shared records are filtered by what each member agreed to share
     // with that group when they accepted the invitation — see groupClauses().
     const [spotGroups, tripGroups, wpGroups] = await Promise.all([
-      groupClauses(me.id, 'spots'),
-      groupClauses(me.id, 'trips'),
-      groupClauses(me.id, 'waypoints'),
+      groupClauses(me.id, 'spots', blocked),
+      groupClauses(me.id, 'trips', blocked),
+      groupClauses(me.id, 'waypoints', blocked),
     ]);
+    if (!friends.length && !spotGroups.length && !tripGroups.length && !wpGroups.length) {
+      return reply.send({ spots: [], catches: [], waypoints: [] });
+    }
+    /**
+     * Who may have written a record depends on HOW it was shared, so the
+     * author filter belongs inside each branch rather than around all of them.
+     * It used to sit outside, which meant a group's shared spots only reached
+     * members who also happened to be your friends — and someone whose only
+     * connection was the group saw nothing at all, which is the opposite of
+     * what joining a group is for.
+     */
     const visFor = (gs: GroupClause[]) => ({
-      OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, ...gs],
+      OR: [
+        { visibility: 'public' as const, userId: { in: friends } },
+        { visibility: 'friends' as const, userId: { in: friends } },
+        ...gs,
+      ],
     });
     const [spots, catches, waypoints] = await Promise.all([
-      prisma.spot.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(spotGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(tripGroups) }, include: { user: { select: { displayName: true } }, photos: { select: { id: true } } }, orderBy: { date: 'desc' }, take: 50 }),
-      prisma.waypoint.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(wpGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' } , take: 100 }),
+      prisma.spot.findMany({ where: { lakeId, ...visFor(spotGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      prisma.trip.findMany({ where: { lakeId, ...visFor(tripGroups) }, include: { user: { select: { displayName: true } }, photos: { select: { id: true } } }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.waypoint.findMany({ where: { lakeId, ...visFor(wpGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' } , take: 100 }),
     ]);
     return {
       spots: spots.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, notes: s.notes, by: s.user.displayName, at: s.createdAt })),

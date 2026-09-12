@@ -206,6 +206,32 @@ function go(tab){
 }
 
 /* ---- panels ---- */
+/* Are the plans any good, and do we know?
+   The per-model thumbs rate already sits in the table above. What it cannot
+   tell you is whether that rate means anything: eighty per cent from five
+   votes out of four hundred plans is not a measurement, it is five people.
+   Coverage says how much of the work is actually being judged, and the lake
+   breakdown says where the advice is weakest — which is the part you can act
+   on. */
+async function loadPlanQuality(){
+  const box=$('planQuality'); if(!box)return;
+  try{
+    const r=await api('/api/admin/plan-feedback'); if(!r.ok)return;
+    const d=await r.json();
+    const weak=(d.lakes||[]).filter(l=>l.helpfulPct!==null&&l.up+l.down>=3&&l.helpfulPct<70);
+    box.innerHTML='<div class="card" style="margin-top:16px"><h2>Plan quality</h2>'
+      +'<div class="metrics">'
+      + metricCard(String(d.plans||0),'Plans generated','last 90 days')
+      + metricCard(String(d.rated||0),'Rated by anglers',(d.coverage||0)+'% of plans')
+      + metricCard((d.models||[]).length?((d.models[0].helpfulPct??'—')+'%'):'—','Top model 👍',(d.models[0]||{}).model||'no votes yet')
+      +'</div>'
+      +((d.coverage||0)<10?'<div class="snap" style="margin-top:10px">Fewer than one plan in ten is rated, so treat these percentages as anecdotes rather than a measurement. Asking for the rating after a trip — rather than under the plan — is the change that would fix that.</div>':'')
+      +(weak.length?'<h2 style="margin-top:16px">Where the advice is weakest</h2><table><thead><tr><th>Lake</th><th>👍</th><th>👎</th><th style="text-align:right">Helpful</th></tr></thead><tbody>'
+        +weak.map(l=>'<tr><td>'+esc(l.lake)+'</td><td>'+l.up+'</td><td>'+l.down+'</td><td style="text-align:right"><span class="pill down">'+l.helpfulPct+'%</span></td></tr>').join('')
+        +'</tbody></table>':'')
+      +'</div>';
+  }catch(e){}
+}
 /* Reported content. The queue can delete what it points at — a queue you can
    only mark as read is a to-do list, not moderation. Each row shows the
    snapshot taken when the report was raised, because the author may well have
@@ -362,8 +388,10 @@ async function tAiCost(){
       +d.notes.map(n=>'<div class="fr-row" style="border-bottom:1px solid var(--border);padding:8px 0">'
         +(n.helpful?'👍':'👎')+' <span style="margin-left:8px">'+esc(n.note||'')+'</span>'
         +'<span class="snap" style="margin-left:auto">'+esc(n.model||'')+' · '+ago(n.createdAt)+'</span></div>').join('')
-      +'</div>':'');
+      +'</div>':'')
+    +'<div id="planQuality"></div>';
 
+  loadPlanQuality();
   const days=d.byDay||[];
   if(days.length){
     const max=Math.max.apply(null,days.map(x=>x.cost))||1;

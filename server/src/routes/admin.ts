@@ -646,6 +646,66 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- audit log ----
+  /**
+   * Whether the plans are any good.
+   *
+   * Every plan carries 👍/👎 and the model that wrote it, and nothing has ever
+   * read them. This is the only measurement of the app's core promise, and it
+   * is what should decide which model we pay for — a cheaper model with the
+   * same thumbs-up rate is simply better.
+   */
+  app.get('/api/admin/plan-feedback', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const since = new Date(Date.now() - 90 * 86400_000);
+    const [rows, plans] = await Promise.all([
+      prisma.planFeedback.findMany({
+        where: { createdAt: { gte: since } },
+        include: {
+          user: { select: { displayName: true } },
+          plan: { select: { model: true, species: true, goal: true, lakeId: true, lake: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+      prisma.dayPlan.count({ where: { generatedAt: { gte: since } } }),
+    ]);
+
+    const tally = new Map<string, { model: string; up: number; down: number }>();
+    const byLake = new Map<string, { lake: string; up: number; down: number }>();
+    for (const r of rows) {
+      const model = r.model || r.plan?.model || 'unknown';
+      const t = tally.get(model) || { model, up: 0, down: 0 };
+      r.helpful ? (t.up += 1) : (t.down += 1);
+      tally.set(model, t);
+      const lake = r.plan?.lake?.name || 'unknown';
+      const l = byLake.get(lake) || { lake, up: 0, down: 0 };
+      r.helpful ? (l.up += 1) : (l.down += 1);
+      byLake.set(lake, l);
+    }
+    const rate = (t: { up: number; down: number }) => (t.up + t.down ? Math.round((t.up / (t.up + t.down)) * 100) : null);
+
+    return {
+      plans,
+      rated: rows.length,
+      // How much of the work is actually being judged. A rate computed from
+      // six votes out of four hundred plans is not a measurement.
+      coverage: plans ? Math.round((rows.length / plans) * 100) : 0,
+      models: [...tally.values()].map((t) => ({ ...t, helpfulPct: rate(t) })).sort((a, b) => b.up + b.down - (a.up + a.down)),
+      lakes: [...byLake.values()].map((l) => ({ ...l, helpfulPct: rate(l) })).sort((a, b) => (rate(a) ?? 100) - (rate(b) ?? 100)).slice(0, 10),
+      notes: rows
+        .filter((r) => r.note)
+        .slice(0, 40)
+        .map((r) => ({
+          helpful: r.helpful,
+          note: r.note,
+          model: r.model || r.plan?.model || null,
+          lake: r.plan?.lake?.name || null,
+          species: r.plan?.species || null,
+          at: r.createdAt,
+        })),
+    };
+  });
+
   // ---------- moderation queue ----------
   app.get('/api/admin/flags', async (req, reply) => {
     if (!(await requireAdmin(req, reply))) return;

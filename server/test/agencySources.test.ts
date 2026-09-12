@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { isTexas, tpwdSlugCandidates, tpwdUrl } from '../src/services/agencySources';
+import { isTexas, parseStocking, stockingSummary, tpwdSlugCandidates, tpwdUrl, wbCodeFrom } from '../src/services/agencySources';
 
 describe('tpwdSlugCandidates', () => {
   test('strips the noise around a lake name', () => {
@@ -38,5 +38,41 @@ describe('isTexas', () => {
     assert.equal(isTexas('Missouri', 'US'), false);
     assert.equal(isTexas('Ontario', 'CA'), false);
     assert.equal(isTexas(null, 'US'), false);
+  });
+});
+
+describe('TPWD stocking history', () => {
+  // Trimmed from the real stocking report for Granbury (WB_code 0316).
+  const PAGE = `<title>Stocking Report for Granbury</title>
+<table><tr><th>Species</th><th>Year</th><th>Number Stocked</th><th>Size</th></tr>
+<tr><td>Bass, Striped</td><td>2026</td><td>100,399</td><td>Fingerling &nbsp;</td></tr>
+<tr><td>Bass, Lone Star</td><td>2026</td><td>166,157</td><td>Fingerling &nbsp;</td></tr>
+<tr><td>Bass, Striped</td><td>2019</td><td>131,045</td><td>Fry &nbsp;</td></tr>
+<tr><td>Note: numbers are approximate</td></tr></table>`;
+
+  test('finds the water-body code on a lake page', () => {
+    assert.equal(wbCodeFrom('<a href="../../../action/stock_bywater.php?WB_code=0316">Stocking</a>'), '0316');
+    assert.equal(wbCodeFrom('<p>no code here</p>'), null);
+  });
+
+  test('reads the table, and the lake it says it is for', () => {
+    const { lake, rows } = parseStocking(PAGE);
+    assert.equal(lake, 'Granbury');
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows[0], { species: 'Bass, Striped', year: 2026, number: 100399, size: 'Fingerling' });
+  });
+
+  test('a footnote row is not a stocking', () => {
+    assert.equal(parseStocking(PAGE).rows.filter((r) => /approximate/i.test(r.species)).length, 0);
+  });
+
+  test('the summary keeps recent years and drops the ancient ones', () => {
+    const out = stockingSummary(parseStocking(PAGE).rows, 5, new Date('2026-09-12'));
+    assert.match(out, /2026: Bass, Striped ×100,399/);
+    assert.doesNotMatch(out, /2019/);
+  });
+
+  test('a lake with no stocking on record produces no sentence at all', () => {
+    assert.equal(stockingSummary([], 5, new Date('2026-09-12')), '');
   });
 });
