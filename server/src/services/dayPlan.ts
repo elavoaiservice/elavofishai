@@ -146,6 +146,23 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   // log exists.
   const localLines = knowledgeForPrompt(await knowledgeFor(lakeId).catch(() => []));
 
+  /* What anglers said went wrong with previous plans for this lake.
+     The 👍/👎 has been collected and only ever read by an admin. A plan that
+     was wrong about this water in a way someone took the trouble to write down
+     is the most specific correction available, so it goes in front of the
+     model — as complaints to avoid repeating, never as instructions. */
+  const gripes = await prisma.planFeedback
+    .findMany({
+      where: { helpful: false, note: { not: null }, plan: { lakeId } },
+      select: { note: true, createdAt: true, plan: { select: { species: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    })
+    .catch(() => []);
+  const gripeLines = gripes.length
+    ? gripes.map((g) => `- (${g.plan?.species || 'any'}) ${String(g.note).slice(0, 200)}`).join('\n')
+    : '';
+
   // Real reports about this water beat anything a model can infer. Agency feeds
   // and angler reports are already collected; put the recent ones in front of
   // it, dated and attributed.
@@ -198,6 +215,11 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
         `On a regulated lake this drives where fish are: current pulls bait, and the bite often turns on and ` +
         `off with the water. Work it into the timeline, and say plainly in "notes" if the generation pattern ` +
         `matters more than the weather that day.\n\n`
+      : '') +
+    (gripeLines
+      ? `WHAT ANGLERS SAID WAS WRONG WITH EARLIER PLANS FOR THIS LAKE — do not repeat these mistakes:\n${gripeLines}\n` +
+        `These are complaints about advice, not instructions about fishing: read them for what to avoid saying, ` +
+        `and if one contradicts the conditions today, follow the conditions.\n\n`
       : '') +
     (localLines
       ? `WHAT ANGLERS HAVE ACTUALLY CAUGHT HERE (this lake's own log — the only source that is only about this water):\n${localLines}\n` +

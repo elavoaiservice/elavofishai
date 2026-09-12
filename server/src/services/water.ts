@@ -215,5 +215,41 @@ export async function waterFor(lakeId: string): Promise<WaterAnswer> {
   }
 
   lakeCache.set(lakeId, { at: Date.now(), value: out });
+  await recordReading(lakeId, out).catch(() => {});
   return out;
+}
+
+/**
+ * Keep one reading a day.
+ *
+ * The gauges only serve the present — ask tomorrow and yesterday is gone. The
+ * shape of the last month is what actually tells an angler something ("the
+ * water has dropped a foot and cooled six degrees since the front"), and the
+ * only way to have that shape is to write it down as it happens.
+ */
+async function recordReading(lakeId: string, w: WaterAnswer): Promise<void> {
+  if (!w.level && !w.waterTemp) return;
+  const at = new Date();
+  at.setUTCHours(12, 0, 0, 0); // one row per lake per day, whenever it is read
+  await prisma.waterReading.upsert({
+    where: { lakeId_at: { lakeId, at } },
+    create: {
+      lakeId, at,
+      levelFt: w.level?.ft ?? null,
+      tempF: w.waterTemp?.f ?? null,
+      source: w.level?.source || w.waterTemp?.source || 'usgs',
+    },
+    // Later in the day is a fresher reading for the same day.
+    update: { levelFt: w.level?.ft ?? undefined, tempF: w.waterTemp?.f ?? undefined },
+  });
+}
+
+/** The last few weeks, oldest first, for drawing. */
+export async function waterHistory(lakeId: string, days = 60) {
+  const rows = await prisma.waterReading.findMany({
+    where: { lakeId, at: { gte: new Date(Date.now() - days * 86400_000) } },
+    orderBy: { at: 'asc' },
+    select: { at: true, levelFt: true, tempF: true },
+  });
+  return rows.map((r) => ({ at: r.at.toISOString().slice(0, 10), levelFt: r.levelFt, tempF: r.tempF }));
 }

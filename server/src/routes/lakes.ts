@@ -8,7 +8,8 @@ import { enrichLake } from '../services/enrichLake';
 import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 import { rampsForLake } from '../services/ramps';
 import { releaseFor, summarizeRelease } from '../services/corps';
-import { waterFor } from '../services/water';
+import { waterFor, waterHistory } from '../services/water';
+import { regulationsFor } from '../services/regulations';
 import { knowledgeFor } from '../services/localKnowledge';
 import { alertsFor, discussionFor, outlookFor } from '../services/nws';
 
@@ -228,7 +229,16 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/lakes/:id/water', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    return reply.send(await waterFor(String((req.params as { id: string }).id)));
+    const id = String((req.params as { id: string }).id);
+    const [now, history] = await Promise.all([waterFor(id), waterHistory(id).catch(() => [])]);
+    return reply.send({ ...now, history });
+  });
+
+  /** What the rules are on this water — quoted from the agency, never summarised. */
+  app.get('/api/lakes/:id/regulations', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    return reply.send({ regulations: await regulationsFor(String((req.params as { id: string }).id)) });
   });
 
   /**

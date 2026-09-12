@@ -208,6 +208,8 @@ model Lake {
   rampsAt      DateTime? // when that cache was filled
   featuresJson String?     @db.Text // cached named features (creek mouths, points, bridges, dams…)
   featuresAt   DateTime?
+  regsJson     String?     @db.Text // limits and exceptions for this water
+  regsAt       DateTime?
   corpsProject String? // "SWF:WTYT2" — nearest USACE project, "" = none nearby
   corpsAt      DateTime?
   osmRef       String?     @unique // e.g. "way/12345678"
@@ -221,6 +223,7 @@ model Lake {
   posts         Post[]
   listings      Listing[]
   tournaments   Tournament[]
+  waterReadings WaterReading[]
   spots         Spot[]
   waypoints     Waypoint[]
   dayPlans      DayPlan[]
@@ -321,30 +324,39 @@ model Kv {
 // ---- P2 social: normalized, shareable fishing data ----
 
 model Trip {
-  id           String      @id @default(cuid())
-  userId       String
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lakeId       String
-  lake         Lake        @relation(fields: [lakeId], references: [id], onDelete: Cascade)
-  date         DateTime
-  species      String?
-  weight       Float?
-  length       Float?
-  lure         String?
-  lat          Float?
-  lon          Float?
-  notes        String?     @db.Text
-  weather      Json?
-  visibility   Visibility  @default(private)
-  groupId      String? // when visibility = group
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId        String
+  lake          Lake        @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  date          DateTime
+  species       String?
+  weight        Float?
+  length        Float?
+  lure          String?
+  lat           Float?
+  lon           Float?
+  notes         String?     @db.Text
+  weather       Json?
+  visibility    Visibility  @default(private)
+  groupId       String? // when visibility = group
   // Set when the angler enters this catch into a group tournament. Explicit on
   // purpose: a fish that happens to be caught during the window is not an
   // entry until its owner says so.
-  tournamentId String?
-  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
-  photos       Photo[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  tournamentId  String?
+  tournament    Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  // What the water and the weather were doing when this fish ate. Captured at
+  // the moment of logging, because nobody can reconstruct it afterwards — and
+  // without it a catch log can say WHEN fish were caught but never WHY.
+  waterTempF    Float?
+  airTempF      Float?
+  pressureTrend String? // fallfast | fall | steady | rise | risefast
+  windMph       Float?
+  windDir       Int?
+  moonPct       Int?
+  photos        Photo[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@index([userId, lakeId])
   @@index([tournamentId])
@@ -992,4 +1004,23 @@ model TournamentEntry {
 
   @@unique([tournamentId, userId])
   @@index([userId, status])
+}
+
+// ---------------------------------------------------------------------------
+// One reading a day per lake, so water temperature and level can be drawn as a
+// line rather than a single number. The gauges only serve the present; the
+// history has to be kept by whoever wants it, and the shape of the last month
+// tells an angler more than today's value does.
+// ---------------------------------------------------------------------------
+model WaterReading {
+  id      String   @id @default(cuid())
+  lakeId  String
+  lake    Lake     @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  at      DateTime
+  levelFt Float?
+  tempF   Float?
+  source  String // usgs | twdb | glsea | angler
+
+  @@unique([lakeId, at])
+  @@index([lakeId, at])
 }

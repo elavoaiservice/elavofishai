@@ -1046,6 +1046,8 @@ body.feed-loading .stat-v *{visibility:hidden}
     <button class="btn ghost" data-go="log" data-sub="spots">&#128205; Spots</button>
     <button class="btn ghost" data-go="friends">&#127907; Friends' activity</button>
   </div>
+  <div id="outboxNote" class="note" style="margin:0 0 14px" hidden></div>
+  <div id="firstRun"></div>
   <div id="planFollowup"></div>
   <div id="wxAlerts"></div>
   <div class="today-grid" id="todayCards"></div>
@@ -1234,6 +1236,9 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
   </div>
   <div id="thermoOut"></div>
+  <h3>The last two months <button class="hbtn" data-help="watertrend" aria-label="About the water trend">ⓘ</button></h3>
+  <div id="waterHistory"><p class="snap">Building a record — one reading a day from here on.</p></div>
+
   <h3>Water being moved <button class="hbtn" data-help="release" aria-label="About dam releases">ⓘ</button></h3>
   <div id="releaseOut"><p class="snap">Checking whether this lake sits below a dam…</p></div>
 
@@ -1736,6 +1741,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-reference" hidden>
+  <div id="regsBox"></div>
 <h2>Reading the barometer</h2>
 <p class="lede">The trend matters far more than the number.</p>
 <div class="scroll">
@@ -2748,6 +2754,49 @@ async function stGet(k){
 /* Returns true only when the write actually landed where it belongs: on this
    device when signed out, and on the server too when signed in. A local write
    never stands in for a failed sync. */
+/* ---- the outbox ----
+   A ramp is where the signal is worst and where the catch is logged. A write
+   that cannot reach the server is queued here and retried — when the network
+   comes back, when the app is reopened, and every couple of minutes in
+   between. Until it lands the app says so rather than implying it is safe.
+
+   Deliberately simple: last write wins per key, because these ARE whole-value
+   keys (the trip log is one value). A queue of diffs would be cleverer and
+   would need conflict resolution nobody asked for. */
+const OUTBOX='efa:outbox';
+function outboxRead(){ try{ return JSON.parse(localStorage.getItem(OUTBOX)||'{}'); }catch(e){ return {}; } }
+function outboxWrite(o){ try{ localStorage.setItem(OUTBOX,JSON.stringify(o)); }catch(e){} }
+function outboxQueue(k,v){ const o=outboxRead(); o[k]={v:v,at:Date.now()}; outboxWrite(o); updateOutboxBadge(); }
+function outboxCount(){ return Object.keys(outboxRead()).length; }
+function updateOutboxBadge(){
+  const n=outboxCount(), el=$('outboxNote');
+  if(!el)return;
+  el.hidden=!n;
+  el.innerHTML=n?('<b>'+n+' change'+(n===1?'':'s')+' waiting to sync.</b> <span class="snap">Saved on this device. They will go up on their own when you have signal.</span>'+
+    ' <button class="btn ghost btn-sm" id="outboxNow">Try now</button>'):'';
+}
+let outboxBusy=false;
+async function outboxFlush(){
+  if(outboxBusy||!AUTH.user)return;
+  const o=outboxRead(); const keys=Object.keys(o);
+  if(!keys.length)return;
+  if(navigator.onLine===false)return;
+  outboxBusy=true;
+  let sent=0;
+  for(const k of keys){
+    try{
+      const r=await apiFetch('/api/kv/'+encodeURIComponent(k),{method:'PUT',body:o[k].v});
+      if(r.ok){ delete o[k]; delete stStale[k]; sent++; }
+      else if(r.status===413||r.status===400){ delete o[k]; }   // it will never fit; stop retrying
+      else break;                                               // still offline — keep the rest
+    }catch(e){ break; }
+  }
+  outboxWrite(o); outboxBusy=false; updateOutboxBadge();
+  if(sent&&!Object.keys(o).length)toast('Everything is synced.');
+}
+window.addEventListener('online',outboxFlush);
+setInterval(outboxFlush,120000);
+
 async function stSet(k,v){
   let synced=false;
   if(AUTH.user){try{
@@ -2759,9 +2808,15 @@ async function stSet(k,v){
   try{ if(window.localStorage){localStorage.setItem(k,v); local=true;} }catch(e){}
   memStore[k]=v;
   if(AUTH.user){
-    if(synced){ delete stStale[k]; return true; }   // on the server is durable enough
+    if(synced){
+      delete stStale[k];
+      const o=outboxRead(); if(o[k]){ delete o[k]; outboxWrite(o); updateOutboxBadge(); }
+      return true;                                   // on the server is durable enough
+    }
     const wasStale=stStale[k];
     stStale[k]=true;
+    // Queue it so it is not lost when the signal comes back.
+    if((v||'').length<=1.9*1024*1024)outboxQueue(k,v);
     // Size is the failure people actually hit, and "not synced yet" sounds
     // temporary when it is permanent — the value will never fit.
     const tooBig=(v||'').length>1.9*1024*1024;
@@ -2848,7 +2903,8 @@ function drawMonthPicker(){
   });
 }
 function drawMonth(){
-  const ranked=lakeFish().slice().sort((a,b)=>vals(b)[selMonth]-vals(a)[selMonth]);
+  // The guide's score, nudged by what has actually been caught here.
+  const ranked=lakeFish().slice().sort((a,b)=>(vals(b)[selMonth]+knowledgeBoost(b.n))-(vals(a)[selMonth]+knowledgeBoost(a.n)));
   const sh=MODE==="eater"?["--r1","--r2","--r3","--r4","--r5"]:["--t1","--t2","--t3","--t4","--t5"];
   $('monthOut').innerHTML='<div class="mhead">'+FULL[selMonth]+'</div><p class="msum">'+monthNote(selMonth)+'</p><div class="rank">'+
     ranked.map(f=>{
@@ -2879,6 +2935,7 @@ function drawSpecies(){
         '<div class="row"><div class="k">On live sonar &mdash; how to work it</div><ul>'+
         SCOPE[f.n].work.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
       (((MODE==="eater"?f.eaterNote:f.trophyNote)||'')?'<div class="row"><div class="k">'+(f.ai?'From this lake\u2019s AI guide':'Reality check')+'</div><p>'+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</p></div>':'')+
+      (knowledgeNote(f.n)?'<div class="row"><div class="k">What this lake\u2019s log says</div><p>'+escHtml(knowledgeNote(f.n))+'</p></div>':'')+
       '</div></details>';
   }).join('');
 }
@@ -3024,7 +3081,7 @@ function drawMoonStat(){
 }
 
 function drawHead(){
-  const ranked=lakeFish().slice().sort((a,b)=>vals(b)[mi]-vals(a)[mi]);
+  const ranked=lakeFish().slice().sort((a,b)=>(vals(b)[mi]+knowledgeBoost(b.n))-(vals(a)[mi]+knowledgeBoost(a.n)));
   $('pick').textContent=clean(ranked[0].n);
   const top=clean(ranked[0].n), second=clean(ranked[1].n);
   let t;
@@ -3632,6 +3689,7 @@ function setActiveLake(l){
   applyActive();
   if(!isG){ spots=[]; waypoints=[]; LAKE_PROFILE=null; }
   LAKE_RAMPS=[]; if(typeof loadRamps==='function')loadRamps();   // ramps are per lake
+  if(typeof loadKnowledge==='function')loadKnowledge();           // so is its own log
   if(typeof loadActiveTourneys==='function')loadActiveTourneys(); // so is the "enter in…" box
   renderLakeHeader();
   applyLakeNotes();
@@ -3954,7 +4012,7 @@ async function genAiPlan(force){
         window:window,platform:platform,conditions:cond,force:!!force})});
     const d=await r.json();
     if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
-    else { $('aiPlanMsg').textContent=''; renderAiPlan(d,species); }
+    else { $('aiPlanMsg').textContent=''; AI_PLANNED=true; renderAiPlan(d,species); }
   }catch(e){
     // The connection dropped, but the server finishes the plan and caches it
     // regardless — so go back for it rather than throwing the work away.
@@ -4210,8 +4268,17 @@ async function shareThing(){
     url='/api/lakes/'+ACTIVE.id+'/catches';
     const up=await uploadPendingPhoto();
     if(!up.ok){ $('shMsg').textContent=up.error+' The catch was not shared — try again without the photo.'; return; }
+    // What the water and the weather were doing. Nobody can reconstruct this
+    // later, and it is what turns a list of fish into a reason they bit.
+    const d0=FORECAST&&FORECAST.length?FORECAST[0]:null;
     body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId,
-      photoIds:up.id?[up.id]:undefined, tournamentId:enteredTourneyId()||undefined};
+      photoIds:up.id?[up.id]:undefined, tournamentId:enteredTourneyId()||undefined,
+      waterTempF:(typeof waterTemp!=='undefined'&&waterTemp!=null)?waterTemp:undefined,
+      airTempF:(typeof curHi==='number')?curHi:undefined,
+      pressureTrend:(typeof curTrend==='string')?curTrend:undefined,
+      windMph:(typeof curWindSpd==='number')?curWindSpd:undefined,
+      windDir:(typeof curWindDir==='number')?Math.round(curWindDir):undefined,
+      moonPct:d0?Math.round(moonPhase(new Date(d0.start.valueOf()+12*3600000)).frac*100):undefined};
   }else{
     if(!name||isNaN(lat)||isNaN(lon)){ $('shMsg').textContent='Needs a name and a pin — tap “Use GPS”.'; return; }
     url='/api/lakes/'+ACTIVE.id+'/'+(SH_TYPE==='spot'?'spots':'waypoints');
@@ -5125,7 +5192,7 @@ function go(id,push){
   if(push!==false&&location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   window.scrollTo({top:0,behavior:'instant'});
   // per-view work
-  if(id==='today'){ renderToday(); loadAlerts_nws(); loadFollowup(); }
+  if(id==='today'){ renderToday(); loadAlerts_nws(); loadFollowup(); drawFirstRun(); updateOutboxBadge(); outboxFlush(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
   if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); loadSuggested(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
@@ -5136,7 +5203,8 @@ function go(id,push){
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
-  if(id==='water'){ loadRelease(); drawWaterLakeNote(); }
+  if(id==='water'){ loadRelease(); drawWaterLakeNote(); drawWaterHistory(); }
+  if(id==='reference'){ loadRegs(); }
   if(id==='feed'){ loadSocialFeed(); }
   if(id==='alerts'){ loadAlerts(); drawPushSetting(); }
   if(id==='market'){ loadMarket(); }
@@ -6068,6 +6136,9 @@ const HELP={
   moon:{t:'Moon phase',b:
     '<p>How much of the moon is lit. New and full moons line the sun and moon up, which strengthens the daily feeding windows and, on many lakes, pulls spawning cycles.</p>'+
     '<p>It earns a small say in the score — capped well below weather, because a full moon in a post-frontal bluebird is still a hard day.</p>'},
+  watertrend:{t:'The last two months',b:
+    '<p>One reading a day, kept from the moment this lake was first opened in the app. Gauges only serve the present — ask tomorrow and today is gone — so the history has to be written down as it happens.</p>'+
+    '<p>The shape matters more than the number. Water that has cooled six degrees and dropped a foot since a front came through has moved fish; water sitting flat for three weeks has not. A line that starts partway through is simply where our record begins, not where the lake did.</p>'},
   watertemp:{t:'Water temperature',b:
     '<p>The number that governs how often a fish eats. Below about 48°F most species slow right down; 58–82°F is where they feed hardest; above 88°F warm water carries less oxygen and the daytime bite falls apart.</p>'+
     '<p>Very few lakes have a gauge that measures water temperature. Where one exists (a USGS monitor, a NOAA buoy, or the satellite reading on the Great Lakes) you get a <b>real reading</b>, dated and named. Everywhere else it is a <b>seasonal estimate for this latitude</b>, labelled as one — and an estimate counts for half as much in the score, because being confidently wrong about water temperature is worse than being vague.</p>'+
@@ -6355,11 +6426,22 @@ document.addEventListener('click',async function(e){
   if(!v)return;
   const helpful=v.dataset.fup==='up';
   // A 👎 is worth far more with a sentence attached, so ask — but never insist.
-  const note=helpful?'':(prompt('What did it miss? (optional, but this is the bit that actually helps)')||'');
+  const note=helpful
+    ? (prompt('Anything worth telling the next angler? (optional — it becomes a report on this lake)')||'')
+    : (prompt('What did it miss? (optional, but this is the bit that actually helps)')||'');
   const r=await apiFetch('/api/ai/day-plan/'+encodeURIComponent(v.dataset.fupPlan)+'/feedback',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({helpful:helpful,note:note})});
   const msg=$('fupMsg');
-  if(msg)msg.textContent=r.ok?'Thank you — that goes straight into how the next one is built.':'Could not save that.';
+  // A 👎 note is a complaint about the advice and stays private to the admin.
+  // A 👍 note is a fishing report, and the next angler on this water should
+  // have it — posted under their own name, as their own report.
+  if(r.ok&&helpful&&note.trim().length>15){
+    await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/reports',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({body:note})}).catch(()=>{});
+    if(msg)msg.textContent='Thank you — and your note is now a report on this lake.';
+  } else if(msg){
+    msg.textContent=r.ok?'Thank you — that goes straight into how the next one is built.':'Could not save that.';
+  }
   if(r.ok)setTimeout(loadFollowup,1200);
 });
 
@@ -6465,6 +6547,149 @@ async function loadAlerts_nws(){
       $('wxDiscussion').innerHTML='<details class="sec"><summary class="sec-t">What the forecaster says <span class="snap">NWS '+escHtml(d.discussion.office||'')+' · '+whenAgo(d.discussion.issued)+'</span></summary><p class="snap" style="white-space:pre-wrap">'+escHtml(d.discussion.text)+'</p></details>';
     }
   }catch(e){}
+}
+
+/* ---- the first week ----
+   A new angler lands in a working app with nothing in it: an empty log, an
+   empty crew, a feed with strangers in it. Four steps, each one a thing the
+   app is actually better for, and the card is gone the moment they are done —
+   a checklist that never completes is nagging, not onboarding. */
+async function drawFirstRun(){
+  const box=$('firstRun'); if(!box)return;
+  if(!AUTH.user){ box.innerHTML=''; return; }
+  try{ if(localStorage.getItem('efa:firstrun')==='done'){ box.innerHTML=''; return; } }catch(e){}
+  let friends=0, invites=0;
+  try{
+    const r=await apiFetch('/api/friends');
+    if(r.ok){ const d=await r.json(); friends=(d.friends||[]).length; }
+    const i=await apiFetch('/api/invites');
+    if(i.ok)invites=((await i.json()).invites||[]).length;
+  }catch(e){}
+  const steps=[
+    {done:!!(trips&&trips.length), label:'Log a catch', why:'Your own log outranks everything else the app knows about this lake.', go:'log'},
+    {done:!!(typeof LAKE_KNOWLEDGE!=='undefined'&&AI_PLANNED), label:'Make a plan for your next trip', why:'Hour by hour, built from today\u2019s water and this lake\u2019s own reports.', go:'plan'},
+    {done:friends>0||invites>0, label:'Add an angler, or invite one', why:'Spots and catches are worth more shared — and nothing you log is public unless you say so.', go:'friends'},
+    {done:(typeof waterTemp!=='undefined'&&waterTemp!=null), label:'Check the water', why:'Temperature and level decide where fish are; we fetch them where a gauge exists.', go:'water'},
+  ];
+  const left=steps.filter(x=>!x.done);
+  if(!left.length){
+    try{ localStorage.setItem('efa:firstrun','done'); }catch(e){}
+    box.innerHTML='<div class="note" style="margin:0 0 14px"><b>You are set up.</b> Everything from here is just fishing.</div>';
+    setTimeout(()=>{ const b=$('firstRun'); if(b)b.innerHTML=''; },8000);
+    return;
+  }
+  box.innerHTML='<div class="note" style="margin:0 0 14px;border-color:var(--accent-ring)">'+
+    '<b>Getting started</b> <span class="snap">'+(steps.length-left.length)+' of '+steps.length+' done</span>'+
+    '<div style="display:grid;gap:6px;margin-top:8px">'+
+    steps.map(x=>'<div style="display:flex;gap:8px;align-items:baseline">'+
+      '<span>'+(x.done?'✅':'⬜')+'</span>'+
+      '<span style="flex:1">'+(x.done?'<s>'+escHtml(x.label)+'</s>':'<b>'+escHtml(x.label)+'</b> <span class="snap">'+escHtml(x.why)+'</span>')+'</span>'+
+      (x.done?'':'<button class="btn ghost btn-sm" data-go="'+x.go+'">Go</button>')+'</div>').join('')+
+    '</div>'+
+    '<div class="soc-row"><button class="btn ghost btn-sm" id="frDismiss">Hide this</button></div></div>';
+}
+let AI_PLANNED=false;
+document.addEventListener('click',function(e){
+  if(e.target&&e.target.id==='outboxNow'){ outboxFlush(); return; }
+  if(e.target&&e.target.id==='frDismiss'){
+    try{ localStorage.setItem('efa:firstrun','done'); }catch(x){}
+    const b=$('firstRun'); if(b)b.innerHTML='';
+  }
+});
+
+/* ---- what this lake's own log says ----
+   The species ranking comes from a guide written about the lake; the log is
+   evidence from the lake itself. Where they disagree the log wins, because one
+   is what somebody knows and the other is what actually happened here. */
+let LAKE_KNOWLEDGE=[];
+async function loadKnowledge(){
+  LAKE_KNOWLEDGE=[];
+  if(!AUTH.user||!ACTIVE.id)return;
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/knowledge');
+    if(!r.ok)return;
+    LAKE_KNOWLEDGE=(await r.json()).knowledge||[];
+    if(typeof renderAll==='function')renderAll();
+  }catch(e){}
+}
+/* A nudge, not an override: enough catches of a species here lifts it, and the
+   species page says why. Three fish cannot outrank a season of knowledge. */
+function knowledgeBoost(name){
+  const k=LAKE_KNOWLEDGE.find(x=>x.species&&x.species.toLowerCase()===String(name||'').toLowerCase());
+  if(!k||!k.pattern)return 0;
+  const thisMonth=k.byMonth[new Date().getMonth()]||0;
+  return Math.min(1.5, k.caught/12 + thisMonth/4);
+}
+function knowledgeNote(name){
+  const k=LAKE_KNOWLEDGE.find(x=>x.species&&x.species.toLowerCase()===String(name||'').toLowerCase());
+  if(!k)return '';
+  const bits=[k.caught+' logged here by '+k.anglers+' angler'+(k.anglers===1?'':'s')];
+  if(k.pattern&&k.bestMonths.length)bits.push('best months '+k.bestMonths.join(', '));
+  if(k.tempRange)bits.push('caught at '+k.tempRange.low+'–'+k.tempRange.high+'°F');
+  if(k.topLures.length)bits.push('on '+k.topLures.join(', '));
+  if(!k.pattern)bits.push('too few to be a pattern yet');
+  return bits.join(' · ');
+}
+
+/* ---- the shape of the last two months ----
+   A single number cannot tell you the water has dropped a foot and cooled six
+   degrees since the front came through, and that is the part that changes
+   where fish are. The server keeps one reading a day; this draws it. */
+function drawWaterHistory(){
+  const box=$('waterHistory'); if(!box)return;
+  const h=(WATER_SRC&&WATER_SRC.history)||[];
+  const temps=h.filter(p=>p.tempF!=null), levels=h.filter(p=>p.levelFt!=null);
+  if(temps.length<2&&levels.length<2){
+    box.innerHTML='<p class="snap">Not enough readings yet — one is taken each day this lake is opened, so the trend fills in over the next couple of weeks.</p>';
+    return;
+  }
+  const line=(pts,key,colour,unit)=>{
+    if(pts.length<2)return '';
+    const vs=pts.map(p=>p[key]);
+    const lo=Math.min.apply(null,vs), hi=Math.max.apply(null,vs), span=(hi-lo)||1;
+    const W=720,H=120,pl=38,pr=8,pt=8,pb=20,iw=W-pl-pr,ih=H-pt-pb;
+    const X=i=>pl+(pts.length>1?iw*i/(pts.length-1):0), Y=v=>pt+ih-((v-lo)/span)*ih;
+    const change=vs[vs.length-1]-vs[0];
+    const word=Math.abs(change)<(unit==='°F'?1:0.15)?'steady':(change>0?'up':'down');
+    return '<div style="margin-bottom:14px"><div class="stat-k">'+(key==='tempF'?'Water temperature':'Level')+
+      ' — '+word+(word==='steady'?'':' '+Math.abs(change).toFixed(unit==='°F'?0:2)+unit)+' over '+pts.length+' days</div>'+
+      '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;max-height:130px">'+
+      [lo,(lo+hi)/2,hi].map(v=>'<line x1="'+pl+'" y1="'+Y(v)+'" x2="'+(W-pr)+'" y2="'+Y(v)+'" stroke="#DCE7F5"/>'+
+        '<text x="'+(pl-6)+'" y="'+(Y(v)+4)+'" fill="#5F708A" font-size="10" font-family="Inter,sans-serif" font-weight="600" text-anchor="end">'+
+        (unit==='°F'?Math.round(v):v.toFixed(1))+'</text>').join('')+
+      '<polyline points="'+pts.map((p,i)=>X(i)+','+Y(p[key])).join(' ')+'" fill="none" stroke="'+colour+'" stroke-width="2.5" stroke-linejoin="round"/>'+
+      '<text x="'+pl+'" y="'+(H-4)+'" fill="#5F708A" font-size="10" font-family="Inter,sans-serif">'+escHtml(pts[0].at)+'</text>'+
+      '<text x="'+(W-pr)+'" y="'+(H-4)+'" fill="#5F708A" font-size="10" font-family="Inter,sans-serif" text-anchor="end">'+escHtml(pts[pts.length-1].at)+'</text>'+
+      '</svg></div>';
+  };
+  box.innerHTML=line(temps,'tempF','#C4682E','°F')+line(levels,'levelFt','#29ABE2',' ft');
+}
+
+/* ---- what you may keep ----
+   Quoted from the agency and linked, never summarised: getting a limit wrong
+   is the one mistake this app could make that costs somebody a court date. */
+async function loadRegs(){
+  const box=$('regsBox'); if(!box)return;
+  if(!AUTH.user||!ACTIVE.id){ box.innerHTML=''; return; }
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/regulations');
+    if(!r.ok){ box.innerHTML=''; return; }
+    const g=(await r.json()).regulations;
+    if(!g){ box.innerHTML='<div class="note" style="margin-bottom:14px"><b>Limits for '+escHtml(ACTIVE.name)+'.</b> We only carry the official rules for Texas waters so far. Check your own state agency before you keep a fish — and never take a limit from an app as the last word.</div>'; return; }
+    const when=new Date(g.checkedAt).toLocaleDateString();
+    box.innerHTML='<div class="note" style="margin-bottom:16px">'+
+      (g.scope==='statewide'
+        ? '<b>'+escHtml(ACTIVE.name)+' has no special limits.</b> Texas statewide freshwater limits apply here — TPWD lists every water with an exception, and this one is not on it (checked '+escHtml(when)+').'
+        : '<b>'+escHtml(ACTIVE.name)+' has its own limits.</b> These are exceptions to the statewide rules, quoted from TPWD (checked '+escHtml(when)+'):'+
+          '<ul style="margin:8px 0 0;padding-left:20px">'+
+          g.rules.map(x=>'<li><b>'+escHtml(x.species)+'</b> — '+escHtml(x.text)+'</li>').join('')+'</ul>')+
+      (g.advisory?'<div style="margin-top:8px"><b>⚠ Health advisory:</b> '+escHtml(g.advisory)+'</div>':'')+
+      '<div class="snap" style="margin-top:8px">'+
+        '<a href="'+escAttr(g.url)+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">the page this came from</a> · '+
+        '<a href="'+escAttr(g.statewideUrl)+'" target="_blank" rel="noopener" style="color:var(--primary-dark)">statewide limits</a>'+
+        ' — rules change, and the agency is always the authority.</div>'+
+      '</div>';
+  }catch(e){ box.innerHTML=''; }
 }
 
 /* ---- dam release ----
@@ -6973,7 +7198,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); await checkPhotos(); startAlertPoll(); slimTripsOnce(); populateAiSpecies(); populateAiLaunch(); loadRamps(); loadPostDefault(); loadActiveTourneys(); firstRunPlan();
+  await checkAi(); await checkPhotos(); startAlertPoll(); slimTripsOnce(); loadKnowledge(); populateAiSpecies(); populateAiLaunch(); loadRamps(); loadPostDefault(); loadActiveTourneys(); firstRunPlan();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){

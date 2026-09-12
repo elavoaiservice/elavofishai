@@ -166,6 +166,19 @@ export const STATE_SOURCES = [
   { state: 'Michigan', name: 'Michigan DNR weekly fishing report', url: 'https://public.govdelivery.com/topics/MIDNR_9/feed.rss', kind: 'rss' as const },
 ];
 
+/**
+ * States checked and deliberately NOT added, so nobody spends an afternoon
+ * re-discovering this:
+ *   Kansas   — ksoutdoors.gov answers 403 to anything that is not a browser.
+ *   Missouri — the fishing-reports URL is gone (404), and MDC's robots.txt
+ *              disallows our user agent on what remains.
+ *   Minnesota — no dated report feed exists; the DNR publishes lake SURVEYS
+ *              instead, which is a different and better thing (see
+ *              services/surveys.ts).
+ * A source that 403s would sit in the admin failing forever and produce
+ * nothing, which is worse than an honest gap.
+ */
+
 /** Does this lake sit in that state? Regions are free text like "Hood County, Texas". */
 export function isState(region: string | null, country: string | null, state: string): boolean {
   if (country && !/^(us|usa|united states)$/i.test(country)) return false;
@@ -447,7 +460,9 @@ export function reportsForPrompt(rows: Awaited<ReturnType<typeof recentReports>>
           ? `${r.sourceName || 'agency'} — standing lake description, UNDATED, background only`
           : r.source === 'stocking'
             ? `${r.sourceName || 'agency'} — stocking history, the years are in the text`
-            : r.sourceName || r.source;
+            : r.source === 'survey'
+              ? `${r.sourceName || 'agency'} — netting survey, evidence of what lives here`
+              : r.sourceName || r.source;
       return `- [${day(r.publishedAt)}] (${who}) ${r.title ? r.title + ': ' : ''}${r.body.slice(0, 500)}`;
     })
     .join('\n');

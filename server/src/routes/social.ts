@@ -19,6 +19,12 @@ import {
   savePrefs,
 } from '../lib/sharing';
 
+/** A number, or nothing — never a zero standing in for "they did not say". */
+function num(v: unknown, lo: number, hi: number): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= lo && n <= hi ? n : null;
+}
+
 export async function socialRoutes(app: FastifyInstance): Promise<void> {
   // ---------- friends ----------
   app.get('/api/friends', async (req, reply) => {
@@ -496,7 +502,8 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const lakeId = String((req.params as { id: string }).id);
-    const b = (req.body || {}) as { species?: string; weight?: number; length?: number; lure?: string; lat?: number; lon?: number; notes?: string; date?: string; visibility?: string; groupId?: string; tournamentId?: string };
+    const b = (req.body || {}) as { species?: string; weight?: number; length?: number; lure?: string; lat?: number; lon?: number; notes?: string; date?: string; visibility?: string; groupId?: string; tournamentId?: string;
+      waterTempF?: number; airTempF?: number; pressureTrend?: string; windMph?: number; windDir?: number; moonPct?: number };
     if (!b.species) return reply.code(400).send({ error: 'What did you catch?' });
     let vis;
     try { vis = await resolveVisibility(me.id, 'trips', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
@@ -513,7 +520,14 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const photoIds = Array.isArray((b as { photoIds?: string[] }).photoIds)
       ? (b as { photoIds: string[] }).photoIds.slice(0, 4).map(String)
       : [];
-    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId, tournamentId } });
+    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId, tournamentId,
+      // What the water and the weather were doing. Nobody can reconstruct this
+      // afterwards, and without it the log says when fish were caught but
+      // never why.
+      waterTempF: num(b.waterTempF, 32, 100), airTempF: num(b.airTempF, -40, 130),
+      pressureTrend: ['fallfast', 'fall', 'steady', 'rise', 'risefast'].includes(String(b.pressureTrend)) ? String(b.pressureTrend) : null,
+      windMph: num(b.windMph, 0, 100), windDir: b.windDir != null ? Math.round(Number(b.windDir)) % 360 : null,
+      moonPct: num(b.moonPct, 0, 100) } });
     // Attach only photos this angler uploaded and hasn't already attached.
     if (photoIds.length) {
       await prisma.photo.updateMany({
