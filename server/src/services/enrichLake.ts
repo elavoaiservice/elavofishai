@@ -32,6 +32,8 @@ export interface UsgsSite {
   lon: number;
   miles: number;
   isLake: boolean;
+  /** USGS classifies the site itself as a lake/reservoir (site_type_code LK). */
+  isReservoir?: boolean;
 }
 
 function milesBetween(aLat: number, aLon: number, bLat: number, bLon: number): number {
@@ -92,34 +94,52 @@ export async function findGauge(lat: number, lon: number, radiusDeg = 0.3): Prom
       id, name, lat: Number(la), lon: Number(lo),
       miles: milesBetween(lat, lon, Number(la), Number(lo)),
       isLake: type === 'LK' || /\b(lk|lake|res|reservoir)\b/i.test(name),
+      // USGS's own classification, not the name: "ELK R BL ELK CITY LK" is a
+      // river that happens to have "LK" in its name.
+      isReservoir: type === 'LK',
     });
   }
-  // Nearest first, then check each actually publishes a level or temperature.
-  // Havana Lake was assigned "Copan Lake near Copan, OK" — 14 miles away, in
-  // another state, publishing nothing at all — because proximity plus a
-  // promising site type was the whole test. A gauge that reports nothing is
-  // worse than no gauge: it makes the app look broken rather than honest.
-  const ranked = [...sites].sort((a, b) => (a.isLake !== b.isLake ? (a.isLake ? -1 : 1) : a.miles - b.miles));
-  for (const site of ranked.slice(0, 8)) {
-    if (site.miles > (site.isLake ? 25 : 8)) break;
-    if (await gaugeReports(site.id)) return site;
+  // Nearest first, and every candidate has to prove itself before adoption.
+  //
+  // Two ways this went wrong before. Havana Lake was handed "Copan Lake near
+  // Copan, OK" — 14 miles away, in another state, publishing nothing at all —
+  // because being nearby with a promising name was the whole test. Then, with
+  // a reporting check but a name-based idea of what a lake gauge is, it was
+  // handed "ELK R BL ELK CITY LK, KS", a RIVER gauge whose 5.18 ft stage would
+  // have been drawn on the page as a lake elevation. A number that looks real
+  // and is meaningless is worse than an honest blank.
+  const lakes = sites.filter((s) => s.isReservoir).sort((a, b) => a.miles - b.miles);
+  for (const site of lakes.slice(0, 6)) {
+    if (site.miles > 25) break;
+    if (await gaugeReportsLevel(site.id)) return site;
   }
   return null;
 }
 
-/** Does this site publish a lake level or a water temperature we can read? */
-export async function gaugeReports(siteId: string): Promise<boolean> {
+/**
+ * Does this site publish the level of a LAKE?
+ *
+ * 62614 and 00062 are reservoir elevations. 00065 is gage height, which on a
+ * river is the depth over a datum — a fine number that has nothing to do with
+ * how full a lake is — so it only counts at a site the USGS itself classifies
+ * as a lake.
+ */
+export async function gaugeReportsLevel(siteId: string): Promise<boolean> {
+  const codes = await gaugeCodes(siteId);
+  return ELEV_CODES.some((c) => codes.has(c));
+}
+
+export async function gaugeCodes(siteId: string): Promise<Set<string>> {
   try {
     const res = await fetch(
       `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items?monitoring_location_id=USGS-${encodeURIComponent(siteId)}&f=json&limit=100`,
       { headers: { 'User-Agent': 'ElavoFishAI/1.0 (https://elavofishai.elavoai.com)' }, signal: AbortSignal.timeout(15_000) }
     );
-    if (!res.ok) return false;
+    if (!res.ok) return new Set();
     const json = (await res.json()) as { features?: { properties?: { parameter_code?: string } }[] };
-    const codes = new Set((json.features || []).map((f) => String(f.properties?.parameter_code || '')));
-    return [...ELEV_CODES, TEMP_CODE].some((c) => codes.has(c));
+    return new Set((json.features || []).map((f) => String(f.properties?.parameter_code || '')));
   } catch {
-    return false;
+    return new Set();
   }
 }
 

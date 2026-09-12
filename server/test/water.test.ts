@@ -94,3 +94,19 @@ describe('the Great Lakes satellite reading', () => {
     assert.equal(parseGlsea({}), null);
   });
 });
+
+describe('which gauges may be adopted', () => {
+  // Regression: discovery once adopted "ELK R BL ELK CITY LK, KS" for Havana
+  // Lake because the NAME contained "LK". It is a river gauge, and its 5.18 ft
+  // stage would have been drawn on the page as a lake elevation.
+  test('a river gauge publishes gage height, which is not a lake level', () => {
+    const river = { features: [{ properties: { parameter_code: '00065', value: '5.18', unit_of_measure: 'ft', time: '2026-09-12T12:00:00Z' } }] };
+    // The parser will read it if asked — the guard is in enrichLake, which only
+    // ever asks about sites USGS classifies as lakes.
+    assert.equal(pickOgc(river, ['62614', '00062']), null);
+  });
+
+  test('a reservoir gauge publishes an elevation', () => {
+    assert.equal(pickOgc(OGC, ['62614', '00062'])?.value, 690.49);
+  });
+});
