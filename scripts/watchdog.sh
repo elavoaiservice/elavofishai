@@ -27,6 +27,11 @@
 # anyone, and says as much.
 set -e
 
+# launchd hands a job almost no PATH, and this ran fine by hand and then could
+# not find `docker` when it mattered. Put the usual places back.
+PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH
+
 URL="${HEALTH_URL:-http://localhost:3100/health/ready}"
 DIR="${REPO_DIR:-$HOME/elavofishai}"
 STATE="${STATE_DIR:-$HOME/efa-deploy}"
@@ -70,7 +75,11 @@ log "health check failed ($COUNT in a row)"
 if [ ! -f "$DOWN" ]; then
   date -Iseconds > "$DOWN"
   log "restarting the app container"
-  (cd "$DIR" && docker compose restart app >> "$LOG" 2>&1) || log "  (restart command failed)"
+  if command -v docker >/dev/null 2>&1; then
+    (cd "$DIR" && docker compose restart app >> "$LOG" 2>&1) || log "  (the restart command failed)"
+  else
+    log "  (docker is not on this PATH — cannot restart, only report)"
+  fi
   sleep 20
   if curl -fsS -m 10 "$URL" >/dev/null 2>&1; then
     log "recovered after a restart"
