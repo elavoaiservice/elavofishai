@@ -144,7 +144,8 @@ export async function resultsFor(tournamentId: string) {
   });
   if (!t) return null;
   const catches = await prisma.trip.findMany({
-    where: { tournamentId },
+    // A closed account's fish leave the board with them.
+    where: { tournamentId, user: { status: 'active' } },
     select: { id: true, userId: true, species: true, weight: true, length: true, date: true, user: { select: { id: true, displayName: true, avatarUrl: true } }, photos: { select: { id: true } } },
     orderBy: { date: 'asc' },
   });

@@ -2765,8 +2765,24 @@ async function stGet(k){
    would need conflict resolution nobody asked for. */
 const OUTBOX='efa:outbox';
 function outboxRead(){ try{ return JSON.parse(localStorage.getItem(OUTBOX)||'{}'); }catch(e){ return {}; } }
-function outboxWrite(o){ try{ localStorage.setItem(OUTBOX,JSON.stringify(o)); }catch(e){} }
-function outboxQueue(k,v){ const o=outboxRead(); o[k]={v:v,at:Date.now()}; outboxWrite(o); updateOutboxBadge(); }
+/* Returns false when the queue itself could not be written — which happens
+   when the device is out of storage, and is precisely the moment the angler
+   must not be told their catch is safe. */
+function outboxWrite(o){ try{ localStorage.setItem(OUTBOX,JSON.stringify(o)); return true; }catch(e){ return false; } }
+function outboxQueue(k,v){
+  const o=outboxRead(); o[k]={v:v,at:Date.now()};
+  if(!outboxWrite(o)){
+    // Drop the oldest queued item and try once more: one recent catch saved
+    // beats a full queue that saves nothing.
+    const keys=Object.keys(o).sort((a,b)=>(o[a].at||0)-(o[b].at||0));
+    if(keys.length>1){ delete o[keys[0]]; if(outboxWrite(o)){ updateOutboxBadge(); return true; } }
+    toast('This device is out of storage — export your log before you lose anything.');
+    updateOutboxBadge();
+    return false;
+  }
+  updateOutboxBadge();
+  return true;
+}
 function outboxCount(){ return Object.keys(outboxRead()).length; }
 function updateOutboxBadge(){
   const n=outboxCount(), el=$('outboxNote');
@@ -2815,15 +2831,17 @@ async function stSet(k,v){
     }
     const wasStale=stStale[k];
     stStale[k]=true;
-    // Queue it so it is not lost when the signal comes back.
-    if((v||'').length<=1.9*1024*1024)outboxQueue(k,v);
+    // Queue it so it is not lost when the signal comes back. If even that
+    // fails there is nowhere left to put it, and saying "saved" would be a lie.
+    const queued=((v||'').length<=1.9*1024*1024)&&outboxQueue(k,v);
     // Size is the failure people actually hit, and "not synced yet" sounds
     // temporary when it is permanent — the value will never fit.
     const tooBig=(v||'').length>1.9*1024*1024;
     toast(!local?'Saved for this session only':
           tooBig?'Too large to sync \u2014 export your log and remove some old trips':
+          !queued?'Saved on this device only \u2014 it could not be queued to sync':
           wasStale?'Not synced \u2014 your account may hold newer data':
-                   'Saved on this device \u2014 not synced yet');
+                   'Saved on this device \u2014 it will sync when you have signal');
     return false;
   }
   return local;

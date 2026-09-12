@@ -38,6 +38,9 @@ export async function groupPageRoutes(app: FastifyInstance): Promise<void> {
       include: {
         owner: { select: { id: true, displayName: true, avatarUrl: true } },
         members: {
+          // A closed account leaves the roster; being suspended should not
+          // leave your name on a club's page either.
+          where: { member: { status: 'active' } },
           include: { member: { select: { id: true, displayName: true, avatarUrl: true } } },
           orderBy: { addedAt: 'asc' },
         },
