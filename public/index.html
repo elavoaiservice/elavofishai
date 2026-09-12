@@ -1215,6 +1215,7 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
   </div>
   <div id="waterOut"></div>
+  <div id="waterLakeNote"></div>
   <h3>Thermocline <button class="hbtn" data-help="thermocline" aria-label="What is a thermocline?">ⓘ</button></h3>
   <p class="lede">When you see the fuzzy band on 2D CHIRP, log its depth. Every summer depth call should stay above it — there's little oxygen below.</p>
   <div class="manual" style="border:1px solid var(--border);border-radius:var(--rc)">
@@ -2085,6 +2086,22 @@ const FISH=[
  tbait:["Whole crickets","Small live minnows"]}
 ];
 
+/* The month note, for whichever lake is open.
+   MONTHNOTES below is Lake Granbury's — named rivers, TPWD ratings, its own
+   docks — and it used to be printed on every lake in the app, which told
+   someone on Lake Michigan about the white bass run up the Brazos. A lake with
+   its own AI guide now gets its own calendar; a lake with neither gets an
+   honest sentence about what actually drives the month, rather than another
+   lake's facts. */
+function monthNote(m){
+  if(ACTIVE.seed) return MONTHNOTES[m];
+  const cal=(LAKE_PROFILE&&LAKE_PROFILE.seasonalCalendar)||[];
+  const want=FULL[m].toLowerCase();
+  const hit=cal.find(function(c){ return String(c&&c.month||'').toLowerCase().indexOf(want.slice(0,3))===0; });
+  if(hit&&hit.note) return escHtml(hit.note);
+  return 'No month-by-month guide for this lake yet. Watch the water temperature above — it sets the pattern far better than the calendar does — and the species ranking below, which sharpens as you and your crew log catches here.';
+}
+
 const MONTHNOTES=[
  "Crappie stack on deep brush 20-30 ft and blues feed hard in the cold. Slow everything down. Watch for golden alga blooms mid-lake - a cold-weather issue here.",
  "The best crappie month. TPWD rated the bite good to excellent in late Feb at 60 degrees, in 12-14 ft of brush. Pre-spawn females are heaviest now, and big bass and giant blues both peak.",
@@ -2157,61 +2174,73 @@ function winDates(w){
 const MSD=86400000;
 
 /* ============ water temperature engine ============ */
+/* What the water temperature means, on any lake.
+   This used to be written for Lake Granbury — named bridges, a named river
+   arm, TPWD ratings — and it was shown on every lake in the app, which made it
+   confidently wrong on water it had never heard of. Temperature behaviour is
+   the part that genuinely travels: fish metabolism, spawn timing and depth
+   stratification work the same way in Texas and Michigan, even though the
+   species and the calendar dates do not.
+   So this table talks about what fish DO at a temperature, in terms of roles
+   (panfish, black bass, catfish, open-water schoolers) rather than one lake's
+   species list — and the lake's own AI guide is shown alongside it for the
+   specifics. Northern-lake caveat: on cold-water fisheries the warm bands
+   simply never arrive, which is itself the right answer. */
 function waterState(t,warming){
   const S=warming?[
    {max:47.9,n:"Deep winter",s:"Coldest water of the year and fish at their least active.",
-    where:["Crappie stacked on the deepest brush, 25-35 ft, in tight schools that barely move all day","Blue catfish in the deepest holes and channel bends","Everything else effectively shut down"],
-    todo:["Slow everything down past the point where it feels wrong. A jig should hang, not swim","Fish will not move far for a bait \u2014 put it inside a foot of them","This is the giant blue catfish window. Whole fresh shad, anchored, and wait"],
-    best:["Blue Catfish","Crappie"]},
+    where:["Panfish stacked on the deepest cover they can find, in tight schools that barely move all day","Catfish in the deepest holes and channel bends","Most other species effectively shut down"],
+    todo:["Slow everything down past the point where it feels wrong. A jig should hang, not swim","Fish will not move far for a bait \u2014 put it inside a foot of them","Cold water is the overlooked big-catfish window: fresh cut bait, anchored, and wait"],
+    best:["Catfish","Panfish"]},
    {max:54.9,n:"Late winter",s:"Still cold, but the first warming spells start moving fish.",
-    where:["Crappie on deep brush but beginning to slide toward the pockets they will spawn in","Dark banks and rocky shorelines warm first and pull fish shallow on a sunny afternoon","Blues still excellent"],
-    todo:["Fish the middle of the day, not dawn \u2014 in cold water the warmest hours are the best hours","Watch for the first 2-3 degree bump after a warm spell. That triggers the move","Northwest-facing banks catch the most afternoon sun"],
-    best:["Crappie","Blue Catfish"]},
-   {max:61.9,n:"Pre-spawn staging",s:"The best three weeks on this lake, full stop.",
-    where:["Crappie staging on 12-18 ft brush right next to spawning pockets, feeding hard","The biggest females of the year are catchable right now, heavy with eggs","Largemouth staging on the deepest docks adjacent to spawning flats","White bass pushing up the Brazos toward Tin Top"],
-    todo:["If you only fish a few days a year, fish them now","Target the brush closest to a shallow pocket, not the deepest brush on the lake","Live minnows and slightly larger jigs \u2014 these fish are feeding, not picking","TPWD rated the bite good to excellent at 60 degrees in 12-14 ft of brush"],
-    best:["Crappie","Largemouth Bass","White Bass"]},
+    where:["Panfish still on deep cover, beginning to slide toward the pockets they will spawn in","Dark banks and rocky shorelines warm first and pull fish shallow on a sunny afternoon","Catfish still reliable"],
+    todo:["Fish the middle of the day, not dawn \u2014 in cold water the warmest hours are the best hours","Watch for the first 2-3 degree bump after a warm spell. That is what triggers the move","Banks that catch the most afternoon sun turn on first"],
+    best:["Panfish","Catfish"]},
+   {max:61.9,n:"Pre-spawn staging",s:"The best three weeks of the year on most water, full stop.",
+    where:["Fish staging on cover in 12-18 ft right next to the shallows they will spawn in, feeding hard","The biggest females of the year are catchable right now, heavy with eggs","Black bass staging on the deepest cover next to spawning flats","River-run species pushing up the feeder creeks and rivers"],
+    todo:["If you only fish a few days a year, fish them now","Target the cover closest to a shallow pocket, not the deepest cover on the lake","Live bait and slightly larger jigs \u2014 these fish are feeding, not picking","Follow the temperature, not the calendar: this window arrives weeks apart in different years"],
+    best:["Panfish","Black bass"]},
    {max:68.9,n:"Spawn",s:"Fish move shallow and get easy to find, harder to fool.",
-    where:["Crappie in 2-8 ft on shoreline cover, dock legs and riprap","Largemouth on beds around the 1000-plus docks","White bass run winding down upriver"],
-    todo:["Leave the brush. The fish are not there anymore","Work shorelines and dock legs with a cork or by shooting docks","Big females get harder once they commit to a bed \u2014 the pre-spawn window was the better shot"],
-    best:["Crappie","Largemouth Bass"]},
+    where:["Panfish in 2-8 ft on shoreline cover, dock legs and riprap","Black bass on beds on hard-bottom flats and around docks","Any river run winding down"],
+    todo:["Leave the deep cover. The fish are not there anymore","Work shorelines and dock legs with a float, or by shooting docks","Big females get harder once they commit to a bed \u2014 pre-spawn was the better shot","Handle bedding fish quickly and put them back where you caught them"],
+    best:["Panfish","Black bass"]},
    {max:75.9,n:"Post-spawn",s:"The toughest transition of the year. Fish are scattered and recovering.",
-    where:["Crappie scattered between shallow cover and their summer brush, hard to pattern","Bass recovering and unwilling","Channel catfish going pre-spawn on flat banks in 4-8 ft"],
-    todo:["Switch species rather than fight it. Channel cats become the reliable option now","If you chase crappie, fish the transition depths, 10-14 ft, between shallow cover and summer brush","Do not read a slow day as a lost pattern. This period is genuinely hard"],
-    best:["Channel Catfish","Sunfish"]},
+    where:["Panfish scattered between shallow cover and their summer haunts, hard to pattern","Bass recovering and unwilling","Catfish moving onto flat banks in 4-8 ft to spawn"],
+    todo:["Switch species rather than fight it \u2014 catfish become the reliable option now","If you chase panfish, fish the transition depths, 10-14 ft, between shallow cover and summer cover","Do not read a slow day as a lost pattern. This period is genuinely hard"],
+    best:["Catfish","Sunfish"]},
    {max:83.9,n:"Early summer",s:"The lake begins sorting itself by depth. Thermocline setting up.",
-    where:["Channel cats peaking on flat banks and timber","Sunfish prime around the docks \u2014 TPWD's early summer window","Flatheads waking up at night in the river arm","Crappie settling onto summer brush, 18-25 ft"],
-    todo:["Start watching for the thermocline on sonar \u2014 a faint horizontal haze band. Nothing lives below it","Night fishing starts paying better than daytime","Live bait outfishes artificials as water warms"],
-    best:["Channel Catfish","Sunfish","Crappie"]},
+    where:["Catfish peaking on flat banks and in timber","Sunfish prime around docks and shallow cover","Big catfish waking up at night in the timber and river arms","Panfish settling onto summer cover, 18-25 ft"],
+    todo:["Start watching for the thermocline on sonar \u2014 a faint horizontal haze band. Little lives below it","Night fishing starts paying better than daytime","Live bait tends to outfish artificials as water warms"],
+    best:["Catfish","Sunfish","Panfish"]},
    {max:999,n:"Summer peak",s:"Everything is deep, nocturnal, or both.",
-    where:["Thermocline established. Fish are pinned above it \u2014 usually 20-35 ft on this lake","Crappie on deep brush and bridge pilings, biting mostly at night","Stripers deep by day, shallow after dark","Flatheads prime in the river arm timber"],
-    todo:["Night fishing is the answer, not a preference. Launch at dusk","Green lights hung 4-8 ft, not 20 \u2014 fish come up at night and deep lights fight the pattern","Release survival is poor above 85 degrees. A striper from 30 ft will not make it. Plan to keep or do not fish that deep","Flatheads are the one trophy that peaks right now"],
-    best:["Flathead Catfish","Crappie","Blue Catfish"]}
+    where:["Thermocline established. Fish are pinned above it \u2014 commonly 20-35 ft, but read your own sonar","Panfish on deep cover and bridge pilings, biting mostly at night","Open-water schoolers deep by day, shallow after dark","Big catfish prime in timber at night"],
+    todo:["Night fishing is the answer, not a preference. Launch at dusk","Green lights hung 4-8 ft, not 20 \u2014 fish come up at night and deep lights fight the pattern","Release survival is poor above 85 degrees: a fish brought up from 30 ft often will not make it. Plan to keep, or do not fish that deep","Big catfish are the one trophy that peaks in this heat"],
+    best:["Catfish","Panfish"]}
   ]:[
    {max:51.9,n:"Winter",s:"Cold water pattern set in. Almost nobody is out there.",
-    where:["Crappie tight on the deepest brush, in schools that concentrate rather than scatter","Giant blue catfish feeding hard in the coldest weeks","Golden alga risk mid-lake in cold water"],
-    todo:["This is the overlooked trophy window. Big blues eat in December through February while everything else quits","Fish the middle of the day","Crappie schools are tight and predictable now \u2014 find one pile and stay"],
-    best:["Blue Catfish","Crappie"]},
+    where:["Panfish tight on the deepest cover, in schools that concentrate rather than scatter","Big catfish feeding hard through the coldest weeks","Water clarity usually at its best of the year"],
+    todo:["This is the overlooked trophy window \u2014 big catfish eat all winter while everything else quits","Fish the middle of the day","Schools are tight and predictable now: find one pile and stay on it"],
+    best:["Catfish","Panfish"]},
    {max:59.9,n:"Late fall",s:"Fish repositioning deep and grouping up hard.",
-    where:["Crappie moving from creeks back to main-lake brush, 18-28 ft","Stripers still chasing shad","Blues moving into the winter pattern"],
-    todo:["Schools get tight and predictable. One good pile can hold fish all day","Comfortable weather and empty ramps \u2014 an underrated stretch"],
-    best:["Crappie","Striped & Hybrid","Blue Catfish"]},
+    where:["Panfish moving from the creeks back to main-lake cover, 18-28 ft","Open-water schoolers still chasing bait","Catfish moving into the winter pattern"],
+    todo:["Schools get tight and predictable. One good pile can hold fish all day","Comfortable weather and empty ramps \u2014 an underrated stretch of the year"],
+    best:["Panfish","Open-water schoolers","Catfish"]},
    {max:67.9,n:"Fall feed",s:"The best fall window. Fish are eating ahead of winter.",
-    where:["Crappie following shad back into creek arms","Stripers pushing bait to the surface, often busting on top","White bass schooling on main-lake humps and flats, 14-16 ft"],
-    todo:["Follow the shad. Find bait and the gamefish are on it","Watch for surface activity at dawn and dusk and cast to the edge of a boil, not the middle","Cover water \u2014 fish are active and willing to move"],
-    best:["Striped & Hybrid","Crappie","White Bass"]},
+    where:["Panfish following bait back into the creek arms","Schooling fish pushing bait to the surface, often busting on top","Schoolers working main-lake humps and flats, 14-16 ft"],
+    todo:["Follow the bait. Find it and the gamefish are on it","Watch for surface activity at dawn and dusk, and cast to the edge of a boil, not the middle","Cover water \u2014 fish are active and willing to move to a bait"],
+    best:["Open-water schoolers","Panfish"]},
    {max:75.9,n:"Turnover",s:"The lake is mixing. Expect a week or two of erratic fishing.",
-    where:["Fish scattered through the water column with no clear depth pattern","Water may look off-color and smell earthy","Debris and dead vegetation suspended"],
-    todo:["Be patient. This passes and what follows is the best fishing of the fall","Fish shallow cover and creek arms while the main lake sorts itself out","Do not read a bad turnover day as a lost pattern"],
-    best:["Channel Catfish","Crappie"]},
+    where:["Fish scattered through the water column with no clear depth pattern","Water may look off-colour and smell earthy","Debris and dead vegetation suspended"],
+    todo:["Be patient. This passes, and what follows is the best fishing of the fall","Fish shallow cover and creek arms while the main lake sorts itself out","Do not read a bad turnover day as a lost pattern"],
+    best:["Catfish","Panfish"]},
    {max:83.9,n:"Late summer",s:"First real cooling. Daylight windows start opening back up.",
-    where:["Shad schooling heavily on main-lake flats","Fish beginning to extend feeding into the morning","Crappie still on deep brush but more willing"],
+    where:["Bait schooling heavily on main-lake flats","Fish beginning to extend feeding into the morning","Panfish still on deep cover but more willing"],
     todo:["Morning windows get longer each week from here","Start watching main-lake humps for schooling activity","Night fishing still better, but the gap is closing"],
-    best:["Crappie","White Bass","Channel Catfish"]},
+    best:["Panfish","Open-water schoolers","Catfish"]},
    {max:999,n:"Summer peak",s:"Everything is deep, nocturnal, or both.",
-    where:["Thermocline established. Fish pinned above it, usually 20-35 ft","Crappie on deep brush and bridge pilings, biting at night","Flatheads prime in the river arm timber"],
-    todo:["Night fishing is the answer, not a preference","Green lights hung 4-8 ft, not 20","Release survival is poor above 85 degrees \u2014 plan to keep, or do not fish that deep","Flatheads are the one trophy that peaks in this heat"],
-    best:["Flathead Catfish","Crappie","Blue Catfish"]}
+    where:["Thermocline established. Fish pinned above it \u2014 read your own sonar for the depth","Panfish on deep cover and bridge pilings, biting at night","Big catfish prime in the timber"],
+    todo:["Night fishing is the answer, not a preference","Green lights hung 4-8 ft, not 20","Release survival is poor above 85 degrees \u2014 plan to keep, or do not fish that deep","Big catfish are the one trophy that peaks in this heat"],
+    best:["Catfish","Panfish"]}
   ];
   for(const st of S) if(t<=st.max) return st;
   return S[S.length-1];
@@ -2779,7 +2808,7 @@ function drawMonthPicker(){
 function drawMonth(){
   const ranked=lakeFish().slice().sort((a,b)=>vals(b)[selMonth]-vals(a)[selMonth]);
   const sh=MODE==="eater"?["--r1","--r2","--r3","--r4","--r5"]:["--t1","--t2","--t3","--t4","--t5"];
-  $('monthOut').innerHTML='<div class="mhead">'+FULL[selMonth]+'</div><p class="msum">'+MONTHNOTES[selMonth]+'</p><div class="rank">'+
+  $('monthOut').innerHTML='<div class="mhead">'+FULL[selMonth]+'</div><p class="msum">'+monthNote(selMonth)+'</p><div class="rank">'+
     ranked.map(f=>{
       const v=vals(f)[selMonth];
       return '<div class="rrow"><span class="nm">'+f.n+'</span><span class="sz">'+
@@ -4954,7 +4983,7 @@ function go(id,push){
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
-  if(id==='water'){ loadRelease(); }
+  if(id==='water'){ loadRelease(); drawWaterLakeNote(); }
   if(id==='feed'){ loadSocialFeed(); }
   if(id==='alerts'){ loadAlerts(); }
   if(id==='market'){ loadMarket(); }
@@ -5839,6 +5868,13 @@ document.addEventListener('click',function(e){
    On a regulated lake, current is the day's biggest variable — the planner has
    used this for months, and until now the angler could not see it. Cached
    server-side, so opening the page repeatedly is cheap. */
+/* The temperature guide above is general on purpose. Anything specific to
+   THIS water belongs next to it, clearly labelled as such. */
+function drawWaterLakeNote(){
+  const box=$('waterLakeNote'); if(!box)return;
+  const note=monthNote(new Date().getMonth());
+  box.innerHTML='<div class="note" style="margin-top:14px"><b>'+escHtml(ACTIVE.name)+' in '+FULL[new Date().getMonth()]+'.</b> '+note+'</div>';
+}
 async function loadRelease(){
   const box=$('releaseOut'); if(!box)return;
   if(!AUTH.user||!ACTIVE.id){ box.innerHTML='<p class="snap">Sign in to see dam data for this lake.</p>'; return; }
