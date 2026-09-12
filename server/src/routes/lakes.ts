@@ -55,6 +55,12 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/lakes', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
+    // Adding a lake is cheap for the caller and expensive for us: each new row
+    // triggers an AI profile plus gauge, ramp, feature and Corps lookups. A
+    // dozen a day is more lakes than anyone fishes.
+    if (await overLimit(`addlake:${user.id}`, 12, 86_400_000)) {
+      return reply.code(429).send({ error: 'That is a lot of new lakes today — try again tomorrow.' });
+    }
     const b = (req.body || {}) as {
       osmRef?: string; name?: string; region?: string; country?: string;
       lat?: number; lon?: number; bbox?: string; gaugeId?: string;

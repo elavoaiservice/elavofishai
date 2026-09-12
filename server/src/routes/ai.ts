@@ -43,9 +43,14 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       goal?: string; launch?: { name?: string; lat?: number; lon?: number; kind?: string } | null;
       window?: { from?: string; to?: string } | null; platform?: string;
     };
-    // Only rate-limit calls that will actually hit the model.
+    // A forced regeneration always hits the model, so it is capped tightest.
+    // But a plain request hits it too whenever nothing is cached — which is
+    // every new lake, date, species and goal — so it cannot be free either.
     if (b.force && (await overLimit(`dayplan:${user.id}`, 30, 3600000))) {
       return reply.code(429).send({ error: 'Too many plan generations this hour — try again later.' });
+    }
+    if (await overLimit(`dayplan:any:${user.id}`, 120, 3600000)) {
+      return reply.code(429).send({ error: 'That is a lot of plans in an hour — try again shortly.' });
     }
     const r = await getOrGenerateDayPlan({
       lakeId: String(b.lakeId || ''),

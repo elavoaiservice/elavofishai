@@ -117,21 +117,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/admin/users/:id/status', async (req, reply) => {
-    if (!(await requireAdmin(req, reply))) return;
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
     const id = String((req.params as { id: string }).id);
     const status = String((req.body as { status?: string }).status || '');
     if (!['active', 'suspended'].includes(status)) return reply.code(400).send({ error: 'Bad status.' });
     await prisma.user.update({ where: { id }, data: { status } });
     if (status === 'suspended') await prisma.session.deleteMany({ where: { userId: id } });
+    // Suspending someone ends their session and locks them out; that is the
+    // kind of thing a person later needs to be able to ask "who did this?"
+    await audit(admin.username, 'user.status', id, { status });
     return reply.send({ ok: true });
   });
 
   app.post('/api/admin/users/:id/role', async (req, reply) => {
-    if (!(await requireAdmin(req, reply))) return;
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
     const id = String((req.params as { id: string }).id);
     const role = String((req.body as { role?: string }).role || '');
     if (!['user', 'pro', 'guide', 'admin'].includes(role)) return reply.code(400).send({ error: 'Bad role.' });
     await prisma.user.update({ where: { id }, data: { role: role as 'user' | 'pro' | 'guide' | 'admin' } });
+    await audit(admin.username, 'user.role', id, { role });
     return reply.send({ ok: true });
   });
 
@@ -142,12 +148,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put('/api/admin/config', async (req, reply) => {
-    if (!(await requireAdmin(req, reply))) return;
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
     const b = (req.body || {}) as { key?: string; value?: string };
     if (!b.key) return reply.code(400).send({ error: 'Missing key.' });
     if (b.value === '••••••••') return reply.send({ ok: true, unchanged: true }); // masked, not edited
     try {
       await setValue(b.key, String(b.value ?? ''));
+      // Never the value: half of these are secrets. Who changed which key,
+      // and when, is what an audit trail is for.
+      await audit(admin.username, 'config.set', b.key);
       return reply.send({ ok: true });
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
@@ -177,11 +187,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/admin/upgrade', async (req, reply) => {
-    if (!(await requireAdmin(req, reply))) return;
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
     if (!fs.existsSync(DEPLOY_DIR)) return reply.send({ ok: false, error: 'Upgrade agent not configured (the /deploy volume is not mounted).' });
     if (fs.existsSync(LOCK)) return reply.send({ ok: false, error: 'An upgrade is already running.' });
     try {
       fs.writeFileSync(TRIGGER, new Date().toISOString());
+      await audit(admin.username, 'deploy.trigger');
       return reply.send({ ok: true });
     } catch (e) {
       return reply.send({ ok: false, error: `Could not signal the upgrade agent: ${(e as Error).message}` });
@@ -768,6 +780,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         // Already gone — that is still a resolved report, not an error.
       }
     }
+    await audit(admin.username, `moderation.${b.action === 'dismiss' ? 'dismiss' : 'remove'}`, `${flag.targetType}:${flag.targetId}`, { removed });
     await prisma.contentFlag.update({
       where: { id },
       data: {
