@@ -1467,7 +1467,7 @@ body.feed-loading .stat-v *{visibility:hidden}
       <div class="mg-pane" id="mgPane">
         <div class="mg-empty" id="mgEmpty">Pick a conversation, or message a friend from the <b style="margin:0 4px">🎣 Friends</b> tab.</div>
         <div id="mgActive" hidden style="display:flex;flex-direction:column;height:100%">
-          <div class="mg-head"><button class="btn ghost btn-sm" id="mgBack" style="display:none">←</button><span class="mg-av" id="mgHeadAv"></span><span id="mgHeadName"></span></div>
+          <div class="mg-head"><button class="btn ghost btn-sm" id="mgBack" style="display:none" aria-label="Back to conversations">←</button><span class="mg-av" id="mgHeadAv"></span><span id="mgHeadName"></span></div>
           <div class="mg-scroll" id="mgScroll"></div>
           <div id="mgBlocked" class="snap" hidden style="padding:12px 14px;color:var(--muted);border-top:1px solid var(--border)"></div>
           <div class="mg-compose" id="mgCompose"><textarea id="mgInput" placeholder="Write a message…" maxlength="4000"></textarea><button class="btn" id="mgSend">Send</button></div>
@@ -1793,7 +1793,7 @@ body.feed-loading .stat-v *{visibility:hidden}
   .soc-shots{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
   .soc-shots img{max-width:100%;width:180px;height:180px;object-fit:cover;border-radius:12px;cursor:zoom-in}
   .soc-acts{display:flex;gap:6px;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap}
-  .soc-act{background:none;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;color:var(--muted)}
+  .soc-act{background:none;border:none;padding:9px 12px;min-height:36px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;color:var(--muted)}
   .soc-act:hover{background:var(--accent-soft);color:var(--primary)}
   .soc-act.on{color:var(--primary);font-weight:600}
   .soc-cmts{margin-top:8px;display:flex;flex-direction:column;gap:8px}
@@ -4014,8 +4014,8 @@ function renderAiPlan(d,species){
     // Whether the plan was any good is the one thing the app can't infer.
     +(d.id?'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
       +'<span class="snap" style="color:var(--muted)">Any use?</span>'
-      +'<button class="btn ghost" data-planvote="up" data-planid="'+escHtml(d.id)+'" style="min-height:30px;padding:0 10px" title="This plan was useful">👍</button>'
-      +'<button class="btn ghost" data-planvote="down" data-planid="'+escHtml(d.id)+'" style="min-height:30px;padding:0 10px" title="This plan missed">👎</button>'
+      +'<button class="btn ghost" data-planvote="up" data-planid="'+escHtml(d.id)+'" style="min-height:34px;padding:0 12px" title="This plan was useful" aria-label="This plan was useful">👍</button>'
+      +'<button class="btn ghost" data-planvote="down" data-planid="'+escHtml(d.id)+'" style="min-height:34px;padding:0 12px" title="This plan missed" aria-label="This plan missed">👎</button>'
       +'<span class="snap" id="planVoteMsg" style="color:var(--muted)"></span></span>':'')
     +'</div></div>';
   $('aiPlanOut').innerHTML=h;
@@ -5215,9 +5215,9 @@ function postCard(p,opts){
         (VIS_LABEL[p.visibility]&&!p.group?' · '+VIS_LABEL[p.visibility]:'')+
         (p.pinned?' · 📌 Pinned':'')+(p.editedAt?' · edited':'')+
       '</div></div>'+
-      (p.mine?'<button class="soc-act" data-editpost="'+escHtml(p.id)+'" title="Edit">✎</button>':'')+
-      (canDelete?'<button class="soc-act" data-delpost="'+escHtml(p.id)+'" title="Delete">✕</button>':'')+
-      (p.mine?'':'<button class="soc-act" data-report="'+escHtml(p.id)+'" data-report-type="post" title="Report">⚑</button>')+
+      (p.mine?'<button class="soc-act" data-editpost="'+escHtml(p.id)+'" title="Edit" aria-label="Edit this post">✎</button>':'')+
+      (canDelete?'<button class="soc-act" data-delpost="'+escHtml(p.id)+'" title="Delete" aria-label="Delete this post">✕</button>':'')+
+      (p.mine?'':'<button class="soc-act" data-report="'+escHtml(p.id)+'" data-report-type="post" title="Report" aria-label="Report this post">⚑</button>')+
     '</div>'+
     (p.body?'<div class="soc-body">'+escHtml(p.body)+'</div>':'')+
     shotsHtml(p.photos)+
@@ -5227,15 +5227,15 @@ function postCard(p,opts){
       (opts.canModerate?'<button class="soc-act" data-pin="'+escHtml(p.id)+'">'+(p.pinned?'Unpin':'Pin')+'</button>':'')+
     '</div>'+
     '<div class="soc-cmts" data-cmts>'+(p.comments||[]).map(commentHtml).join('')+'</div>'+
-    '<div class="soc-row"><input class="soc-in" data-cmt-in="'+escHtml(p.id)+'" placeholder="Write a comment" style="flex:1"></div>'+
+    '<div class="soc-row"><input class="soc-in" data-cmt-in="'+escHtml(p.id)+'" placeholder="Write a comment" aria-label="Write a comment" style="flex:1"></div>'+
   '</div>';
 }
 function commentHtml(c){
   return '<div class="soc-cmt" data-cmt="'+escHtml(c.id)+'">'+avatarHtml(c.author)+
     '<div class="bub"><b class="soc-who" data-wall="'+escHtml(c.author.id)+'">'+escHtml(c.author.displayName)+'</b> '+escHtml(c.body)+
     '<span class="soc-when" style="display:block">'+whenAgo(c.createdAt)+'</span></div>'+
-    (c.mine?'<button class="soc-act" data-delcmt="'+escHtml(c.id)+'">✕</button>'
-          :'<button class="soc-act" data-report="'+escHtml(c.id)+'" data-report-type="comment" title="Report">⚑</button>')+'</div>';
+    (c.mine?'<button class="soc-act" data-delcmt="'+escHtml(c.id)+'" aria-label="Delete this comment">✕</button>'
+          :'<button class="soc-act" data-report="'+escHtml(c.id)+'" data-report-type="comment" title="Report" aria-label="Report this comment">⚑</button>')+'</div>';
 }
 
 /* ---- composing: a post can carry one photo, uploaded the same way a catch
@@ -5341,7 +5341,7 @@ async function loadGroupPage(){
         (canChange?'<select class="soc-in" style="max-width:150px" data-role-for="'+escHtml(m.id)+'">'+
           ['editor','collaborator','member'].map(rl=>'<option value="'+rl+'"'+(m.role===rl?' selected':'')+
             (me.role==='editor'&&rl==='editor'?' disabled':'')+'>'+ROLE_LABEL[rl]+'</option>').join('')+'</select>':'')+
-        (canChange?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Remove">✕</button>':'')+
+        (canChange?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Remove" aria-label="Remove this member">✕</button>':'')+
         (m.id===myId()&&m.role!=='owner'?'<button class="btn ghost btn-sm" data-leave-group="1">Leave</button>':'')+
       '</div>';
     }).join('');
@@ -5380,7 +5380,7 @@ async function loadGroupPage(){
         ((g.invited||[]).length?'<div class="snap" style="margin-top:10px;font-weight:600">Invited, waiting to hear back</div>'+
           g.invited.map(m=>'<div class="grp-mem">'+avatarHtml(m)+'<div style="flex:1"><span>'+escHtml(m.displayName)+'</span>'+
             '<div class="soc-when">invited '+whenAgo(m.invitedAt)+'</div></div>'+
-            (me.canModerate?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Cancel invite">✕</button>':'')+'</div>').join(''):'')+
+            (me.canModerate?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Cancel invite" aria-label="Withdraw this invitation">✕</button>':'')+'</div>').join(''):'')+
         (me.canInvite?'<div class="soc-row"><select class="soc-in" id="gpAddWho" style="max-width:220px"><option value="">Invite from your crew…</option></select>'+
           '<button class="btn ghost btn-sm" id="gpAdd">Send invite</button><span class="snap" id="gpAddMsg"></span></div>'
           :(me.canModerate?'<p class="snap" style="margin-top:10px">The owner has kept invitations to themselves.</p>':''))+
@@ -5443,10 +5443,10 @@ async function loadMarket(){
             (l.mine
               ? '<button class="btn ghost btn-sm" data-mk-sold="'+escHtml(l.id)+'">'+(l.status==='sold'?'Relist':'Mark sold')+'</button>'+
                 '<button class="btn ghost btn-sm" data-mk-bump="'+escHtml(l.id)+'">Bump</button>'+
-                '<button class="soc-act" data-mk-del="'+escHtml(l.id)+'">✕</button>'
+                '<button class="soc-act" data-mk-del="'+escHtml(l.id)+'" aria-label="Delete this listing">✕</button>'
               : '<span class="soc-who" data-wall="'+escHtml(l.seller.id)+'">'+escHtml(l.seller.displayName)+'</span>'+
                 '<button class="btn btn-sm" data-mk-contact="'+escHtml(l.id)+'">Ask about it</button>'+
-                '<button class="soc-act" data-report="'+escHtml(l.id)+'" data-report-type="listing" title="Report">⚑</button>')+
+                '<button class="soc-act" data-report="'+escHtml(l.id)+'" data-report-type="listing" title="Report" aria-label="Report this listing">⚑</button>')+
           '</div>'+
         '</div></div>';
     }).join('');
@@ -5914,7 +5914,7 @@ function tournamentsHtml(list,me,g){
         '<b>'+escHtml(t.name)+'</b>'+(t.status!=='open'?' <span class="soc-chip">'+escHtml(t.status)+'</span>':'')+
         '<div class="soc-when">'+escHtml(tourneyWhen(t))+(t.lake?' · '+escHtml(t.lake.name):'')+
         (t.meetAt?' · '+escHtml(t.meetAt):'')+'</div></div>'+
-        (t.isHost||canHost?'<button class="soc-act" data-tdel="'+escHtml(t.id)+'" title="Remove">✕</button>':'')+
+        (t.isHost||canHost?'<button class="soc-act" data-tdel="'+escHtml(t.id)+'" title="Remove" aria-label="Remove this tournament">✕</button>':'')+
       '</div>'+
       '<div class="soc-row" style="margin-top:0">'+
         '<span class="soc-chip">'+escHtml(TFORMAT[t.format]||t.format)+'</span>'+
