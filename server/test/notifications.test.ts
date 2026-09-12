@@ -84,10 +84,14 @@ describe('the bell', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, 
       group: { id: string };
     }).group.id;
     await as(owner, { method: 'POST', url: `/api/groups/${g}/members`, payload: { userId: friend.id } });
+    await as(friend, { method: 'POST', url: `/api/groups/${g}/accept`, payload: {} });
     await as(owner, { method: 'POST', url: '/api/posts', payload: { body: 'Meet at 6', groupId: g } });
     const n = await list(friend);
     assert.ok(n.notifications.some((x) => x.type === 'group_post'));
-    assert.equal((await list(owner)).unread, 0);
+    // The owner hears that the friend joined, but never about their own post.
+    const theirs = await list(owner);
+    assert.ok(theirs.notifications.some((x) => x.type === 'group_joined'));
+    assert.equal(theirs.notifications.filter((x) => x.type === 'group_post').length, 0);
   });
 
   test('marking read clears the count and does not delete the list', async () => {

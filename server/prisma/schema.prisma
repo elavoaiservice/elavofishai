@@ -137,6 +137,8 @@ model User {
   actedNotifications   Notification[]        @relation("NotifyActor")
   flagsRaised          ContentFlag[]         @relation("FlagReporter")
   invitesSent          Invite[]              @relation("InviteSender")
+  tournamentsRun       Tournament[]          @relation("TournamentHost")
+  tournamentEntries    TournamentEntry[]
   inviteAccepted       Invite[]              @relation("InviteAcceptor")
 }
 
@@ -207,6 +209,7 @@ model Lake {
   trips         Trip[]
   posts         Post[]
   listings      Listing[]
+  tournaments   Tournament[]
   spots         Spot[]
   waypoints     Waypoint[]
   dayPlans      DayPlan[]
@@ -219,16 +222,22 @@ model Lake {
 
 // ---- Direct messages (friends-only by default; per-user privacy setting gates delivery) ----
 model Message {
-  id          String    @id @default(cuid())
+  id          String       @id @default(cuid())
   senderId    String
-  sender      User      @relation("MsgSender", fields: [senderId], references: [id], onDelete: Cascade)
-  recipientId String
-  recipient   User      @relation("MsgRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  body        String    @db.Text
-  createdAt   DateTime  @default(now())
+  sender      User         @relation("MsgSender", fields: [senderId], references: [id], onDelete: Cascade)
+  // One of these two says where the message went: a person, or a group. A
+  // group message has no single recipient and no readAt — "who has read it" is
+  // kept per member on FriendGroupMember.chatReadAt instead.
+  recipientId String?
+  recipient   User?        @relation("MsgRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  groupId     String?
+  group       FriendGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  body        String       @db.Text
+  createdAt   DateTime     @default(now())
   readAt      DateTime?
 
   @@index([recipientId, readAt]) // unread counts
+  @@index([groupId, createdAt]) // a group's chat, newest first
   @@index([senderId, recipientId, createdAt]) // thread load
   @@index([recipientId, senderId, createdAt])
 }
@@ -380,29 +389,53 @@ model Friendship {
 }
 
 model FriendGroup {
-  id        String              @id @default(cuid())
-  ownerId   String
-  owner     User                @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  name      String
-  about     String?             @db.Text
-  createdAt DateTime            @default(now())
-  members   FriendGroupMember[]
-  posts     Post[]
+  id           String              @id @default(cuid())
+  ownerId      String
+  owner        User                @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name         String
+  about        String?             @db.Text
+  // What the owner decides for everyone:
+  //   dataSharing  off      — this group is for talking, not spots
+  //                optional — members choose what they share (the default)
+  //                asked    — members are asked to share everything, but may refuse
+  //   whoCanInvite owner | editors
+  dataSharing  String              @default("optional")
+  whoCanInvite String              @default("editors")
+  createdAt    DateTime            @default(now())
+  members      FriendGroupMember[]
+  posts        Post[]
+  tournaments  Tournament[]
+  messages     Message[]
 
   @@index([ownerId])
 }
 
 model FriendGroupMember {
-  id       String      @id @default(cuid())
-  groupId  String
-  group    FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  memberId String
-  member   User        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  id             String      @id @default(cuid())
+  groupId        String
+  group          FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId       String
+  member         User        @relation(fields: [memberId], references: [id], onDelete: Cascade)
   // editor  — runs the group with the owner: invites, removes, moderates posts
   // collaborator — posts to the group page
   // member  — reads the page and comments
-  role     String      @default("member")
-  addedAt  DateTime    @default(now())
+  role           String      @default("member")
+  // An invitation, not a conscription: a membership starts `pending` and only
+  // counts once the angler accepts. Rows that predate invitations are `active`,
+  // which is what the column defaults to.
+  status         String      @default("active") // pending | active | declined
+  invitedById    String?
+  invitedAt      DateTime?
+  respondedAt    DateTime?
+  // What this member shares WITH THIS GROUP, chosen when they accept. A record
+  // still needs its own `visibility: group` to be shared at all; these are the
+  // member's veto on top of that, per data type.
+  shareSpots     Boolean     @default(true)
+  shareCatches   Boolean     @default(true)
+  shareWaypoints Boolean     @default(true)
+  // Where this member had got to in the group's chat.
+  chatReadAt     DateTime?
+  addedAt        DateTime    @default(now())
 
   @@unique([groupId, memberId])
   @@index([memberId])
@@ -735,25 +768,26 @@ model Listing {
 // changed since you last looked" gets slower every month.
 // ---------------------------------------------------------------------------
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String // who is being told
-  user      User      @relation("NotifyRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  userId       String // who is being told
+  user         User      @relation("NotifyRecipient", fields: [userId], references: [id], onDelete: Cascade)
   // who did it. Null for anything the system did on its own.
-  actorId   String?
-  actor     User?     @relation("NotifyActor", fields: [actorId], references: [id], onDelete: Cascade)
+  actorId      String?
+  actor        User?     @relation("NotifyActor", fields: [actorId], references: [id], onDelete: Cascade)
   // comment | like | friend_request | friend_accepted | group_added |
   // group_role | group_post | invite_accepted
-  type      String
-  postId    String?
-  commentId String?
-  groupId   String?
-  listingId String?
+  type         String
+  postId       String?
+  commentId    String?
+  groupId      String?
+  listingId    String?
+  tournamentId String?
   // A short piece of the thing itself, captured at write time so the list can
   // render without joining four tables — and still reads correctly after the
   // original is deleted.
-  snippet   String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  snippet      String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([userId, readAt])
   @@index([userId, createdAt])
@@ -808,4 +842,54 @@ model Invite {
 
   @@index([inviterId, createdAt])
   @@index([email])
+}
+
+// ---------------------------------------------------------------------------
+// Tournaments. A group's own event: the owner sets it up, members say whether
+// they are fishing it. Deliberately not a scoring engine — anglers settle
+// results at the ramp, and a leaderboard nobody trusts is worse than none.
+// ---------------------------------------------------------------------------
+model Tournament {
+  id        String      @id @default(cuid())
+  groupId   String
+  group     FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  hostId    String
+  host      User        @relation("TournamentHost", fields: [hostId], references: [id], onDelete: Cascade)
+  name      String
+  details   String?     @db.Text
+  lakeId    String?
+  lake      Lake?       @relation(fields: [lakeId], references: [id], onDelete: SetNull)
+  // Where to meet, in words — a ramp name beats coordinates nobody reads.
+  meetAt    String?
+  startsAt  DateTime
+  endsAt    DateTime
+  species   String? // "Largemouth bass", or null for anything that swims
+  // biggest_fish | heaviest_bag | most_fish | other
+  format    String      @default("heaviest_bag")
+  entryFee  String? // free text: "$20 a boat", "bring a dish"
+  status    String      @default("open") // open | cancelled | done
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  entries TournamentEntry[]
+
+  @@index([groupId, startsAt])
+}
+
+model TournamentEntry {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // invited — asked, hasn't said
+  // in / out — fishing it, or not
+  // maybe    — an honest answer, and more useful than silence
+  status       String     @default("invited")
+  note         String?
+  respondedAt  DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+  @@index([userId, status])
 }

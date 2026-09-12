@@ -23,17 +23,40 @@ export const ASSIGNABLE: GroupRole[] = ['editor', 'collaborator', 'member'];
 
 const RANK: Record<GroupRole, number> = { owner: 3, editor: 2, collaborator: 1, member: 0 };
 
-/** The viewer's role in a group, or null if they are not in it at all. */
+/**
+ * The viewer's role in a group, or null if they are not in it at all.
+ *
+ * A pending invitation is not membership: until it is accepted the angler
+ * cannot read the page, cannot post, and their data is not shared. Everything
+ * downstream depends on that being true here rather than remembered in each
+ * caller.
+ */
 export async function roleIn(groupId: string, userId: string): Promise<GroupRole | null> {
   const group = await prisma.friendGroup.findUnique({ where: { id: groupId }, select: { ownerId: true } });
   if (!group) return null;
   if (group.ownerId === userId) return 'owner';
   const m = await prisma.friendGroupMember.findFirst({
-    where: { groupId, memberId: userId },
+    where: { groupId, memberId: userId, status: 'active' },
     select: { role: true },
   });
   if (!m) return null;
   return (GROUP_ROLES as string[]).includes(m.role) ? (m.role as GroupRole) : 'member';
+}
+
+/** Group ids where this angler has been invited but has not answered yet. */
+export async function pendingInvites(userId: string): Promise<string[]> {
+  const rows = await prisma.friendGroupMember.findMany({
+    where: { memberId: userId, status: 'pending' },
+    select: { groupId: true },
+  });
+  return rows.map((r) => r.groupId);
+}
+
+/** Who may send an invitation — the owner always, editors if the owner allows. */
+export function canInvite(role: GroupRole | null, whoCanInvite: string): boolean {
+  if (role === 'owner') return true;
+  if (role === 'editor') return whoCanInvite !== 'owner';
+  return false;
 }
 
 export function atLeast(role: GroupRole | null, min: GroupRole): boolean {

@@ -61,6 +61,7 @@ describe('sharing', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, (
     assert.equal((await feedOf(friend)).spots.length, 0);
     // Added to the group, the same friend can.
     await as(owner, { method: 'POST', url: `/api/groups/${g.group.id}/members`, payload: { userId: friend.id } });
+    await as(friend, { method: 'POST', url: `/api/groups/${g.group.id}/accept`, payload: {} });
     assert.equal((await feedOf(friend)).spots.length, 1);
   });
 

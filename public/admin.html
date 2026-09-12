@@ -126,7 +126,7 @@ async function api(path,opt){
   // Content-Type: application/json makes Fastify 400 (breaks DELETE/logout/etc.).
   if(opt.body!=null && !headers['Content-Type']) headers['Content-Type']='application/json';
   const res=await fetch(path,Object.assign({credentials:'same-origin'},opt,{headers}));
-  // An admin session lasts four hours and is never extended. When it ends, say
+  // An admin session lasts five hours and is never extended. When it ends, say
   // so and show the sign-in screen — a console full of stale numbers that
   // fails on the next click is worse than being told plainly.
   if(res.status===401&&path.indexOf('/api/admin/')===0&&path!=='/api/admin/me'&&path!=='/api/admin/login')sessionEnded();
@@ -138,7 +138,7 @@ function sessionEnded(){
   $('dashView').classList.add('hidden');
   $('loginView').classList.remove('hidden');
   $('step2').classList.add('hidden'); $('step1').classList.remove('hidden');
-  const m=$('loginMsg'); if(m){ m.className='msg'; m.textContent='Your admin session expired after 4 hours. Sign in again.'; }
+  const m=$('loginMsg'); if(m){ m.className='msg'; m.textContent='Your admin session expired after 5 hours. Sign in again.'; }
 }
 // Sign out on the dot rather than at the next failed click.
 function armSessionTimer(expiresAt){
@@ -146,7 +146,7 @@ function armSessionTimer(expiresAt){
   if(!expiresAt)return;
   const ms=new Date(expiresAt).getTime()-Date.now();
   if(ms<=0){ sessionEnded(); return; }
-  // setTimeout tops out around 24.8 days; four hours is well inside that.
+  // setTimeout tops out around 24.8 days; five hours is well inside that.
   SESSION_TIMER=setTimeout(function(){ api('/api/admin/logout',{method:'POST'}).catch(function(){}); sessionEnded(); },ms);
 }
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-clbody]'); if(!b)return;

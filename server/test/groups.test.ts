@@ -56,8 +56,11 @@ describe('group page', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }
     groupId = ((await as(owner, { method: 'POST', url: '/api/groups', payload: { name: 'Bass buddies' } })).json() as {
       group: { id: string };
     }).group.id;
+    // Joining takes two steps now: the owner invites, the angler accepts.
     await as(owner, { method: 'POST', url: `/api/groups/${groupId}/members`, payload: { userId: editor.id } });
+    await as(editor, { method: 'POST', url: `/api/groups/${groupId}/accept`, payload: {} });
     await as(owner, { method: 'POST', url: `/api/groups/${groupId}/members`, payload: { userId: member.id } });
+    await as(member, { method: 'POST', url: `/api/groups/${groupId}/accept`, payload: {} });
     await as(owner, { method: 'PUT', url: `/api/groups/${groupId}/members/${editor.id}`, payload: { role: 'editor' } });
   });
 

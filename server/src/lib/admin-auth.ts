@@ -6,13 +6,13 @@ import { sha256 } from './crypto';
 import { adminMfaEmail, emailConfigured, sendEmail } from '../services/email';
 
 const ADMIN_COOKIE = 'efa_admin';
-// An admin session is short and absolute: four hours from sign-in, never
+// An admin session is short and absolute: five hours from sign-in, never
 // extended. The Command Center can suspend accounts, read every angler's
 // details and rewrite the server's configuration, so an unattended browser is
 // the thing to be afraid of — and an idle timeout that keeps sliding is no
 // protection against a session left open on a desk. Signing in again takes a
 // password and an emailed code, which is the point.
-const SESSION_HOURS = 4;
+const SESSION_HOURS = 5;
 const ADMIN_SESSION_MS = SESSION_HOURS * 3600000;
 
 function hashPassword(pw: string): Promise<string> {

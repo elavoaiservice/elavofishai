@@ -3,8 +3,9 @@ import { deleteObject } from '../services/storage';
 import { prisma } from '../db';
 import { requireUser } from '../lib/auth';
 import { blockedUserIds, blockState, friendIds } from '../lib/social';
-import { canManageMembers, canRemoveMember, canSetRole, roleIn, type GroupRole } from '../lib/groups';
+import { canInvite, canManageMembers, canRemoveMember, canSetRole, roleIn, type GroupRole } from '../lib/groups';
 import { notify } from '../services/notify';
+import { groupClauses, type GroupClause } from '../lib/groupSharing';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
@@ -293,20 +294,33 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const groups = await prisma.friendGroup.findMany({
-      where: { OR: [{ ownerId: me.id }, { members: { some: { memberId: me.id } } }] },
-      include: { members: { include: { member: { select: { id: true, displayName: true, avatarUrl: true } } } } },
+      where: { OR: [{ ownerId: me.id }, { members: { some: { memberId: me.id, status: { in: ['active', 'pending'] } } } }] },
+      include: {
+        owner: { select: { id: true, displayName: true } },
+        members: { include: { member: { select: { id: true, displayName: true, avatarUrl: true } } } },
+      },
       orderBy: { createdAt: 'asc' },
     });
-    return {
-      groups: groups.map((g) => ({
+    const shaped = groups.map((g) => {
+      const mine = g.members.find((m) => m.memberId === me.id);
+      const pending = g.ownerId !== me.id && mine?.status === 'pending';
+      return {
         id: g.id,
         name: g.name,
         about: g.about,
+        dataSharing: g.dataSharing,
         owner: g.ownerId === me.id,
-        role: g.ownerId === me.id ? 'owner' : g.members.find((m) => m.memberId === me.id)?.role || 'member',
-        members: g.members.map((m) => ({ ...m.member, role: m.role })),
-      })),
-    };
+        ownerName: g.owner.displayName,
+        pending,
+        role: g.ownerId === me.id ? 'owner' : mine?.role || 'member',
+        // Only members who have accepted are members.
+        members: g.members
+          .filter((m) => m.status === 'active')
+          .map((m) => ({ ...m.member, role: m.role })),
+        invitedCount: g.members.filter((m) => m.status === 'pending').length,
+      };
+    });
+    return { groups: shaped.filter((g) => !g.pending), invites: shaped.filter((g) => g.pending) };
   });
 
   app.post('/api/groups', async (req, reply) => {
@@ -330,20 +344,33 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!me) return;
     const groupId = String((req.params as { id: string }).id);
     const userId = String((req.body as { userId?: string }).userId || '');
+    const group = await prisma.friendGroup.findUnique({ where: { id: groupId }, select: { whoCanInvite: true } });
     const role = await roleIn(groupId, me.id);
-    if (!role) return reply.code(404).send({ error: 'No such group.' });
-    if (!canManageMembers(role)) return reply.code(403).send({ error: 'Only the owner or an editor can add members.' });
+    if (!role || !group) return reply.code(404).send({ error: 'No such group.' });
+    if (!canManageMembers(role) || !canInvite(role, group.whoCanInvite)) {
+      return reply.code(403).send({ error: 'The owner has kept invitations to themselves.' });
+    }
     if (!(await friendIds(me.id)).includes(userId)) return reply.code(400).send({ error: 'You can only add friends.' });
     if ((await blockState(me.id, userId)) !== 'none') return reply.code(403).send({ error: 'You cannot add this angler.' });
     const wanted = String((req.body as { role?: string }).role || 'member');
     const newRole = canSetRole(role, null, wanted as GroupRole) ? wanted : 'member';
+    // An invitation, not a conscription. The row exists so the invite can be
+    // seen and answered; it counts for nothing until they accept.
+    const existing = await prisma.friendGroupMember.findUnique({
+      where: { groupId_memberId: { groupId, memberId: userId } },
+      select: { status: true },
+    });
+    if (existing?.status === 'active') return reply.code(409).send({ error: 'They are already in this group.' });
+    if (existing?.status === 'pending') return reply.code(409).send({ error: 'They have already been invited.' });
     await prisma.friendGroupMember.upsert({
       where: { groupId_memberId: { groupId, memberId: userId } },
-      create: { groupId, memberId: userId, role: newRole },
-      update: {},
+      create: { groupId, memberId: userId, role: newRole, status: 'pending', invitedById: me.id, invitedAt: new Date() },
+      // A previously declined invitation can be sent again — people change
+      // their minds, and the alternative is a group nobody can ever rejoin.
+      update: { role: newRole, status: 'pending', invitedById: me.id, invitedAt: new Date(), respondedAt: null },
     });
-    await notify({ userId, actorId: me.id, type: 'group_added', groupId });
-    return reply.send({ ok: true });
+    await notify({ userId, actorId: me.id, type: 'group_invite', groupId });
+    return reply.send({ ok: true, invited: true });
   });
 
   app.delete('/api/groups/:id/members/:userId', async (req, reply) => {
@@ -503,11 +530,20 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     // explicitly: a blocked angler's data must never surface here.
     const friends = allFriends.filter((id) => !blocked.includes(id));
     if (!friends.length) return reply.send({ spots: [], catches: [], waypoints: [] });
-    const visClause = { OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, { visibility: 'group' as const, groupId: { in: groups } }] };
+    // Group-shared records are filtered by what each member agreed to share
+    // with that group when they accepted the invitation — see groupClauses().
+    const [spotGroups, tripGroups, wpGroups] = await Promise.all([
+      groupClauses(me.id, 'spots'),
+      groupClauses(me.id, 'trips'),
+      groupClauses(me.id, 'waypoints'),
+    ]);
+    const visFor = (gs: GroupClause[]) => ({
+      OR: [{ visibility: 'public' as const }, { visibility: 'friends' as const }, ...gs],
+    });
     const [spots, catches, waypoints] = await Promise.all([
-      prisma.spot.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } }, photos: { select: { id: true } } }, orderBy: { date: 'desc' }, take: 50 }),
-      prisma.waypoint.findMany({ where: { lakeId, userId: { in: friends }, ...visClause }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      prisma.spot.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(spotGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      prisma.trip.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(tripGroups) }, include: { user: { select: { displayName: true } }, photos: { select: { id: true } } }, orderBy: { date: 'desc' }, take: 50 }),
+      prisma.waypoint.findMany({ where: { lakeId, userId: { in: friends }, ...visFor(wpGroups) }, include: { user: { select: { displayName: true } } }, orderBy: { createdAt: 'desc' } , take: 100 }),
     ]);
     return {
       spots: spots.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, notes: s.notes, by: s.user.displayName, at: s.createdAt })),

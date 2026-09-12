@@ -87,6 +87,16 @@ if [ -n "$QUICK" ]; then
     echo "[smoke] FAIL today — $BTNS quick-action buttons but only $WIRED wired to data-go"; FAIL=1
   fi
 fi
+# The messages pane must actually be wired. wireMessages() bailed out silently
+# for weeks because it looked for an element id the redesign had renamed, so
+# the send button, the thread list and Enter-to-send were all dead while the
+# page looked perfect. The wiring now marks itself, and this checks the mark.
+if ! grep -q 'id="c-msgs"[^>]*data-wired="1"' "$TMP/friends.html"; then
+  if ! grep -q 'data-wired="1"' "$TMP/friends.html"; then
+    echo "[smoke] FAIL friends — the messages pane is not wired up"; FAIL=1
+  fi
+fi
+
 # No stray attribute names that nothing listens for.
 if grep -qE 'data-(goto|navto|view)=' "$TMP/today.html"; then
   echo "[smoke] FAIL today — button uses an attribute no handler reads: $(grep -oE 'data-(goto|navto|view)="[^"]*"' "$TMP/today.html" | head -1)"; FAIL=1

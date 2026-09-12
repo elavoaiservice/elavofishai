@@ -17,6 +17,11 @@ export type NotifyType =
   | 'friend_request'
   | 'friend_accepted'
   | 'group_added'
+  | 'group_invite'
+  | 'group_joined'
+  | 'tournament_invite'
+  | 'tournament_rsvp'
+  | 'tournament_changed'
   | 'group_role'
   | 'group_post'
   | 'invite_accepted';
@@ -29,6 +34,7 @@ export interface NotifyInput {
   commentId?: string | null;
   groupId?: string | null;
   listingId?: string | null;
+  tournamentId?: string | null;
   snippet?: string | null;
 }
 
@@ -73,6 +79,7 @@ export async function notify(input: NotifyInput): Promise<void> {
         commentId: input.commentId ?? null,
         groupId: input.groupId ?? null,
         listingId: input.listingId ?? null,
+        tournamentId: input.tournamentId ?? null,
         snippet: preview(input.snippet) ?? null,
       },
     });
@@ -86,7 +93,7 @@ export async function notifyGroup(groupId: string, actorId: string, postId: stri
   try {
     const [group, members] = await Promise.all([
       prisma.friendGroup.findUnique({ where: { id: groupId }, select: { ownerId: true, name: true } }),
-      prisma.friendGroupMember.findMany({ where: { groupId }, select: { memberId: true } }),
+      prisma.friendGroupMember.findMany({ where: { groupId, status: 'active' }, select: { memberId: true } }),
     ]);
     if (!group) return;
     const ids = [...new Set([group.ownerId, ...members.map((m) => m.memberId)])].filter((id) => id !== actorId);

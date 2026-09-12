@@ -93,7 +93,7 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
           trip.visibility === 'public' ||
           (trip.visibility === 'friends' && (await areFriends(me.id, photo.userId))) ||
           (trip.visibility === 'group' && trip.groupId
-            ? !!(await prisma.friendGroupMember.findFirst({ where: { groupId: trip.groupId, memberId: me.id } })) ||
+            ? !!(await prisma.friendGroupMember.findFirst({ where: { groupId: trip.groupId, memberId: me.id, status: 'active' } })) ||
               !!(await prisma.friendGroup.findFirst({ where: { id: trip.groupId, ownerId: me.id } }))
             : false);
       } else if (photo.postId) {

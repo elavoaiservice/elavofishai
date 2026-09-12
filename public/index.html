@@ -1487,6 +1487,8 @@ body.feed-loading .stat-v *{visibility:hidden}
       <span class="snap" id="frMsg" style="color:var(--muted)"></span>
     </div>
 
+    <div id="grInvites"></div>
+
     <h3 style="margin-top:22px">Not on ElavoFishAI yet?</h3>
     <p class="lede" style="margin-top:2px">Invite them by email. When they join through your link the two of you are
        in each other's crew straight away — no request to send, nothing to accept.</p>
@@ -3894,7 +3896,8 @@ async function refreshGroups(){
     $('grList').innerHTML=GROUPS.map(g=>'<div class="fr-card" style="margin-bottom:10px"><div class="fr-row" style="border:none;padding:0"><b>'+escHtml(g.name)+'</b><span>'+
       '<button class="btn ghost btn-sm" data-group="'+g.id+'">Open page</button>'+
       (g.owner?' <button class="btn ghost btn-sm" data-delgrp="'+g.id+'">Delete</button>':'')+'</span></div>'+
-      '<div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+'</div>'+
+      '<div class="snap" style="margin:6px 0">'+(g.members.length?g.members.map(m=>escHtml(m.displayName)).join(', '):'No members yet')+
+        (g.invitedCount?' · '+g.invitedCount+' invited':'')+'</div>'+
       (g.role==='owner'||g.role==='editor'?'<select class="fr-in" data-addto="'+g.id+'"><option value="">Add a friend…</option>'+FRIENDS.filter(f=>!g.members.find(m=>m.id===f.id)).map(f=>'<option value="'+f.id+'">'+escHtml(f.displayName)+'</option>').join('')+'</select>':'')+
       '</div>').join('')||'<p class="snap">No groups yet.</p>';
     const opts='<option value="">Pick a group…</option>'+GROUPS.map(g=>'<option value="'+g.id+'">'+escHtml(g.name)+'</option>').join('');
@@ -4136,16 +4139,22 @@ async function openMessages(){
 async function loadThreads(){
   try{
     const r=await apiFetch('/api/messages/threads'); const d=await r.json();
-    const th=d.threads||[];
-    $('mgList').innerHTML=th.length?th.map(t=>'<div class="mg-thread-row'+(t.userId===MG_OPEN?' on':'')+'" data-thread="'+t.userId+'" data-tname="'+escHtml(t.displayName)+'">'
+    const th=d.threads||[], gr=d.groups||[];
+    // Group chats sit at the top of the same list: one place to look, whoever
+    // you are talking to.
+    const groupRows=gr.map(g=>'<div class="mg-thread-row'+(g.groupId===MG_GROUP?' on':'')+'" data-gthread="'+escHtml(g.groupId)+'" data-tname="'+escHtml(g.name)+'">'
+      +'<span class="mg-av">👥</span>'
+      +'<span class="mg-tmeta"><span class="mg-tname">'+escHtml(g.name)+(g.unread?' <span class="mg-unread">'+g.unread+'</span>':'')+'</span>'
+      +'<span class="mg-tlast">'+escHtml(g.last||'')+'</span></span></div>').join('');
+    $('mgList').innerHTML=(groupRows+th.map(t=>'<div class="mg-thread-row'+(t.userId===MG_OPEN?' on':'')+'" data-thread="'+t.userId+'" data-tname="'+escHtml(t.displayName)+'">'
       +'<span class="mg-av"'+(t.avatarUrl?' style="background-image:url(\''+t.avatarUrl.replace(/'/g,"%27")+'\');background-size:cover;background-position:center"':'')+'>'+(t.avatarUrl?'':avInitials(t.displayName))+'</span>'
       +'<span class="mg-tmeta"><span class="mg-tname">'+escHtml(t.displayName)+(t.unread?' <span class="mg-unread">'+t.unread+'</span>':'')+'</span>'
-      +'<span class="mg-tlast">'+(t.lastMine?'You: ':'')+escHtml(t.last)+'</span></span></div>').join('')
-      :'<p class="snap" style="padding:16px">No conversations yet. Message a friend from the 🎣 Friends tab.</p>';
+      +'<span class="mg-tlast">'+(t.lastMine?'You: ':'')+escHtml(t.last)+'</span></span></div>').join(''))
+      ||'<p class="snap" style="padding:16px">No conversations yet. Message a friend from the 🎣 Friends tab, or open one of your groups.</p>';
   }catch(e){}
 }
 async function openThread(userId,name,avatar){
-  MG_OPEN=userId;
+  MG_OPEN=userId; MG_GROUP=null;
   $('mgEmpty').hidden=true; $('mgActive').hidden=false;
   $('mgWrap').classList.add('on-thread');
   $('mgHeadName').textContent=name||'Angler';
@@ -4154,6 +4163,47 @@ async function openThread(userId,name,avatar){
   await refreshThread(true);
   startThreadPoll();
   refreshUnread();
+}
+/* A group chat uses the same pane as a one-to-one thread — the only real
+   differences are that every message needs a name on it, and that nobody can
+   be "blocked" from a group they are in. */
+let MG_GROUP=null;
+async function openGroupThread(groupId,name){
+  MG_GROUP=groupId; MG_OPEN=null;
+  $('mgEmpty').hidden=true; $('mgActive').hidden=false;
+  $('mgWrap').classList.add('on-thread');
+  $('mgHeadName').textContent=name||'Group';
+  paintAvatar($('mgHeadAv'),null,'👥');
+  document.querySelectorAll('#mgList .mg-thread-row').forEach(el=>el.classList.toggle('on',el.dataset.gthread===groupId));
+  $('mgCompose').style.display=''; $('mgBlocked').hidden=true;
+  await refreshGroupThread(true);
+  startThreadPoll();
+  refreshUnread();
+}
+async function refreshGroupThread(scroll){
+  if(!MG_GROUP)return;
+  try{
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(MG_GROUP)+'/messages');
+    if(!r.ok)return;
+    const d=await r.json();
+    const msgs=d.messages||[];
+    $('mgHeadName').textContent=(d.group&&d.group.name)||$('mgHeadName').textContent;
+    $('mgScroll').innerHTML=msgs.length?msgs.map(m=>'<div class="mg-b '+(m.mine?'me':'them')+'">'+
+      (m.mine?'':'<span class="mg-time" style="margin:0 0 2px;font-weight:700;opacity:.85">'+escHtml(m.by)+'</span>')+
+      escHtml(m.body).replace(/\n/g,'<br>')+'<span class="mg-time">'+mgTime(m.createdAt)+'</span></div>').join('')
+      :'<div class="mg-empty">Nothing said here yet. Start the conversation.</div>';
+    if(scroll){ const s=$('mgScroll'); s.scrollTop=s.scrollHeight; }
+  }catch(e){}
+}
+async function sendGroupMsg(){
+  const body=$('mgInput').value.trim(); if(!body||!MG_GROUP)return;
+  $('mgInput').value='';
+  try{
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(MG_GROUP)+'/messages',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({body:body})});
+    if(!r.ok){ const d=await r.json(); $('mgInput').value=body; $('mgBlocked').hidden=false; $('mgBlocked').textContent=d.error||'Could not send.'; return; }
+    await refreshGroupThread(true); loadThreads();
+  }catch(e){ $('mgInput').value=body; }
 }
 async function refreshThread(scroll){
   if(!MG_OPEN)return;
@@ -4169,9 +4219,13 @@ async function refreshThread(scroll){
     if(scroll){ const s=$('mgScroll'); s.scrollTop=s.scrollHeight; }
   }catch(e){}
 }
-function startThreadPoll(){ stopThreadPoll(); MG_POLL=setInterval(()=>{ if(MG_OPEN&&!$('p-msgs').hidden) refreshThread(false); },4000); }
+function startThreadPoll(){ stopThreadPoll(); MG_POLL=setInterval(function(){
+  if($('c-msgs').hidden)return;
+  if(MG_GROUP)refreshGroupThread(false); else if(MG_OPEN)refreshThread(false);
+},4000); }
 function stopThreadPoll(){ if(MG_POLL){ clearInterval(MG_POLL); MG_POLL=null; } }
 async function sendMsg(){
+  if(MG_GROUP)return sendGroupMsg();
   const body=$('mgInput').value.trim(); if(!body||!MG_OPEN)return;
   $('mgInput').value='';
   try{
@@ -4197,10 +4251,19 @@ async function refreshUnread(){
   }catch(e){}
 }
 function wireMessages(){
-  if(!$('p-msgs'))return;
-  $('mgList').addEventListener('click',e=>{ const row=e.target.closest('[data-thread]'); if(row)openThread(row.dataset.thread,row.dataset.tname,null); });
+  const pane=$('c-msgs');
+  if(!pane)return;
+  // Marked so the UI smoke test can prove the chat is actually wired: this
+  // block silently did nothing for weeks because it was looking for an id that
+  // the redesign had renamed.
+  pane.dataset.wired='1';
+  $('mgList').addEventListener('click',e=>{
+    const grow=e.target.closest('[data-gthread]');
+    if(grow){ openGroupThread(grow.dataset.gthread,grow.dataset.tname); return; }
+    const row=e.target.closest('[data-thread]'); if(row)openThread(row.dataset.thread,row.dataset.tname,null);
+  });
   $('mgSend').onclick=sendMsg;
-  $('mgBack').onclick=()=>{ $('mgWrap').classList.remove('on-thread'); MG_OPEN=null; stopThreadPoll(); };
+  $('mgBack').onclick=()=>{ $('mgWrap').classList.remove('on-thread'); MG_OPEN=null; MG_GROUP=null; stopThreadPoll(); };
   $('mgInput').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMsg(); } });
   // show the mobile back button only when narrow
   const setBack=()=>{ $('mgBack').style.display=(window.innerWidth<=680)?'':'none'; };
@@ -4820,7 +4883,7 @@ function go(id,push){
   if(id==='today'){ renderToday(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
-  if(id==='friends'){ loadFriends(); loadInvites(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
+  if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
   if(id==='lakes'){ $('lakesAuth').hidden=!!AUTH.user; refreshMyLakes(); }
   if(id==='sharing'){ $('sharingAuth').hidden=!!AUTH.user; $('sharingMain').hidden=!AUTH.user;
@@ -5042,12 +5105,37 @@ async function loadGroupPage(){
       (me.canAdminister?'<div id="gpEditForm" hidden><div class="soc-row">'+
         '<input class="soc-in" id="gpName" style="flex:1" value="'+escHtml(g.name)+'">'+
         '</div><textarea class="soc-in" id="gpAbout" rows="2" placeholder="What is this group for?">'+escHtml(g.about||'')+'</textarea>'+
+        '<div class="soc-row"><label class="snap" style="min-width:150px">Fishing data in this group</label>'+
+          '<select class="soc-in" id="gpDataSharing" style="max-width:260px">'+
+          [['optional','Members choose what they share'],['asked','Ask members to share everything'],['off','No data sharing — talk only']]
+            .map(o=>'<option value="'+o[0]+'"'+(g.dataSharing===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'+
+        '<div class="soc-row"><label class="snap" style="min-width:150px">Who can invite</label>'+
+          '<select class="soc-in" id="gpWhoCanInvite" style="max-width:260px">'+
+          [['editors','The owner and editors'],['owner','Only me']].map(o=>'<option value="'+o[0]+'"'+(g.whoCanInvite===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'+
         '<div class="soc-row"><button class="btn btn-sm" id="gpSave">Save</button><span class="snap" id="gpMsg"></span></div></div>':'')+
       '</div>'+
+      /* What I share with this group. The owner shares per record, so there is
+         nothing here for them; a member gets one switch per data type. */
+      (me.sharing?'<div class="soc-card"><h3 style="margin-top:0">What you share with this group</h3>'+
+        (g.dataSharing==='off'
+          ? '<p class="snap">The owner has turned data sharing off for this group — nothing you log is shared here.</p>'
+          : '<p class="snap">Only records you mark as shared with this group are affected. Switch a type off and it stays yours.</p>'+
+            '<div class="soc-row">'+
+            [['spots','📍 Spots'],['catches','🐟 Catches'],['waypoints','🧭 Waypoints']].map(x=>
+              '<label class="btn ghost btn-sm" style="cursor:pointer"><input type="checkbox" data-gpshare="'+x[0]+'"'+
+              (me.sharing[x[0]]?' checked':'')+' style="margin-right:6px">'+x[1]+'</label>').join('')+
+            '<span class="snap" id="gpShareMsg"></span></div>')+
+        '</div>':'')+
       '<div class="soc-card"><h3 style="margin-top:0">Members</h3>'+members+
-        (me.canModerate?'<div class="soc-row"><select class="soc-in" id="gpAddWho" style="max-width:220px"><option value="">Add from your crew…</option></select>'+
-          '<button class="btn ghost btn-sm" id="gpAdd">Add</button><span class="snap" id="gpAddMsg"></span></div>':'')+
+        ((g.invited||[]).length?'<div class="snap" style="margin-top:10px;font-weight:600">Invited, waiting to hear back</div>'+
+          g.invited.map(m=>'<div class="grp-mem">'+avatarHtml(m)+'<div style="flex:1"><span>'+escHtml(m.displayName)+'</span>'+
+            '<div class="soc-when">invited '+whenAgo(m.invitedAt)+'</div></div>'+
+            (me.canModerate?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Cancel invite">✕</button>':'')+'</div>').join(''):'')+
+        (me.canInvite?'<div class="soc-row"><select class="soc-in" id="gpAddWho" style="max-width:220px"><option value="">Invite from your crew…</option></select>'+
+          '<button class="btn ghost btn-sm" id="gpAdd">Send invite</button><span class="snap" id="gpAddMsg"></span></div>'
+          :(me.canModerate?'<p class="snap" style="margin-top:10px">The owner has kept invitations to themselves.</p>':''))+
       '</div>'+
+      tournamentsHtml(d.tournaments||[],me,g)+
       (me.canPost?'<div class="soc-card"><textarea class="soc-in" id="gpBodyIn" rows="2" placeholder="Post to '+escHtml(g.name)+'"></textarea>'+
         '<div class="soc-row"><label class="btn ghost btn-sm" style="cursor:pointer">📷 Photo<input type="file" id="gpPhoto" accept="image/*" hidden></label>'+
         '<button class="btn" id="gpPost">Post</button><span class="snap" id="gpPostMsg"></span></div>'+
@@ -5171,7 +5259,9 @@ document.addEventListener('click',async function(e){
   if(t.id==='gpEdit'){ const f=$('gpEditForm'); if(f)f.hidden=!f.hidden; return; }
   if(t.id==='gpSave'){
     const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID),{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name:$('gpName').value,about:$('gpAbout').value})});
+      body:JSON.stringify({name:$('gpName').value,about:$('gpAbout').value,
+        dataSharing:$('gpDataSharing')?$('gpDataSharing').value:undefined,
+        whoCanInvite:$('gpWhoCanInvite')?$('gpWhoCanInvite').value:undefined})});
     const d=await r.json();
     if(!r.ok){ $('gpMsg').textContent=d.error||'Could not save.'; return; }
     loadGroupPage(); return;
@@ -5180,7 +5270,8 @@ document.addEventListener('click',async function(e){
     const who=$('gpAddWho').value; if(!who){ $('gpAddMsg').textContent='Pick someone first.'; return; }
     const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:who})});
     const d=await r.json();
-    if(!r.ok){ $('gpAddMsg').textContent=d.error||'Could not add them.'; return; }
+    if(!r.ok){ $('gpAddMsg').textContent=d.error||'Could not invite them.'; return; }
+    $('gpAddMsg').textContent='Invited — they choose what to share when they accept.';
     loadGroupPage(); return;
   }
   if(t.id==='gpPost'){
@@ -5273,6 +5364,11 @@ const NT_TEXT={
   friend_request:'sent you a friend request',
   friend_accepted:'accepted your friend request',
   group_added:'added you to a group',
+  group_invite:'invited you to a group',
+  group_joined:'joined your group',
+  tournament_invite:'invited you to a tournament',
+  tournament_rsvp:'answered a tournament invite',
+  tournament_changed:'changed a tournament',
   group_role:'changed your role',
   group_post:'posted in a group',
   invite_accepted:'joined ElavoFishAI from your invite'
@@ -5418,6 +5514,7 @@ document.addEventListener('click',async function(e){
   const alert_=t.closest('[data-alert]');
   if(alert_){
     const ty=alert_.dataset.alertType;
+    if(ty==='group_invite'){ go('friends'); loadGroupInvites(); return; }
     if(alert_.dataset.alertGroup)openGroup(alert_.dataset.alertGroup);
     else if(ty==='friend_request'||ty==='friend_accepted'||ty==='invite_accepted'){ go('friends'); }
     else if(alert_.dataset.alertUser)openWall(alert_.dataset.alertUser);
@@ -5448,6 +5545,151 @@ document.addEventListener('click',async function(e){
   if(t.id==='ivSend'){ sendInvite(); return; }
   const ivc=t.closest('[data-inv-cancel]');
   if(ivc){ await apiFetch('/api/invites/'+encodeURIComponent(ivc.dataset.invCancel),{method:'DELETE'}); loadInvites(); return; }
+});
+
+/* ---- tournaments ----
+   A club event, not a scoring engine. The host says what and when, everyone
+   says whether they are fishing it — which is the question that actually gets
+   asked in a group chat twenty times before every event. */
+const TFORMAT={heaviest_bag:'Heaviest bag',biggest_fish:'Biggest fish',most_fish:'Most fish',other:'Own rules'};
+const RSVP_LABEL={in:'Fishing it',out:'Not fishing it',maybe:'Maybe',invited:'Not answered'};
+function tourneyWhen(t){
+  const s=new Date(t.startsAt), e=new Date(t.endsAt);
+  const day=s.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  const from=s.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  const to=e.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  const sameDay=s.toDateString()===e.toDateString();
+  return day+' · '+from+'–'+to+(sameDay?'':' (+'+Math.round((e-s)/86400000)+'d)');
+}
+function tournamentsHtml(list,me,g){
+  const canHost=me.canModerate;
+  const cards=list.map(function(t){
+    const who=t.entries.filter(e=>e.status==='in');
+    return '<div class="soc-card" data-tourney="'+escHtml(t.id)+'">'+
+      '<div class="soc-head"><div class="soc-av">🏆</div><div style="flex:1">'+
+        '<b>'+escHtml(t.name)+'</b>'+(t.status!=='open'?' <span class="soc-chip">'+escHtml(t.status)+'</span>':'')+
+        '<div class="soc-when">'+escHtml(tourneyWhen(t))+(t.lake?' · '+escHtml(t.lake.name):'')+
+        (t.meetAt?' · '+escHtml(t.meetAt):'')+'</div></div>'+
+        (t.isHost||canHost?'<button class="soc-act" data-tdel="'+escHtml(t.id)+'" title="Remove">✕</button>':'')+
+      '</div>'+
+      '<div class="soc-row" style="margin-top:0">'+
+        '<span class="soc-chip">'+escHtml(TFORMAT[t.format]||t.format)+'</span>'+
+        (t.species?'<span class="soc-chip">'+escHtml(t.species)+'</span>':'<span class="soc-chip">Any species</span>')+
+        (t.entryFee?'<span class="soc-chip">'+escHtml(t.entryFee)+'</span>':'')+
+      '</div>'+
+      (t.details?'<div class="soc-body">'+escHtml(t.details)+'</div>':'')+
+      '<div class="soc-acts">'+
+        (t.status==='open'?['in','maybe','out'].map(v=>'<button class="soc-act'+(t.myStatus===v?' on':'')+
+          '" data-rsvp="'+escHtml(t.id)+'" data-rsvp-status="'+v+'">'+
+          (v==='in'?'✅ I’m in':v==='maybe'?'🤔 Maybe':'❌ Can’t make it')+'</button>').join(''):'')+
+        '<span class="snap">'+t.counts.in+' in · '+t.counts.maybe+' maybe · '+t.counts.waiting+' yet to answer</span>'+
+      '</div>'+
+      (who.length?'<div class="snap" style="margin-top:6px">Fishing it: '+who.map(e=>escHtml(e.user.displayName)+(e.note?' ('+escHtml(e.note)+')':'')).join(', ')+'</div>':'')+
+    '</div>';
+  }).join('');
+  return '<div class="soc-card"><div class="soc-head" style="margin-bottom:0"><div style="flex:1"><h3 style="margin:0">Tournaments</h3>'+
+      '<div class="soc-when">'+(list.length?'Say whether you are fishing them.':'Nothing on the calendar yet.')+'</div></div>'+
+      (canHost?'<button class="btn ghost btn-sm" id="tNew">Set one up</button>':'')+'</div>'+
+    (canHost?'<div id="tForm" hidden style="margin-top:12px">'+
+      '<div class="soc-row"><input class="soc-in" id="tName" style="flex:1;min-width:200px" placeholder="e.g. Fall Classic">'+
+        '<select class="soc-in" id="tFormat" style="max-width:180px">'+
+        Object.keys(TFORMAT).map(k=>'<option value="'+k+'">'+TFORMAT[k]+'</option>').join('')+'</select></div>'+
+      '<div class="soc-row"><label class="snap" style="min-width:60px">Starts</label><input class="soc-in" id="tStart" type="datetime-local" style="max-width:230px">'+
+        '<label class="snap" style="min-width:50px">Ends</label><input class="soc-in" id="tEnd" type="datetime-local" style="max-width:230px"></div>'+
+      '<div class="soc-row"><input class="soc-in" id="tSpecies" style="max-width:200px" placeholder="Species (blank = anything)">'+
+        '<input class="soc-in" id="tMeet" style="flex:1;min-width:180px" placeholder="Where do you meet? e.g. Rough Creek ramp">'+
+        '<input class="soc-in" id="tFee" style="max-width:160px" placeholder="Entry, e.g. $20 a boat"></div>'+
+      '<textarea class="soc-in" id="tDetails" rows="2" style="margin-top:8px" placeholder="Rules, weigh-in, prizes — whatever the group needs to know."></textarea>'+
+      '<div class="soc-row"><button class="btn" id="tSave">Create &amp; invite the group</button>'+
+        '<button class="btn ghost btn-sm" id="tCancel">Cancel</button><span class="snap" id="tMsg"></span></div></div>':'')+
+    '</div>'+cards;
+}
+async function createTournament(){
+  const name=$('tName').value.trim();
+  if(!name){ $('tMsg').textContent='Give it a name.'; return; }
+  if(!$('tStart').value){ $('tMsg').textContent='When does it start?'; return; }
+  $('tMsg').textContent='Creating…';
+  try{
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/tournaments',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name,format:$('tFormat').value,
+        startsAt:new Date($('tStart').value).toISOString(),
+        endsAt:$('tEnd').value?new Date($('tEnd').value).toISOString():undefined,
+        species:$('tSpecies').value.trim(),meetAt:$('tMeet').value.trim(),
+        entryFee:$('tFee').value.trim(),details:$('tDetails').value.trim(),
+        lakeId:ACTIVE.id})});
+    const d=await r.json();
+    if(!r.ok){ $('tMsg').textContent=d.error||'Could not create that.'; return; }
+    loadGroupPage();
+  }catch(e){ $('tMsg').textContent='Server not reachable.'; }
+}
+
+/* ---- answering a group invitation ----
+   Accepting is also where you decide what this particular group sees, because
+   it is the one moment anyone is actually thinking about that. */
+async function loadGroupInvites(){
+  const box=$('grInvites'); if(!box||!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/groups/invites'); if(!r.ok)return;
+    const rows=(await r.json()).invites||[];
+    box.innerHTML=rows.length?('<h3 style="margin-top:22px">Group invitations</h3>'+rows.map(function(i){
+      const off=i.dataSharing==='off';
+      return '<div class="fr-card" style="margin-bottom:10px" data-ginv="'+escHtml(i.groupId)+'">'+
+        '<div><b>'+escHtml(i.name)+'</b> <span class="snap">from '+escHtml(i.owner.displayName)+' · '+whenAgo(i.invitedAt)+'</span></div>'+
+        (i.about?'<div class="snap" style="margin:6px 0">'+escHtml(i.about)+'</div>':'')+
+        (off?'<div class="snap" style="margin:6px 0">This group does not share fishing data — it is for talking.</div>'
+            :'<div class="snap" style="margin:6px 0">Choose what this group sees. You can change it later.</div>'+
+             '<div class="soc-row">'+[['spots','📍 Spots'],['catches','🐟 Catches'],['waypoints','🧭 Waypoints']].map(x=>
+               '<label class="btn ghost btn-sm" style="cursor:pointer"><input type="checkbox" data-ginv-share="'+x[0]+'" checked style="margin-right:6px">'+x[1]+'</label>').join('')+'</div>')+
+        '<div class="soc-row"><button class="btn btn-sm" data-ginv-accept="'+escHtml(i.groupId)+'">Join group</button>'+
+        '<button class="btn ghost btn-sm" data-ginv-decline="'+escHtml(i.groupId)+'">No thanks</button></div>'+
+      '</div>';
+    }).join('')):'';
+  }catch(e){}
+}
+
+document.addEventListener('click',async function(e){
+  const t=e.target;
+  if(t.id==='tNew'){ const f=$('tForm'); if(f)f.hidden=!f.hidden; return; }
+  if(t.id==='tCancel'){ const f=$('tForm'); if(f)f.hidden=true; return; }
+  if(t.id==='tSave'){ createTournament(); return; }
+  const rsvp=t.closest('[data-rsvp]');
+  if(rsvp){
+    const r=await apiFetch('/api/tournaments/'+encodeURIComponent(rsvp.dataset.rsvp)+'/rsvp',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({status:rsvp.dataset.rsvpStatus})});
+    if(r.ok)loadGroupPage(); else { const d=await r.json(); alert(d.error||'Could not save that.'); }
+    return;
+  }
+  const tdel=t.closest('[data-tdel]');
+  if(tdel){
+    if(!confirm('Remove this tournament? Everyone who said they were fishing it will be told.'))return;
+    await apiFetch('/api/tournaments/'+encodeURIComponent(tdel.dataset.tdel),{method:'DELETE'});
+    loadGroupPage(); return;
+  }
+  const acc=t.closest('[data-ginv-accept]');
+  if(acc){
+    const card=acc.closest('[data-ginv]');
+    const pick=id=>{ const el=card&&card.querySelector('[data-ginv-share="'+id+'"]'); return el?el.checked:true; };
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(acc.dataset.ginvAccept)+'/accept',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({shareSpots:pick('spots'),shareCatches:pick('catches'),shareWaypoints:pick('waypoints')})});
+    if(r.ok){ loadGroupInvites(); refreshGroups(); }
+    return;
+  }
+  const dec=t.closest('[data-ginv-decline]');
+  if(dec){
+    await apiFetch('/api/groups/'+encodeURIComponent(dec.dataset.ginvDecline)+'/decline',{method:'POST'});
+    loadGroupInvites(); return;
+  }
+  const share=t.closest('[data-gpshare]');
+  if(share){
+    const body={}; body['share'+share.dataset.gpshare.charAt(0).toUpperCase()+share.dataset.gpshare.slice(1)]=share.checked;
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/sharing',{method:'PUT',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const msg=$('gpShareMsg');
+    if(msg)msg.textContent=r.ok?'Saved ✓':'Could not save that.';
+    return;
+  }
 });
 
 /* ---- fishing reports ----

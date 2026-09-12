@@ -21,6 +21,7 @@ import { marketRoutes } from './routes/market';
 import { notificationRoutes } from './routes/notifications';
 import { flagRoutes } from './routes/flags';
 import { inviteRoutes } from './routes/invites';
+import { tournamentRoutes } from './routes/tournaments';
 import { refreshAllSources, sweepReports } from './services/reports';
 import { loadOverlay } from './config-store';
 import { bootstrapAdmin } from './lib/admin-auth';
@@ -72,6 +73,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(marketRoutes);
   await app.register(notificationRoutes);
   await app.register(flagRoutes);
+  await app.register(tournamentRoutes);
   await app.register(inviteRoutes, { baseUrlFor: (req: unknown) => baseUrlFor(req as { headers: Record<string, unknown>; protocol: string }) });
 
   // The planner app lives at /app — GATED: the Granbury (and all lake) data is

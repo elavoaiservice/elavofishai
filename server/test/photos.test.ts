@@ -66,6 +66,7 @@ describe('catch photos', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run'
       group: { id: string };
     };
     await as(owner, { method: 'POST', url: `/api/groups/${g.group.id}/members`, payload: { userId: friend.id } });
+    await as(friend, { method: 'POST', url: `/api/groups/${g.group.id}/accept`, payload: {} });
     const id = await photoOnCatch('group', g.group.id);
     assert.equal((await errorOf(friend, id)).error, 'Photo is missing from storage.');
     assert.equal((await errorOf(stranger, id)).code, 403);

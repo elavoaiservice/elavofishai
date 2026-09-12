@@ -36,9 +36,9 @@ describe('renewal window', () => {
 });
 
 describe('admin session length', () => {
-  test('is four hours', () => {
-    assert.equal(ADMIN_SESSION_HOURS, 4);
-    assert.equal(ADMIN_SESSION_MS, 4 * 3600000);
+  test('is five hours', () => {
+    assert.equal(ADMIN_SESSION_HOURS, 5);
+    assert.equal(ADMIN_SESSION_MS, 5 * 3600000);
   });
 });
 

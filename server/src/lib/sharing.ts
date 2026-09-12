@@ -26,7 +26,7 @@ const FALLBACK: PrefRow = { scope: 'friends', groupIds: [] };
 export async function myGroupIds(userId: string): Promise<string[]> {
   const [owned, member] = await Promise.all([
     prisma.friendGroup.findMany({ where: { ownerId: userId }, select: { id: true } }),
-    prisma.friendGroupMember.findMany({ where: { memberId: userId }, select: { groupId: true } }),
+    prisma.friendGroupMember.findMany({ where: { memberId: userId, status: 'active' }, select: { groupId: true } }),
   ]);
   return [...owned.map((g) => g.id), ...member.map((m) => m.groupId)];
 }
