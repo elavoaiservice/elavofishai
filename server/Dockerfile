@@ -23,6 +23,10 @@ COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/dist ./dist
 COPY --from=build /app/server/prisma ./prisma
 COPY --from=build /app/server/package.json ./package.json
+# tools/ ships too: the nightly backup runs `node tools/upload-backup.js` in
+# this container to copy the dump offsite, and without it that step has been
+# failing silently since the day it was written.
+COPY --from=build /app/server/tools ./tools
 COPY server/docker-start.sh ./docker-start.sh
 # Static PWA lives at /app/public (server resolves ../../public from /app/server/dist).
 COPY public/ /app/public/

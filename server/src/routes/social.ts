@@ -91,6 +91,10 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const id = String((req.params as { id: string }).id);
     const f = await prisma.friendship.findUnique({ where: { id } });
     if (!f || (f.friendId !== me.id && f.userId !== me.id)) return reply.code(404).send({ error: 'No such request.' });
+    // A block is stored as a friendship row too. Declining one would have
+    // deleted it — letting the person who was blocked lift their own block and
+    // walk straight back into someone's messages.
+    if (f.status !== 'pending') return reply.code(404).send({ error: 'No such request.' });
     await prisma.friendship.delete({ where: { id } });
     return reply.send({ ok: true });
   });

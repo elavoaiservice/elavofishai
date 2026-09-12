@@ -2000,6 +2000,17 @@ function applyLakeNotes(){
   }
 }
 function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+/* An avatar URL is typed by its owner and then dropped into a style
+   attribute, where a double quote closes the attribute and everything after
+   it is markup. Only http(s) and data:image URLs are allowed through, and
+   every quote, bracket and backslash is percent-encoded, so the worst a
+   crafted URL can do is fail to load. */
+function safeImgUrl(u){
+  const raw=String(u==null?'':u).trim();
+  if(!raw)return '';
+  if(!/^(https:\/\/|http:\/\/|data:image\/(png|jpe?g|webp|gif);base64,)/i.test(raw))return '';
+  return raw.replace(/["'()\\<>\s]/g,c=>encodeURIComponent(c));
+}
 function applyActive(){ LAT=ACTIVE.lat; LON=ACTIVE.lon; FULL_POOL=(ACTIVE.fullPool==null?null:ACTIVE.fullPool); USGS_SITE=ACTIVE.gauge||null; }
 let LAT=ACTIVE.lat, LON=ACTIVE.lon;
 const SPOTS=["Hunter Park","City Ramp / 377 bridge","Hwy 51 bridge","De Cordova Bend","Rough Creek",
@@ -4320,7 +4331,7 @@ async function loadThreads(){
       +'<span class="mg-tmeta"><span class="mg-tname">'+escHtml(g.name)+(g.unread?' <span class="mg-unread">'+g.unread+'</span>':'')+'</span>'
       +'<span class="mg-tlast">'+escHtml(g.last||'')+'</span></span></div>').join('');
     $('mgList').innerHTML=(groupRows+th.map(t=>'<div class="mg-thread-row'+(t.userId===MG_OPEN?' on':'')+'" data-thread="'+t.userId+'" data-tname="'+escHtml(t.displayName)+'">'
-      +'<span class="mg-av"'+(t.avatarUrl?' style="background-image:url(\''+t.avatarUrl.replace(/'/g,"%27")+'\');background-size:cover;background-position:center"':'')+'>'+(t.avatarUrl?'':avInitials(t.displayName))+'</span>'
+      +'<span class="mg-av"'+(safeImgUrl(t.avatarUrl)?' style="background-image:url(\''+safeImgUrl(t.avatarUrl)+'\');background-size:cover;background-position:center"':'')+'>'+(safeImgUrl(t.avatarUrl)?'':avInitials(t.displayName))+'</span>'
       +'<span class="mg-tmeta"><span class="mg-tname">'+escHtml(t.displayName)+(t.unread?' <span class="mg-unread">'+t.unread+'</span>':'')+'</span>'
       +'<span class="mg-tlast">'+(t.lastMine?'You: ':'')+escHtml(t.last)+'</span></span></div>').join(''))
       ||'<p class="snap" style="padding:16px">No conversations yet. Message a friend from the 🎣 Friends tab, or open one of your groups.</p>';
@@ -5106,6 +5117,9 @@ window.addEventListener('hashchange',function(){ const h=location.hash.replace('
    A feed, a page per angler, a page per group, and a classifieds board. All
    four render the same post card, because a post is a post wherever it lands —
    the only thing that changes is who is allowed to write one. */
+/* AUTH.user is the display NAME (a string); the record is on AUTH.account.
+   Reading AUTH.user.id gave undefined, so the Leave button never rendered. */
+function myId(){ return (AUTH.account&&AUTH.account.id)||null; }
 function initial(name){ return escHtml(String(name||'?').trim().charAt(0).toUpperCase()); }
 function avatarHtml(u,cls){
   const c='soc-av'+(cls?' '+cls:'');
@@ -5267,7 +5281,7 @@ async function loadGroupPage(){
           ['editor','collaborator','member'].map(rl=>'<option value="'+rl+'"'+(m.role===rl?' selected':'')+
             (me.role==='editor'&&rl==='editor'?' disabled':'')+'>'+ROLE_LABEL[rl]+'</option>').join('')+'</select>':'')+
         (canChange?'<button class="soc-act" data-remove-member="'+escHtml(m.id)+'" title="Remove">✕</button>':'')+
-        (m.id===(AUTH.user&&AUTH.user.id)&&m.role!=='owner'?'<button class="btn ghost btn-sm" data-leave-group="1">Leave</button>':'')+
+        (m.id===myId()&&m.role!=='owner'?'<button class="btn ghost btn-sm" data-leave-group="1">Leave</button>':'')+
       '</div>';
     }).join('');
     $('gpBody').innerHTML=
@@ -6088,6 +6102,16 @@ async function loadPostDefault(){
   }catch(e){}
 }
 document.addEventListener('change',async function(e){
+  // Changing a member's role in a group. The dropdown has been rendered since
+  // the group page shipped and nothing ever listened to it.
+  const roleSel=e.target&&e.target.closest&&e.target.closest('[data-role-for]');
+  if(roleSel){
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/members/'+encodeURIComponent(roleSel.dataset.roleFor),
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:roleSel.value})});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); alert(d.error||'Could not change that role.'); }
+    loadGroupPage();
+    return;
+  }
   if(e.target&&e.target.id==='shPostDefault'){
     const r=await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({postDefault:e.target.value})});
     $('shPostMsg').textContent=r.ok?'Saved ✓ — the composer will preselect this.':'Could not save that.';

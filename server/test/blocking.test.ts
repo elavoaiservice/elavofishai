@@ -100,3 +100,21 @@ describe('blocking', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, 
     assert.equal(res.statusCode, 400);
   });
 });
+
+describe('a block cannot be lifted by the person it protects against', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('declining the blocked friendship row is refused, and the block stands', async () => {
+    await resetDb();
+    const me = await signIn('me@example.com');
+    const them = await signIn('them@example.com');
+    await as(me, { method: 'POST', url: `/api/friends/${them.id}/block` });
+
+    const row = await prisma.friendship.findFirstOrThrow({ where: { status: 'blocked' } });
+    // A block is a friendship row; "declining" it used to delete it outright.
+    const r = await as(them, { method: 'POST', url: `/api/friends/${row.id}/decline` });
+    assert.equal(r.statusCode, 404);
+    assert.equal(await prisma.friendship.count({ where: { status: 'blocked' } }), 1);
+  });
+});

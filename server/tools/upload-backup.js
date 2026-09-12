@@ -7,7 +7,7 @@
  * signing code live — the host has neither. Exits 0 when storage isn't
  * configured, so backup.sh keeps working without it.
  */
-const { putObject, storageConfigured } = require('./dist/services/storage');
+const { putObject, storageConfigured } = require('../dist/services/storage');
 
 const name = process.argv[2] || `backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.sql.gz`;
 

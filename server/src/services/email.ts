@@ -113,18 +113,26 @@ export function adminMfaEmail(code: string): { subject: string; html: string } {
   };
 }
 
+/** Anything a user typed is text. In an email from our own domain, unescaped
+ *  markup is a phishing kit: a "note" could carry a link to anywhere and
+ *  arrive with our sender, our branding and our reputation behind it. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
 export function inviteEmail(
   inviterName: string,
   url: string,
   note: string | null
 ): { subject: string; html: string } {
-  const who = inviterName.replace(/[<>]/g, '');
+  const who = escapeHtml(inviterName);
+  const safeNote = note ? escapeHtml(note) : null;
   return {
     subject: `${who} invited you to ElavoFishAI`,
     html: WRAP(
       `<p style="font-size:15px;margin:0 0 14px"><b>${who}</b> uses ElavoFishAI to plan trips, log catches and
          share spots with the anglers they fish with — and wants you in their crew.</p>
-       ${note ? `<p style="font-size:15px;margin:0 0 16px;padding:12px 14px;background:#f0f9ff;border-radius:12px">${note}</p>` : ''}
+       ${safeNote ? `<p style="font-size:15px;margin:0 0 16px;padding:12px 14px;background:#f0f9ff;border-radius:12px">${safeNote}</p>` : ''}
        <p style="margin:0 0 22px"><a href="${url}" style="display:inline-block;background:#29ABE2;color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:12px">Accept the invite</a></p>
        <p style="color:#5f708a;font-size:13px;margin:0">Signing up with this link puts you and ${who} in each
           other's crew straight away. It is free, and you choose what you share — everything defaults to

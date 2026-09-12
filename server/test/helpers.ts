@@ -32,6 +32,17 @@ export async function closeApp(): Promise<void> {
 // Lake carries an addedById FK to User, so truncating User takes Lake and its
 // profile with it. Re-seed the demo lake afterwards, the way boot would.
 export async function resetDb(): Promise<void> {
+  // This truncates every table, and Prisma connects with DATABASE_URL — which
+  // on a developer's machine is their own database. Refuse unless the two
+  // point at the same place, so running a test file directly can never wipe
+  // real data.
+  const target = process.env.DATABASE_URL || '';
+  if (!target || target !== process.env.TEST_DATABASE_URL) {
+    throw new Error(
+      'Refusing to wipe: DATABASE_URL must equal TEST_DATABASE_URL when running tests. ' +
+        'Use scripts/test.sh, which starts a throwaway database and points both at it.'
+    );
+  }
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "TournamentEntry","Tournament","Notification","ContentFlag","Invite","PostReaction","PostComment","Post","Listing","Photo","Waypoint","Spot","Trip","SharingPref","FriendGroupMember","FriendGroup",' +
       '"Friendship","Message","Session","AuthToken","RateLimit","Kv","UserLake","User" CASCADE'
