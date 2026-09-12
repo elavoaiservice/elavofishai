@@ -52,6 +52,15 @@ fi
 find "$DEST" -name 'elavofish-*.sql.gz' -mtime "+$KEEP_DAYS" -print -delete
 echo "[backup] ok (${SIZE} bytes), kept ${KEEP_DAYS} days"
 
+# Tell the app a backup happened. The dumps live on the host and the container
+# cannot see them, so without this the admin page would say "no backup found"
+# every day of its life — and a warning that is always wrong is worse than no
+# warning at all. /deploy is the volume both sides already share.
+STATUS_DIR="${DEPLOY_DIR:-$HOME/efa-deploy}"
+if [ -d "$STATUS_DIR" ]; then
+  printf '{"at":"%s","bytes":%s,"name":"%s"}\n' "$(date -Iseconds)" "$SIZE" "$(basename "$OUT")" > "$STATUS_DIR/backup-status.json"
+fi
+
 # Offsite copy. A backup that lives on the machine it is backing up survives
 # nothing worth surviving — a dead disk takes both. Uploaded through the app
 # container, which holds the credentials and the signing code.

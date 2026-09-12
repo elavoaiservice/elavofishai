@@ -43,8 +43,13 @@ export async function attention(): Promise<Attention[]> {
 
   // Backups: the only honest measure is when one last actually landed.
   const backup = latestBackup();
-  if (!backup) out.push({ level: 'bad', title: 'No backup found', detail: 'Nothing in the backups directory. If this machine dies, everything goes with it.', tab: 'health' });
-  else if (Date.now() - backup.at > 2 * day) {
+  if (!backup && backupVisible()) {
+    out.push({ level: 'bad', title: 'No backup found', detail: 'Nothing in the backups directory. If this machine dies, everything goes with it.', tab: 'health' });
+  } else if (!backup) {
+    // We cannot see them rather than there being none. Say which, because
+    // "no backup" and "cannot check" need completely different responses.
+    out.push({ level: 'warn', title: 'Cannot see the backups', detail: 'Nothing reports backup status here yet. Run scripts/backup.sh once so it writes its status where the app can read it.', tab: 'health' });
+  } else if (Date.now() - backup.at > 2 * day) {
     out.push({ level: 'bad', title: `Last backup is ${Math.round((Date.now() - backup.at) / day)} days old`, detail: 'The nightly job may have stopped. A backup nobody checks is a backup nobody has.', tab: 'health' });
   }
 
@@ -68,21 +73,37 @@ export async function attention(): Promise<Attention[]> {
 }
 
 const BACKUP_DIRS = ['/app/backups', path.resolve(process.cwd(), '../backups'), path.resolve(process.cwd(), 'backups')];
+// The dumps live on the host and this runs in a container, so the usual answer
+// is "cannot see them". backup.sh writes a one-line status into the volume both
+// sides share; that file is the reliable source and the directories are a
+// fallback for anyone running outside Docker.
+const STATUS_FILE = path.join(process.env.DEPLOY_DIR || '/deploy', 'backup-status.json');
 
-/** The newest backup file we can see, whichever directory it is in. */
+/** When a backup last actually succeeded — not when one was attempted. */
 export function latestBackup(): { name: string; at: number; bytes: number } | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')) as { at?: string; bytes?: number; name?: string };
+    const at = Date.parse(String(raw.at || ''));
+    if (Number.isFinite(at)) return { name: String(raw.name || 'backup'), at, bytes: Number(raw.bytes) || 0 };
+  } catch { /* fall through to looking for the files themselves */ }
+
   for (const dir of BACKUP_DIRS) {
     try {
       const files = fs.readdirSync(dir).filter((f) => /\.sql\.gz$/.test(f));
       if (!files.length) continue;
-      const stats = files
+      const newest = files
         .map((f) => ({ name: f, ...fs.statSync(path.join(dir, f)) }))
-        .sort((a, b) => b.mtimeMs - a.mtimeMs);
-      const newest = stats[0];
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
       return { name: newest.name, at: newest.mtimeMs, bytes: newest.size };
     } catch { /* try the next */ }
   }
   return null;
+}
+
+/** True when we have no way to see backups at all, as opposed to seeing none. */
+export function backupVisible(): boolean {
+  if (fs.existsSync(STATUS_FILE)) return true;
+  return BACKUP_DIRS.some((d) => { try { return fs.existsSync(d); } catch { return false; } });
 }
 
 /**
