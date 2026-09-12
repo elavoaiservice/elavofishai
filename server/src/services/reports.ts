@@ -335,7 +335,7 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
         const header = [
           facts.waterTempF ? `water ${facts.waterTempF}°F` : '',
           facts.levelNote ? `level ${facts.levelNote}` : '',
-          facts.clarity || '',
+          facts.clarity ? `water ${facts.clarity}` : '',
         ].filter(Boolean).join(' · ');
         const stamped = header ? `${header}\n${body}` : body;
 
@@ -357,8 +357,10 @@ export async function fetchSource(sourceId: string): Promise<{ stored: number; s
             // since February came to look like this morning's news.
             publishedAt: reported,
           },
-          // Never re-stamp: the date belongs to the report, not to our fetch.
-          update: { body: stamped },
+          // Never re-stamp with the fetch time — but do correct a row we
+          // previously mis-filed: if we now know the page carries no date, the
+          // honest value is no date, not the one we invented for it.
+          update: { body: stamped, source: kind, publishedAt: reported },
         });
         stored++;
       } catch {
