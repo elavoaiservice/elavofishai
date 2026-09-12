@@ -91,20 +91,38 @@ run_upgrade() {
     return 1
   fi
 
-  # Rebuilds leave the previous image dangling; on a Mini that adds up.
-  docker image prune -f >/dev/null 2>&1 || true
-
   log "waiting for the app to come back..."
   i=0
   while [ "$i" -lt 60 ]; do
     if curl -fsS "http://localhost:${PORT:-3100}/health/ready" >/dev/null 2>&1; then
       log "DONE — now running $after"
+      # Only now is the old image safe to throw away. Pruning before the health
+      # check discarded the one thing that could undo a bad deploy.
+      docker image prune -f >/dev/null 2>&1 || true
       return 0
     fi
     i=$((i + 2))
     sleep 2
   done
-  log "WARNING: rebuilt to $after but /health/ready did not answer within 120s"
+
+  # It built, it started, and it never answered. Leaving it there means the site
+  # is down until somebody notices; going back to the commit that was serving
+  # traffic five minutes ago means it is not.
+  log "FAILED: $after did not answer /health/ready within 120s — rolling back to $before"
+  if git reset --hard "$before" >>"$LOG" 2>&1 && docker compose build >>"$LOG" 2>&1 && docker compose up -d >>"$LOG" 2>&1; then
+    i=0
+    while [ "$i" -lt 60 ]; do
+      if curl -fsS "http://localhost:${PORT:-3100}/health/ready" >/dev/null 2>&1; then
+        log "ROLLED BACK to $before — the site is answering again"
+        return 1
+      fi
+      i=$((i + 2))
+      sleep 2
+    done
+    log "ROLLBACK FAILED: $before did not answer either — this needs hands"
+  else
+    log "ROLLBACK FAILED: could not rebuild $before — this needs hands"
+  fi
   return 1
 }
 

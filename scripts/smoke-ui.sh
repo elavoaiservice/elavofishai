@@ -79,11 +79,21 @@ QA="$(grep -c 'class="quick"' "$TMP/today.html" || true)"
 # Checking only the buttons that DO have data-go is useless: a button wired to
 # the wrong attribute is invisible to that check and dead on the page — which
 # is exactly how all four shipped broken.
-QUICK="$(sed -n 's/.*<div class="quick">\(.*\)<\/div>.*/\1/p' "$TMP/today.html" | head -1)"
-if [ -n "$QUICK" ]; then
+# This check was itself dead for months. It used a one-line sed pattern, and
+# Chrome dumps the DOM across many lines, so it matched nothing, QUICK was
+# empty and the whole block was skipped — a test that could not fail, guarding
+# the exact bug that shipped four dead buttons. Flatten the newlines first.
+# Take from the opening tag to the FIRST closing one: sed's greedy .* would
+# otherwise swallow the rest of the page and count every button on it.
+QUICK="$(tr '\n' ' ' < "$TMP/today.html" | grep -o '<div class="quick">.*' | head -1 | sed 's/<\/div>.*//')"
+if [ -z "$QUICK" ]; then
+  echo "[smoke] FAIL today — the quick-action row is missing from the page"; FAIL=1
+else
   BTNS="$(printf '%s' "$QUICK" | grep -o '<button' | wc -l | tr -d ' ')"
   WIRED="$(printf '%s' "$QUICK" | grep -o 'data-go=' | wc -l | tr -d ' ')"
-  if [ "$BTNS" != "$WIRED" ]; then
+  if [ "$BTNS" = "0" ]; then
+    echo "[smoke] FAIL today — the quick-action row has no buttons in it"; FAIL=1
+  elif [ "$BTNS" != "$WIRED" ]; then
     echo "[smoke] FAIL today — $BTNS quick-action buttons but only $WIRED wired to data-go"; FAIL=1
   fi
 fi
