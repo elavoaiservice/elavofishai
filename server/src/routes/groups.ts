@@ -18,7 +18,7 @@ import {
   type GroupRole,
 } from '../lib/groups';
 import { notify } from '../services/notify';
-import { tournamentsForGroup } from './tournaments';
+import { seriesForGroup, tournamentsForGroup } from './tournaments';
 
 export const DATA_SHARING = ['off', 'optional', 'asked'];
 export const INVITE_POLICY = ['owner', 'editors'];
@@ -98,6 +98,7 @@ export async function groupPageRoutes(app: FastifyInstance): Promise<void> {
           : null,
       },
       tournaments: await tournamentsForGroup(id, me.id),
+      series: await seriesForGroup(id),
       posts: posts.map((p) => ({
         id: p.id,
         body: p.body,

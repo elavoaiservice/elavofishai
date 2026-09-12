@@ -77,6 +77,20 @@ const INCLUDE = {
   },
 };
 
+/** Seasons in this group, newest year first, with how far along each is. */
+export async function seriesForGroup(groupId: string) {
+  const rows = await prisma.tournamentSeries.findMany({
+    where: { groupId },
+    include: { events: { select: { id: true, status: true } } },
+    orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+    take: 10,
+  });
+  return rows.map((s) => ({
+    id: s.id, name: s.name, year: s.year, scoring: s.scoring, dropWorst: s.dropWorst, status: s.status,
+    events: s.events.length, done: s.events.filter((e) => e.status === 'done').length,
+  }));
+}
+
 /** Used by the group page so a member sees the events without a second call. */
 export async function tournamentsForGroup(groupId: string, meId: string) {
   const rows = await prisma.tournament.findMany({
@@ -157,7 +171,183 @@ export async function resultsFor(tournamentId: string) {
   return { format: t.format, species: t.species, status: t.status, resultsNote: t.resultsNote, rows };
 }
 
+/**
+ * Season standings.
+ *
+ * Two ways clubs run a season, and both are here because both are common:
+ *  - points: you score for where you PLACED in each event, so a tough day on a
+ *    hard lake is worth as much as an easy day on a good one. First gets
+ *    `pointsTop`, each place below one `pointsStep` less, never under one —
+ *    turning up and weighing a fish always beats staying home.
+ *  - weight: the season is everyone's total weight, added up. Simpler, and it
+ *    rewards the angler who catches the most fish over the year.
+ *
+ * `dropWorst` throws away each angler's worst results, which is how a trail
+ * stops one blown Saturday — a dead outboard, a sick child — from ending
+ * someone's season. Only events that have actually been closed count; an open
+ * event's board is provisional and does not belong in the standings.
+ *
+ * Pure so it can be tested without a database: give it the events and their
+ * boards and it gives you the table.
+ */
+export interface SeriesRules { scoring: string; pointsTop: number; pointsStep: number; dropWorst: number }
+export interface EventBoard {
+  id: string;
+  name: string;
+  counted: boolean;
+  rows: { user: { id: string; displayName: string; avatarUrl?: string | null }; score: number; fish: number; bigLb: number }[];
+}
+export interface StandingRow {
+  user: { id: string; displayName: string; avatarUrl?: string | null };
+  points: number;
+  fished: number;
+  counted: number;
+  dropped: number;
+  bestPlace: number | null;
+  totalWeight: number;
+  bigLb: number;
+  events: { id: string; name: string; place: number; points: number; dropped: boolean }[];
+}
+
+export function pointsForPlace(place: number, r: SeriesRules): number {
+  return Math.max(1, r.pointsTop - (place - 1) * r.pointsStep);
+}
+
+export function standings(events: EventBoard[], rules: SeriesRules): StandingRow[] {
+  const byAngler = new Map<string, StandingRow>();
+  for (const ev of events) {
+    if (!ev.counted) continue;
+    // Ties share the better place, the way a weigh-in would call it.
+    let place = 0, seen = 0, lastScore: number | null = null;
+    for (const row of ev.rows) {
+      seen += 1;
+      if (lastScore === null || row.score < lastScore) { place = seen; lastScore = row.score; }
+      const got = byAngler.get(row.user.id) || {
+        user: row.user, points: 0, fished: 0, counted: 0, dropped: 0, bestPlace: null, totalWeight: 0, bigLb: 0, events: [],
+      };
+      const pts = rules.scoring === 'weight' ? row.score : pointsForPlace(place, rules);
+      got.fished += 1;
+      got.totalWeight = Math.round((got.totalWeight + row.score) * 100) / 100;
+      got.bigLb = Math.max(got.bigLb, row.bigLb || 0);
+      got.bestPlace = got.bestPlace === null ? place : Math.min(got.bestPlace, place);
+      got.events.push({ id: ev.id, name: ev.name, place, points: Math.round(pts * 100) / 100, dropped: false });
+      byAngler.set(row.user.id, got);
+    }
+  }
+  for (const row of byAngler.values()) {
+    // Drop the worst results — but never drop an angler down to nothing.
+    const drop = Math.min(rules.dropWorst, Math.max(0, row.events.length - 1));
+    const order = [...row.events].sort((a, b) => a.points - b.points);
+    for (const e of order.slice(0, drop)) e.dropped = true;
+    row.dropped = drop;
+    row.counted = row.events.length - drop;
+    row.points = Math.round(row.events.filter((e) => !e.dropped).reduce((a, e) => a + e.points, 0) * 100) / 100;
+  }
+  return [...byAngler.values()].sort(
+    (a, b) => b.points - a.points || b.totalWeight - a.totalWeight || b.bigLb - a.bigLb
+  );
+}
+
 export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
+  // ---------- seasons ----------
+  app.post('/api/groups/:id/series', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const groupId = String((req.params as { id: string }).id);
+    const role = await roleIn(groupId, me.id);
+    if (!role) return reply.code(404).send({ error: 'No such group.' });
+    if (!canModerate(role)) return reply.code(403).send({ error: 'Only the owner or an editor can start a season.' });
+    const b = (req.body || {}) as Record<string, unknown>;
+    const name = String(b.name || '').trim().slice(0, 80);
+    if (!name) return reply.code(400).send({ error: 'Give the season a name.' });
+    const year = Number(b.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) return reply.code(400).send({ error: 'Which year is this season?' });
+    const series = await prisma.tournamentSeries.create({
+      data: {
+        groupId, name, year,
+        details: b.details ? String(b.details).slice(0, 2000) : null,
+        scoring: b.scoring === 'weight' ? 'weight' : 'points',
+        pointsTop: Number.isFinite(Number(b.pointsTop)) ? Math.max(1, Math.min(1000, Number(b.pointsTop))) : 100,
+        pointsStep: Number.isFinite(Number(b.pointsStep)) ? Math.max(0, Math.min(100, Number(b.pointsStep))) : 1,
+        dropWorst: Number.isFinite(Number(b.dropWorst)) ? Math.max(0, Math.min(10, Number(b.dropWorst))) : 0,
+      },
+    });
+    return reply.send({ series: { id: series.id } });
+  });
+
+  app.put('/api/series/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const id = String((req.params as { id: string }).id);
+    const s = await prisma.tournamentSeries.findUnique({ where: { id }, select: { groupId: true } });
+    if (!s) return reply.code(404).send({ error: 'No such season.' });
+    if (!canModerate(await roleIn(s.groupId, me.id))) return reply.code(403).send({ error: 'Not yours to change.' });
+    const b = (req.body || {}) as Record<string, unknown>;
+    const data: Record<string, unknown> = {};
+    if (typeof b.name === 'string' && b.name.trim()) data.name = b.name.trim().slice(0, 80);
+    if (typeof b.details === 'string') data.details = b.details.slice(0, 2000) || null;
+    if (b.scoring === 'weight' || b.scoring === 'points') data.scoring = b.scoring;
+    if (Number.isFinite(Number(b.pointsTop))) data.pointsTop = Math.max(1, Math.min(1000, Number(b.pointsTop)));
+    if (Number.isFinite(Number(b.pointsStep))) data.pointsStep = Math.max(0, Math.min(100, Number(b.pointsStep)));
+    if (Number.isFinite(Number(b.dropWorst))) data.dropWorst = Math.max(0, Math.min(10, Number(b.dropWorst)));
+    if (b.status === 'open' || b.status === 'done') data.status = b.status;
+    await prisma.tournamentSeries.update({ where: { id }, data });
+    return reply.send({ ok: true });
+  });
+
+  app.delete('/api/series/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const id = String((req.params as { id: string }).id);
+    const s = await prisma.tournamentSeries.findUnique({ where: { id }, select: { groupId: true } });
+    if (!s) return reply.code(404).send({ error: 'No such season.' });
+    if (!canModerate(await roleIn(s.groupId, me.id))) return reply.code(403).send({ error: 'Not yours to remove.' });
+    // The events survive — deleting a season must not delete the fishing.
+    await prisma.tournamentSeries.delete({ where: { id } });
+    return reply.send({ ok: true });
+  });
+
+  /** The season: its events, the standings, and who is angler of the year. */
+  app.get('/api/series/:id', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const id = String((req.params as { id: string }).id);
+    const series = await prisma.tournamentSeries.findUnique({
+      where: { id },
+      include: { events: { orderBy: { startsAt: 'asc' }, select: { id: true, name: true, status: true, startsAt: true, endsAt: true, lake: { select: { name: true } } } } },
+    });
+    if (!series) return reply.code(404).send({ error: 'No such season.' });
+    if (!(await roleIn(series.groupId, me.id))) return reply.code(404).send({ error: 'No such season.' });
+
+    const boards: EventBoard[] = [];
+    for (const ev of series.events) {
+      const res = await resultsFor(ev.id);
+      boards.push({
+        id: ev.id,
+        name: ev.name,
+        // Only a finished event counts: a board that can still change is not a
+        // result, and standings that move under people are worse than none.
+        counted: ev.status === 'done',
+        rows: (res?.rows || []).map((r) => ({ user: r.user, score: r.score, fish: r.fish, bigLb: r.bigLb })),
+      });
+    }
+    const rules: SeriesRules = { scoring: series.scoring, pointsTop: series.pointsTop, pointsStep: series.pointsStep, dropWorst: series.dropWorst };
+    const table = standings(boards, rules);
+    return {
+      series: {
+        id: series.id, name: series.name, year: series.year, details: series.details,
+        scoring: series.scoring, pointsTop: series.pointsTop, pointsStep: series.pointsStep,
+        dropWorst: series.dropWorst, status: series.status, groupId: series.groupId,
+      },
+      events: series.events.map((e) => ({
+        id: e.id, name: e.name, status: e.status, startsAt: e.startsAt, endsAt: e.endsAt,
+        lake: e.lake?.name || null, counted: e.status === 'done',
+      })),
+      standings: table,
+      anglerOfTheYear: series.status === 'done' && table.length ? table[0] : null,
+    };
+  });
+
   /**
    * Open tournaments on this lake that the angler is fishing — what the catch
    * form offers as "enter this in…".
@@ -238,6 +428,7 @@ export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
         species: b.species ? String(b.species).slice(0, 80) : null,
         format,
         entryFee: b.entryFee ? String(b.entryFee).slice(0, 80) : null,
+        seriesId: b.seriesId ? String(b.seriesId) : null,
       },
     });
 

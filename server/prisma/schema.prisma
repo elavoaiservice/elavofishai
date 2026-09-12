@@ -420,6 +420,7 @@ model FriendGroup {
   members      FriendGroupMember[]
   posts        Post[]
   tournaments  Tournament[]
+  series       TournamentSeries[]
   messages     Message[]
 
   @@index([ownerId])
@@ -864,35 +865,70 @@ model Invite {
 // they are fishing it. Deliberately not a scoring engine — anglers settle
 // results at the ramp, and a leaderboard nobody trusts is worse than none.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A season: the club's year. Individual tournaments hang off it and the
+// standings are computed from their results — points per event, worst results
+// dropped, and an angler of the year at the end. Every club trail already runs
+// this on a spreadsheet; this is that spreadsheet.
+// ---------------------------------------------------------------------------
+model TournamentSeries {
+  id         String      @id @default(cuid())
+  groupId    String
+  group      FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name       String // "2026 Club Season"
+  year       Int
+  details    String?     @db.Text
+  // points — placing in each event scores points, the way most club trails run
+  // weight — the season is simply everyone's total weight added up
+  scoring    String      @default("points")
+  // First place scores this, second one step less, and so on — never below one
+  // point, because weighing a fish always beats staying home.
+  pointsTop  Int         @default(100)
+  pointsStep Int         @default(1)
+  // Best (events − dropWorst) count, so one blown Saturday does not end a season.
+  dropWorst  Int         @default(0)
+  status     String      @default("open") // open | done
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  events Tournament[]
+
+  @@index([groupId, year])
+}
+
 model Tournament {
-  id          String      @id @default(cuid())
+  id          String            @id @default(cuid())
   groupId     String
-  group       FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group       FriendGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  // Which season this belongs to, if any. A one-off tournament has none.
+  seriesId    String?
+  series      TournamentSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   hostId      String
-  host        User        @relation("TournamentHost", fields: [hostId], references: [id], onDelete: Cascade)
+  host        User              @relation("TournamentHost", fields: [hostId], references: [id], onDelete: Cascade)
   name        String
-  details     String?     @db.Text
+  details     String?           @db.Text
   lakeId      String?
-  lake        Lake?       @relation(fields: [lakeId], references: [id], onDelete: SetNull)
+  lake        Lake?             @relation(fields: [lakeId], references: [id], onDelete: SetNull)
   // Where to meet, in words — a ramp name beats coordinates nobody reads.
   meetAt      String?
   startsAt    DateTime
   endsAt      DateTime
   species     String? // "Largemouth bass", or null for anything that swims
   // biggest_fish | heaviest_bag | most_fish | other
-  format      String      @default("heaviest_bag")
+  format      String            @default("heaviest_bag")
   entryFee    String? // free text: "$20 a boat", "bring a dish"
-  status      String      @default("open") // open | cancelled | done
+  status      String            @default("open") // open | cancelled | done
   // The host's word on the outcome, written when they close it. The board is
   // computed from entered catches; this is for "Dave's 6.2 was foul-hooked".
-  resultsNote String?     @db.Text
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  resultsNote String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   entries TournamentEntry[]
   catches Trip[]
 
   @@index([groupId, startsAt])
+  @@index([seriesId])
 }
 
 model TournamentEntry {

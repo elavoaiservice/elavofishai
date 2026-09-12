@@ -5310,6 +5310,7 @@ async function loadGroupPage(){
           '<button class="btn ghost btn-sm" id="gpAdd">Send invite</button><span class="snap" id="gpAddMsg"></span></div>'
           :(me.canModerate?'<p class="snap" style="margin-top:10px">The owner has kept invitations to themselves.</p>':''))+
       '</div>'+
+      seriesHtml(d.series||[],me)+
       tournamentsHtml(d.tournaments||[],me,g)+
       (me.canPost?'<div class="soc-card"><textarea class="soc-in" id="gpBodyIn" rows="2" placeholder="Post to '+escHtml(g.name)+'"></textarea>'+
         '<div class="soc-row"><label class="btn ghost btn-sm" style="cursor:pointer">📷 Photo<input type="file" id="gpPhoto" accept="image/*" hidden></label>'+
@@ -5319,6 +5320,11 @@ async function loadGroupPage(){
       ((d.posts||[]).map(p=>postCard(p,{canModerate:me.canModerate,inGroup:true})).join('')||'<p class="snap">Nothing posted here yet.</p>');
 
     if(me.canModerate)fillGroupAddList();
+    SERIES_CAN_HOST=!!me.canModerate;
+    // Offer this group's open seasons when setting up an event.
+    const tsel=$('tSeries');
+    if(tsel&&(d.series||[]).length){ (d.series||[]).filter(x=>x.status==='open').forEach(function(x){
+      const o=document.createElement('option'); o.value=x.id; o.textContent=x.name+' ('+x.year+')'; tsel.appendChild(o); }); }
     bindMultiPhoto('gpPhoto','gpPreview',PHOTO_BUCKETS.group,4);
     drawThumbs('gpPreview',PHOTO_BUCKETS.group);
   }catch(e){ $('gpBody').innerHTML='<p class="snap">Server not reachable.</p>'; }
@@ -5722,6 +5728,94 @@ document.addEventListener('click',async function(e){
   if(ivc){ await apiFetch('/api/invites/'+encodeURIComponent(ivc.dataset.invCancel),{method:'DELETE'}); loadInvites(); return; }
 });
 
+/* ---- seasons ----
+   A club's year: several tournaments, points for where you place in each, the
+   worst results dropped, and an angler of the year at the end. Clubs already
+   keep this on a spreadsheet — the only new thing here is that it adds itself
+   up from the catches people already logged. */
+function seriesHtml(list,me){
+  const canHost=me.canModerate;
+  const rows=list.map(sx=>'<div class="fr-row" data-series-row="'+escHtml(sx.id)+'"><span>'+
+    '<b>'+escHtml(sx.name)+'</b> <span class="snap">'+sx.year+' · '+sx.done+' of '+sx.events+' event'+(sx.events===1?'':'s')+' finished'+
+    (sx.dropWorst?' · drop '+sx.dropWorst:'')+(sx.scoring==='weight'?' · by weight':'')+(sx.status==='done'?' · final':'')+'</span></span>'+
+    '<button class="btn ghost btn-sm" data-series="'+escHtml(sx.id)+'">Standings</button></div>').join('');
+  return '<div class="soc-card"><div class="soc-head" style="margin-bottom:0"><div style="flex:1"><h3 style="margin:0">Seasons</h3>'+
+      '<div class="soc-when">'+(list.length?'Standings add themselves up as events finish.':'No season set up yet.')+'</div></div>'+
+      (canHost?'<button class="btn ghost btn-sm" id="sNew">Start a season</button>':'')+'</div>'+
+    (canHost?'<div id="sForm" hidden style="margin-top:12px">'+
+      '<div class="soc-row"><input class="soc-in" id="sName" style="flex:1;min-width:180px" placeholder="e.g. 2026 Club Season">'+
+        '<input class="soc-in" id="sYear" type="number" style="max-width:110px" placeholder="Year" value="'+new Date().getFullYear()+'"></div>'+
+      '<div class="soc-row"><select class="soc-in" id="sScoring" style="max-width:230px">'+
+          '<option value="points">Points for where you place</option><option value="weight">Total weight for the year</option></select>'+
+        '<label class="snap">Winner scores</label><input class="soc-in" id="sTop" type="number" style="max-width:90px" value="100">'+
+        '<label class="snap">Drop worst</label><input class="soc-in" id="sDrop" type="number" style="max-width:80px" value="0"></div>'+
+      '<div class="soc-row"><button class="btn" id="sSave">Create season</button>'+
+        '<button class="btn ghost btn-sm" id="sCancel">Cancel</button><span class="snap" id="sMsg"></span></div></div>':'')+
+    (rows?'<div style="margin-top:10px">'+rows+'</div>':'')+
+    '<div id="sBoard"></div></div>';
+}
+async function createSeries(){
+  const name=$('sName').value.trim();
+  if(!name){ $('sMsg').textContent='Give the season a name.'; return; }
+  $('sMsg').textContent='Creating…';
+  try{
+    const r=await apiFetch('/api/groups/'+encodeURIComponent(GROUP_ID)+'/series',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name,year:Number($('sYear').value)||new Date().getFullYear(),
+        scoring:$('sScoring').value,pointsTop:Number($('sTop').value)||100,dropWorst:Number($('sDrop').value)||0})});
+    const d=await r.json();
+    if(!r.ok){ $('sMsg').textContent=d.error||'Could not create that.'; return; }
+    loadGroupPage();
+  }catch(e){ $('sMsg').textContent='Server not reachable.'; }
+}
+async function loadSeries(id){
+  const box=$('sBoard'); if(!box)return;
+  box.innerHTML='<p class="snap">Working out the standings…</p>';
+  try{
+    const r=await apiFetch('/api/series/'+encodeURIComponent(id));
+    if(!r.ok){ box.innerHTML='<p class="snap">Could not open that season.</p>'; return; }
+    const d=await r.json();
+    const sx=d.series, tbl=d.standings||[], unit=sx.scoring==='weight'?' lb':' pts';
+    box.innerHTML='<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'+
+      '<div class="soc-row" style="margin:0 0 8px"><b>'+escHtml(sx.name)+'</b><span class="snap">'+
+        (sx.scoring==='weight'?'total weight':'winner '+sx.pointsTop+' pts, each place '+sx.pointsStep+' less')+
+        (sx.dropWorst?' · worst '+sx.dropWorst+' dropped':'')+'</span>'+
+        (SERIES_CAN_HOST?'<button class="btn ghost btn-sm" data-series-close="'+escHtml(sx.id)+'" style="margin-left:auto">'+(sx.status==='done'?'Reopen season':'Close &amp; crown')+'</button>':'')+'</div>'+
+      (d.anglerOfTheYear?'<div class="note" style="margin:0 0 10px"><b>🏆 Angler of the year: '+escHtml(d.anglerOfTheYear.user.displayName)+'</b> — '+d.anglerOfTheYear.points+unit+' from '+d.anglerOfTheYear.counted+' event'+(d.anglerOfTheYear.counted===1?'':'s')+'.</div>':'')+
+      (tbl.length?'<table style="width:100%;font-size:13px;border-collapse:collapse">'+
+        '<tr><th style="text-align:left;padding:4px 6px;font-size:11px;color:var(--muted)">#</th><th style="text-align:left;padding:4px 6px;font-size:11px;color:var(--muted)">Angler</th>'+
+        '<th style="text-align:right;padding:4px 6px;font-size:11px;color:var(--muted)">'+(sx.scoring==='weight'?'Weight':'Points')+'</th>'+
+        '<th style="text-align:right;padding:4px 6px;font-size:11px;color:var(--muted)">Events</th><th style="text-align:right;padding:4px 6px;font-size:11px;color:var(--muted)">Best</th></tr>'+
+        tbl.map((row,i)=>'<tr><td style="padding:4px 6px;color:var(--muted)">'+(i+1)+'</td>'+
+          '<td style="padding:4px 6px"><span class="soc-who" data-wall="'+escHtml(row.user.id)+'">'+escHtml(row.user.displayName)+'</span>'+
+          (row.dropped?' <span class="snap">('+row.dropped+' dropped)</span>':'')+'</td>'+
+          '<td style="padding:4px 6px;text-align:right"><b>'+row.points+'</b></td>'+
+          '<td style="padding:4px 6px;text-align:right;color:var(--muted)">'+row.counted+' of '+row.fished+'</td>'+
+          '<td style="padding:4px 6px;text-align:right;color:var(--muted)">'+(row.bestPlace||'—')+'</td></tr>').join('')+'</table>'
+        :'<p class="snap">Nothing counts yet. Standings fill in as each event is closed and its board published.</p>')+
+      '<div class="snap" style="margin-top:8px">Events: '+(d.events||[]).map(e=>escHtml(e.name)+(e.counted?' ✓':' <i>(open)</i>')).join(' · ')+'</div>'+
+      '</div>';
+  }catch(e){ box.innerHTML='<p class="snap">Server not reachable.</p>'; }
+}
+let SERIES_CAN_HOST=false;
+document.addEventListener('click',async function(e){
+  const t=e.target;
+  if(t.id==='sNew'){ const f=$('sForm'); if(f)f.hidden=!f.hidden; return; }
+  if(t.id==='sCancel'){ const f=$('sForm'); if(f)f.hidden=true; return; }
+  if(t.id==='sSave'){ createSeries(); return; }
+  const open=t.closest('[data-series]');
+  if(open){ loadSeries(open.dataset.series); return; }
+  const close=t.closest('[data-series-close]');
+  if(close){
+    const done=close.textContent.indexOf('Reopen')<0;
+    if(done&&!confirm('Close the season and crown the angler of the year? You can reopen it if an event still has to be settled.'))return;
+    const r=await apiFetch('/api/series/'+encodeURIComponent(close.dataset.seriesClose),{method:'PUT',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({status:done?'done':'open'})});
+    if(r.ok)loadSeries(close.dataset.seriesClose);
+    return;
+  }
+});
+
 /* ---- tournaments ----
    A club event, not a scoring engine. The host says what and when, everyone
    says whether they are fishing it — which is the question that actually gets
@@ -5773,6 +5867,7 @@ function tournamentsHtml(list,me,g){
         Object.keys(TFORMAT).map(k=>'<option value="'+k+'">'+TFORMAT[k]+'</option>').join('')+'</select></div>'+
       '<div class="soc-row"><label class="snap" style="min-width:60px">Starts</label><input class="soc-in" id="tStart" type="datetime-local" style="max-width:230px">'+
         '<label class="snap" style="min-width:50px">Ends</label><input class="soc-in" id="tEnd" type="datetime-local" style="max-width:230px"></div>'+
+      '<div class="soc-row"><select class="soc-in" id="tSeries" style="max-width:230px"><option value="">Not part of a season</option></select></div>'+
       '<div class="soc-row"><input class="soc-in" id="tSpecies" style="max-width:200px" placeholder="Species (blank = anything)">'+
         '<input class="soc-in" id="tMeet" style="flex:1;min-width:180px" placeholder="Where do you meet? e.g. Rough Creek ramp">'+
         '<input class="soc-in" id="tFee" style="max-width:160px" placeholder="Entry, e.g. $20 a boat"></div>'+
@@ -5794,6 +5889,7 @@ async function createTournament(){
         endsAt:$('tEnd').value?new Date($('tEnd').value).toISOString():undefined,
         species:$('tSpecies').value.trim(),meetAt:$('tMeet').value.trim(),
         entryFee:$('tFee').value.trim(),details:$('tDetails').value.trim(),
+        seriesId:($('tSeries')&&$('tSeries').value)||undefined,
         lakeId:ACTIVE.id})});
     const d=await r.json();
     if(!r.ok){ $('tMsg').textContent=d.error||'Could not create that.'; return; }
