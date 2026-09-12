@@ -200,6 +200,8 @@ model Lake {
   bbox         String? // JSON [w,s,e,n]
   rampsJson    String?     @db.Text // cached OSM boat ramps for this lake
   rampsAt      DateTime? // when that cache was filled
+  featuresJson String?     @db.Text // cached named features (creek mouths, points, bridges, dams…)
+  featuresAt   DateTime?
   corpsProject String? // "SWF:WTYT2" — nearest USACE project, "" = none nearby
   corpsAt      DateTime?
   osmRef       String?     @unique // e.g. "way/12345678"

@@ -1,6 +1,8 @@
 import { complete } from './llm';
 import { recentReports, reportsForPrompt } from './reports';
 import { releaseFor, summarizeRelease } from './corps';
+import { featuresForLake, snapStops, type Candidate } from './features';
+import { rampsForLake } from './ramps';
 import { prisma } from '../db';
 import { env } from '../env';
 
@@ -117,6 +119,26 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       `Build the day around that starting point — order the stops so the running between them makes sense, and say roughly how far each is from the ramp.`
     : `No launch point given — keep the plan usable from anywhere on the lake.`;
 
+  // Real places the plan may point at. The model is never allowed to invent a
+  // coordinate: it chooses from this list — OSM features, the ramps, and the
+  // angler's own spots — and anything else it returns is dropped by
+  // snapStops() before it reaches the map.
+  const [features, rampList, ownSpots, ownWps] = await Promise.all([
+    featuresForLake(lakeId).catch(() => []),
+    rampsForLake(lakeId).then((r) => r.ramps).catch(() => []),
+    req.userId ? prisma.spot.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, notes: true }, take: 25 }) : Promise.resolve([]),
+    req.userId ? prisma.waypoint.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, kind: true }, take: 25 }) : Promise.resolve([]),
+  ]);
+  const candidates: Candidate[] = [
+    ...features.map((f) => ({ name: f.name, lat: f.lat, lon: f.lon, kind: f.kind, hint: f.hint })),
+    ...rampList.map((r) => ({ name: r.name, lat: r.lat, lon: r.lon, kind: 'ramp' })),
+    ...ownSpots.map((x) => ({ name: x.name, lat: x.lat, lon: x.lon, kind: 'your spot', hint: x.notes || undefined })),
+    ...ownWps.map((x) => ({ name: x.name, lat: x.lat, lon: x.lon, kind: x.kind ? `your waypoint (${x.kind})` : 'your waypoint' })),
+  ];
+  const placeList = candidates.length
+    ? candidates.map((c) => `- ${c.name} [${c.kind}] ${c.lat.toFixed(4)},${c.lon.toFixed(4)}${c.hint ? ` — ${c.hint}` : ''}`).join('\n')
+    : '';
+
   // Real reports about this water beat anything a model can infer. Agency feeds
   // and angler reports are already collected; put the recent ones in front of
   // it, dated and attributed.
@@ -159,16 +181,25 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
         `conditions and profile instead — do not pad the plan with generic advice dressed up as a report.\n` +
         `Put anything you actually used in "sources" as {"title","url","asOf"} — at most 4, most useful first.\n\n`
       : '') +
+    (placeList
+      ? `PLACES you may name, with their real coordinates (${candidates.length}). Every stop in "stops" MUST be one of these, ` +
+        `copied exactly — name and coordinates. Do not invent places or coordinates; if none of these fit a part of the ` +
+        `day, describe the water type in the timeline instead and leave it out of "stops". Prefer the angler's own spots ` +
+        `and waypoints when they suit the pattern — they have caught fish there. Read the hints: they say why that kind ` +
+        `of place holds fish, and "lookFor" should say what to look for ON ARRIVAL at that exact place (depth, cover, ` +
+        `bait, where the shade or current is), not repeat the hint.\n${placeList}\n\n`
+      : `No mapped places are known for this lake, so return "stops": [] and describe water types in the timeline.\n\n`) +
     `Return ONLY valid JSON (no prose, no code fence):\n` +
     `{"summary": string, ` +
     `"timeline": [{"time": string, "advice": string}], ` +
+    `"stops": [{"name": string, "lat": number, "lon": number, "when": string, "lookFor": string}], ` +
     `"lures": [string], ` +
     (webSearch ? `"sources": [{"title": string, "url": string, "asOf": string}], ` : '') +
     `"notes": string}\n\n` +
     `Rules: 4-6 timeline blocks across the fishable day (dawn to dusk), each tying location + presentation to the ` +
     `feeding windows and weather. Be specific to this water and season. ` +
     `Hard limits so the plan fits on a phone: "summary" under 30 words, each "advice" under 30 words, ` +
-    `at most 5 lures, "notes" under 25 words. Plain language a working angler uses — no jargon. ` +
+    `at most 5 lures, at most 5 stops with "lookFor" under 30 words each, "notes" under 25 words. Plain language a working angler uses — no jargon. ` +
     `If conditions look tough, say so honestly. Do not invent regulations, reports or sources.`;
 
   let text = '';
@@ -195,6 +226,11 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   }
 
   const parsed = extractJson(text);
+  // Snap the stops to real places (and drop invented ones) before anything is
+  // cached or shown — the map must never show a coordinate the model made up.
+  if (parsed && typeof parsed === 'object') {
+    (parsed as Record<string, unknown>).stops = snapStops((parsed as Record<string, unknown>).stops, candidates);
+  }
   const content = parsed && typeof parsed === 'object' ? { ...(parsed as object), inputs } : parsed;
   if (!content) {
     // eslint-disable-next-line no-console
