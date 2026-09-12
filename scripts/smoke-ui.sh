@@ -97,6 +97,15 @@ if ! grep -q 'id="c-msgs"[^>]*data-wired="1"' "$TMP/friends.html"; then
   fi
 fi
 
+# Every help topic must be reachable from somewhere in the app. A registry
+# entry nobody can open is the same as no explanation at all.
+TOPICS="$(grep -oE '^  [a-z]+:\{t:' "$REPO_DIR/public/index.html" | sed 's/:{t:$//' | tr -d ' ' | sort -u)"
+for topic in $TOPICS; do
+  if ! grep -qE "data-help=\"$topic\"|helpBtn\('$topic'\)" "$REPO_DIR/public/index.html"; then
+    echo "[smoke] FAIL help — topic '$topic' is explained but nothing opens it"; FAIL=1
+  fi
+done
+
 # No stray attribute names that nothing listens for.
 if grep -qE 'data-(goto|navto|view)=' "$TMP/today.html"; then
   echo "[smoke] FAIL today — button uses an attribute no handler reads: $(grep -oE 'data-(goto|navto|view)="[^"]*"' "$TMP/today.html" | head -1)"; FAIL=1

@@ -1050,7 +1050,7 @@ body.feed-loading .stat-v *{visibility:hidden}
 
   <details class="sec" id="secWeek">
   <summary class="sec-t">The next 7 days</summary>
-  <p class="lede">Tap a day for the reasoning.</p>
+  <p class="lede">Tap a day for the reasoning. <button class="hbtn" data-help="score" aria-label="How is the score worked out?">ⓘ How the score works</button></p>
   <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
   <div class="note" id="bestNote" hidden></div>
 
@@ -1066,10 +1066,10 @@ body.feed-loading .stat-v *{visibility:hidden}
     <div class="live-grid">
       <div class="stat"><div class="stat-k">Air now</div><div class="stat-v" id="temp">—</div></div>
       <div class="stat"><div class="stat-k">Today</div><div class="stat-v" id="hilo">—</div></div>
-      <div class="stat"><div class="stat-k">Wind</div><div class="stat-v" id="wind">—</div></div>
-      <div class="stat"><div class="stat-k">Pressure</div><div class="stat-v" id="pres">—</div></div>
-      <div class="stat"><div class="stat-k">Moon</div><div class="stat-v" id="moonv">—</div></div>
-      <div class="stat"><div class="stat-k">Lake level</div><div class="stat-v" id="levelv">—</div></div>
+      <div class="stat"><div class="stat-k">Wind <button class="hbtn" data-help="wind" aria-label="What does this mean?">ⓘ</button></div><div class="stat-v" id="wind">—</div></div>
+      <div class="stat"><div class="stat-k">Pressure <button class="hbtn" data-help="pressure" aria-label="What does this mean?">ⓘ</button></div><div class="stat-v" id="pres">—</div></div>
+      <div class="stat"><div class="stat-k">Moon <button class="hbtn" data-help="moon" aria-label="What does this mean?">ⓘ</button></div><div class="stat-v" id="moonv">—</div></div>
+      <div class="stat"><div class="stat-k">Lake level <button class="hbtn" data-help="level" aria-label="What does this mean?">ⓘ</button></div><div class="stat-v" id="levelv">—</div></div>
       <div class="stat"><div class="stat-k">Top pick</div><div class="stat-v" id="pick" style="font-size:1.1rem">—</div></div>
     </div>
     <div class="verdict" id="verdict">Reading conditions…</div>
@@ -1107,12 +1107,13 @@ body.feed-loading .stat-v *{visibility:hidden}
 
 <section class="panel" id="p-plan" hidden>
   <div id="brief"></div>
-  <p class="lede">Sun, moon, the dark window, and which bank the wind is loading up.</p>
+  <p class="lede">Sun, moon, the dark window, and which bank the wind is loading up.
+     <button class="hbtn" data-help="plan" aria-label="How the AI plan is built">ⓘ How the plan is built</button></p>
   <div class="dsel" id="dsel"></div>
   <div class="astro" id="astro"></div>
   <div class="dark" id="darkwin"></div>
   <div id="solunar"></div>
-  <h3>Hour by hour</h3>
+  <h3>Hour by hour <button class="hbtn" data-help="hourly" aria-label="How is this worked out?">ⓘ</button></h3>
   <div class="hours" id="hours"></div>
   <div class="hrlab" id="hrlab"></div>
   <div class="hkey">
@@ -1202,7 +1203,8 @@ body.feed-loading .stat-v *{visibility:hidden}
 </section>
 
 <section class="panel" id="p-water" hidden>
-  <p class="lede">Water temperature drives everything. The calendar is only a guess at it.</p>
+  <p class="lede">Water temperature drives everything. The calendar is only a guess at it.
+     <button class="hbtn" data-help="watertemp" aria-label="About water temperature">ⓘ What this number means</button></p>
   <div class="form" style="margin-bottom:22px">
     <div class="manual-row">
       <label for="wtIn" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Surface temp</label>
@@ -1213,7 +1215,7 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
   </div>
   <div id="waterOut"></div>
-  <h3>Thermocline</h3>
+  <h3>Thermocline <button class="hbtn" data-help="thermocline" aria-label="What is a thermocline?">ⓘ</button></h3>
   <p class="lede">When you see the fuzzy band on 2D CHIRP, log its depth. Every summer depth call should stay above it — there's little oxygen below.</p>
   <div class="manual" style="border:1px solid var(--border);border-radius:var(--rc)">
     <div class="manual-row">
@@ -1225,7 +1227,10 @@ body.feed-loading .stat-v *{visibility:hidden}
     </div>
   </div>
   <div id="thermoOut"></div>
-  <h3>Lake level</h3>
+  <h3>Water being moved <button class="hbtn" data-help="release" aria-label="About dam releases">ⓘ</button></h3>
+  <div id="releaseOut"><p class="snap">Checking whether this lake sits below a dam…</p></div>
+
+  <h3>Lake level <button class="hbtn" data-help="level" aria-label="About lake level">ⓘ</button></h3>
   <div id="levelOut"></div>
   <div class="formfoot">
     <input type="number" id="lvIn" step="0.1" placeholder="691.5" inputmode="decimal"
@@ -1239,7 +1244,8 @@ body.feed-loading .stat-v *{visibility:hidden}
 
 <section class="panel" id="p-species" hidden>
   <div id="aiGuideBox" style="margin-bottom:18px"></div>
-  <p class="lede">Where to go, how to fish it, what to use. Tactics change with the goal — flip the switch above.</p>
+  <p class="lede">Where to go, how to fish it, what to use. Tactics change with the goal — flip the switch above.
+     <button class="hbtn" data-help="species" aria-label="Where this comes from">ⓘ Where this comes from</button></p>
   <div class="species" id="species"></div>
 </section>
 
@@ -1650,7 +1656,8 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div id="sharingAuth" class="lede" hidden>Sign in to set your sharing defaults.</div>
   <div id="sharingMain">
     
-    <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.</p>
+    <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.
+       <button class="hbtn" data-help="sharing" aria-label="How sharing works">ⓘ How sharing works</button></p>
     <div id="shDefaults" class="shareGrid"></div>
     <div class="formfoot" style="margin-top:10px"><button class="btn" id="shDefSave">Save defaults</button><span class="snap" id="shDefMsg" style="color:var(--muted)"></span></div>
   </div>
@@ -1695,7 +1702,8 @@ body.feed-loading .stat-v *{visibility:hidden}
     <div class="fr-card" style="margin-bottom:18px">
       <b>How did it fish?</b>
       <p class="lede" style="margin:6px 0 10px">A couple of lines is plenty — where you were, what the water was
-         doing, what worked. Your report helps the planner and anyone fishing here next.</p>
+         doing, what worked. Your report helps the planner and anyone fishing here next.
+         <button class="hbtn" data-help="reports" aria-label="Where reports come from">ⓘ Where these come from</button></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <label class="snap" for="rpDate" style="align-self:center">Day you fished</label>
         <input type="date" id="rpDate" class="fr-in" style="max-width:180px">
@@ -1785,6 +1793,15 @@ body.feed-loading .stat-v *{visibility:hidden}
   .mk-price{font-weight:700;font-size:17px;color:var(--primary-dark)}
   .mk-sold{position:relative}
   .mk-sold .mk-shot,.mk-sold .mk-noshot{opacity:.45}
+  .hbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 4px;line-height:1;vertical-align:middle}
+  .hbtn:hover{color:var(--primary)}
+  .hmodal{position:fixed;inset:0;background:rgba(16,35,63,.55);display:flex;align-items:center;justify-content:center;z-index:2100;padding:18px}
+  .hbox{background:var(--surface);border:1px solid var(--border);border-radius:18px;max-width:520px;width:100%;max-height:80vh;overflow:auto;box-shadow:var(--lift)}
+  .hhead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);font-size:15px;position:sticky;top:0;background:var(--surface)}
+  .hclose{background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted)}
+  .hbody{padding:14px 16px;font-size:14px;line-height:1.55}
+  .hbody p{margin:0 0 10px}
+  .hbody p:last-child{margin-bottom:0}
   .nt-bell{position:relative;background:none;border:none;font-size:19px;cursor:pointer;padding:6px 8px;border-radius:10px;line-height:1}
   .nt-bell:hover{background:var(--accent-soft)}
   .nt-desk{align-self:flex-start}
@@ -2557,6 +2574,44 @@ function bankAdvice(dir,spd){
 }
 
 /* ============ day scoring ============ */
+/* How water temperature moves a bite.
+   Air temperature is a proxy the score already uses; water temperature is the
+   thing itself — it sets metabolism, and therefore how often a fish eats. The
+   number comes from the nearest USGS gauge when there is one, and from a
+   seasonal estimate when there isn't — and an estimate is labelled as one in
+   the reason, so a guess is never presented as a reading.
+
+   The curve is deliberately broad, because it has to hold for a lake full of
+   different species: below 45°F almost everything slows down, 58-82°F is where
+   most freshwater fish feed hardest, and above 88°F warm water holds less
+   oxygen and the daytime bite falls apart. */
+function waterTempScore(t,estimated){
+  if(t==null)return {pts:0};
+  const n=Math.round(t), w='water '+n+'°'+(estimated?' (seasonal estimate)':'');
+  // An estimate is a weaker signal than a gauge reading, so it moves the score
+  // less. Being confidently wrong about water temperature is worse than being
+  // vague about it.
+  const k=estimated?0.5:1;
+  const at=(pts,label,good)=>({pts:Math.round(pts*k), [good?'plus':'minus']:label});
+  if(t<40) return at(-12, w+' — near-dormant', false);
+  if(t<48) return at(-6,  w+' — cold', false);
+  if(t<58) return at(2,   w+' — warming', true);
+  if(t<=82)return at(10,  w+' — prime', true);
+  if(t<=88)return {pts:0};
+  if(t<=92)return at(-8,  w+' — hot, bite moves early and late', false);
+  return at(-14, w+' — dangerously warm', false);
+}
+/* The moon earns a small say, not a big one. New and full moons line the sun
+   and moon up, which strengthens the daily feeding windows the solunar section
+   already shows — but anyone who has fished a full moon in a cold front knows
+   weather beats it, so this is capped well below the pressure term. */
+function moonScore(dt){
+  const ph=moonPhase(dt).phase;           // 0 = new, 0.5 = full, 1 = new again
+  const near=Math.min(Math.abs(ph-0), Math.abs(ph-0.5), Math.abs(ph-1));
+  if(near<0.06) return {pts:6, plus:(Math.abs(ph-0.5)<0.06?'full':'new')+' moon — strong feeding windows'};
+  if(near<0.12) return {pts:3};
+  return {pts:0};
+}
 function scoreDay(d){
   let s=50; const plus=[], minus=[];
   const tp=TRENDS[d.trend];
@@ -2586,6 +2641,14 @@ function scoreDay(d){
 
   if(d.rain>70){s-=10;minus.push('storms likely')}
   else if(d.rain>=30){s+=3;plus.push('showers around')}
+
+  // Water temperature and the moon. Both are the same for every day in the
+  // week, so they move the absolute score — "is it worth going at all" —
+  // rather than the ranking between days.
+  const wt=waterTempScore(waterTemp!=null?waterTemp:estWater(), waterTemp==null);
+  s+=wt.pts; if(wt.plus)plus.push(wt.plus); if(wt.minus)minus.push(wt.minus);
+  const mn=moonScore(new Date(d.start.valueOf()+12*3600000));
+  s+=mn.pts; if(mn.plus)plus.push(mn.plus);
 
   s=Math.max(5,Math.min(98,Math.round(s)));
   return {score:s, plus:plus, minus:minus};
@@ -2781,7 +2844,7 @@ function drawBestDays(){
   $('bestNote').hidden=false;
   $('bestNote').innerHTML='<b>Pick of the week: '+(idx===0?'today':DOW[win.start.getDay()]+' '+(win.start.getMonth()+1)+'/'+win.start.getDate())+
     '.</b> '+(win.plus.length?win.plus.join(', ')+'. ':'')+
-    'Scores are a heuristic, not a forecast of fish. They weigh pressure trend heaviest, then wind, cloud, temperature and rain \u2014 the things that reliably move a bite. Use it to choose between days, not to decide whether to go at all.';
+    'Scores are a heuristic, not a forecast of fish. They weigh pressure trend heaviest, then wind, cloud, air temperature and rain, plus water temperature and the moon \u2014 the things that reliably move a bite. Water temperature and moon are the same all week, so they shift every score together: use the ranking to choose between days, and the number to judge whether the week is worth taking off work for.';
 }
 
 function drawDaySel(){
@@ -2840,7 +2903,7 @@ function drawDayPlan(){
   }
 
   const sol=solunarTimes(d.start);
-  $('solunar').innerHTML='<div class="sol"><b>Feeding windows</b> <span class="snap">(moon overhead, underfoot, rise and set)</span>: '+
+  $('solunar').innerHTML='<div class="sol"><b>Feeding windows</b>'+helpBtn('solunar')+' <span class="snap">(moon overhead, underfoot, rise and set)</span>: '+
     [['Major',sol.major1],['Major',sol.major2],['Minor',sol.minor1],['Minor',sol.minor2]]
     .filter(x=>x[1]).sort((a,b)=>a[1].start-b[1].start)
     .map(x=>x[0].toLowerCase()+' <b>'+fmtT(x[1].start)+'–'+fmtT(x[1].end)+'</b>')
@@ -4891,6 +4954,7 @@ function go(id,push){
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
+  if(id==='water'){ loadRelease(); }
   if(id==='feed'){ loadSocialFeed(); }
   if(id==='alerts'){ loadAlerts(); }
   if(id==='market'){ loadMarket(); }
@@ -5691,6 +5755,110 @@ document.addEventListener('click',async function(e){
     return;
   }
 });
+
+/* ================= "what does this number mean?" =================
+   Every figure the app shows is the output of a decision, and a number whose
+   meaning you have to guess is worse than no number. Each one carries a small
+   ⓘ that opens a plain-language explanation of what it is, where it comes
+   from, and — the part most apps leave out — how much to trust it.
+
+   Kept as one registry rather than title= attributes: tooltips do not exist on
+   a phone, which is where this app is actually used. */
+const HELP={
+  score:{t:'The day score',b:
+    '<p>A 5–98 rating of how favourable the <b>conditions</b> look, not a prediction of fish. It weighs, in order of influence: '+
+    'barometric trend, wind, cloud cover, air temperature, rain, water temperature and the moon.</p>'+
+    '<p><b>Go</b> 80+ · <b>Good</b> 68–79 · <b>Fair</b> 55–67 · <b>Slow</b> 42–54 · <b>Poor</b> under 42.</p>'+
+    '<p>Water temperature and the moon are the same for every day in the week, so they lift or drop the whole week together. '+
+    'Use the <b>ranking</b> to pick your day and the <b>number</b> to judge the week. A 90 does not promise a limit, and good anglers catch fish on 30s.</p>'},
+  pressure:{t:'Barometric trend',b:
+    '<p>The direction air pressure is moving over the last several hours — the single most reliable weather signal for a bite.</p>'+
+    '<p><b>Falling</b> means weather is building: fish feed ahead of a front, and the hours before it arrives are the best window there is. '+
+    '<b>Rising</b> means the front has passed — bluebird skies, fish tight to cover, the hardest day of the cycle. <b>Steady</b> gives no edge either way; fish the season.</p>'+
+    '<p>Read the arrow, not the absolute number: 30.05 and falling beats 30.20 and rising.</p>'},
+  solunar:{t:'Feeding windows (solunar)',b:
+    '<p>Times when the moon is directly overhead or underfoot (<b>majors</b>, typically stronger) and when it rises or sets (<b>minors</b>). '+
+    'Fish activity tends to lift during these periods.</p>'+
+    '<p>Treat it as a tiebreaker, not a rule. A major window during a cold front is still a cold front; a major window that lands at dawn on a falling barometer is worth setting an alarm for. '+
+    'Windows are calculated from the lake’s own coordinates, so they are right for your water rather than your time zone.</p>'},
+  moon:{t:'Moon phase',b:
+    '<p>How much of the moon is lit. New and full moons line the sun and moon up, which strengthens the daily feeding windows and, on many lakes, pulls spawning cycles.</p>'+
+    '<p>It earns a small say in the score — capped well below weather, because a full moon in a post-frontal bluebird is still a hard day.</p>'},
+  watertemp:{t:'Water temperature',b:
+    '<p>The number that governs how often a fish eats. Below about 48°F most species slow right down; 58–82°F is where they feed hardest; above 88°F warm water carries less oxygen and the daytime bite falls apart.</p>'+
+    '<p>Where we can, this is a <b>real reading</b> from the nearest USGS gauge, dated. Where there is no gauge we fall back to a <b>seasonal estimate</b> and label it as one — and an estimate counts for half as much in the score, because being confidently wrong about water temperature is worse than being vague.</p>'+
+    '<p>Log your own reading from your graph and it replaces the estimate.</p>'},
+  level:{t:'Lake level',b:
+    '<p>Surface elevation from the nearest gauge, against normal pool. What matters is usually the <b>direction</b>: water coming up pushes fish shallow into newly flooded cover; water falling pulls them off the bank and onto the first drop.</p>'+
+    '<p>A lake several feet low fishes like a smaller lake — the same fish in less water, which concentrates them.</p>'},
+  release:{t:'Dam release / generation',b:
+    '<p>How much water the dam is moving, from the Corps of Engineers. On a regulated lake this beats almost everything else: current pulls bait, bait pulls fish, and the bite turns on and off with the water.</p>'+
+    '<p>If generation is running, fish current seams and the ends of points. If it is off, expect a slower, more structure-oriented day.</p>'},
+  thermocline:{t:'Thermocline',b:
+    '<p>In summer, a lake separates into a warm upper layer and a cold lower one, with a sharp temperature break between them. Below that break there is often too little oxygen to hold fish.</p>'+
+    '<p>When one is set up, it puts a floor under your fishing: there is little point working baits below it. It breaks down in autumn when the surface cools and the lake turns over — which is also why the bite goes strange for a week or two.</p>'},
+  hourly:{t:'Hour-by-hour quality',b:
+    '<p>A 1–5 rating for each hour, built from sunrise and sunset, the feeding windows, the hourly temperature and the cloud cover.</p>'+
+    '<p>The first two hours of light and the last two before dark carry the most weight, because on most water they genuinely are the best hours. A hot, cloudless midday scores low for the same reason.</p>'},
+  wind:{t:'Wind',b:
+    '<p>A light chop is your friend: it breaks up the surface, cuts the light and pushes plankton — and therefore bait — against a bank. Dead calm makes fish spooky; over about 20 mph it becomes a boat-handling problem more than a fishing one.</p>'+
+    '<p>Direction matters for <b>where</b>, not whether: fish the bank the wind is blowing into, and use the lake’s own shape to find one that is fishable.</p>'},
+  plan:{t:'The AI day plan',b:
+    '<p>An hour-by-hour plan written for one lake, one date and one target, built from the conditions above, this lake’s profile, recent fishing reports we have collected, dam-release data where it exists, and a web search for recent local reports.</p>'+
+    '<p>It is an opinion from a well-read guide, not a guarantee. Where reports about your lake disagree with the general pattern, the plan is told to trust the reports and say so. If it found nothing useful about your water, it says that too rather than padding with generic advice.</p>'+
+    '<p>Rate it with 👍/👎 — that is what tells us whether the advice is any good.</p>'},
+  reports:{t:'Fishing reports',b:
+    '<p>Three sources, oldest-school first: <b>anglers</b> who post here after fishing, <b>agency</b> feeds (state fish &amp; wildlife, TPWD and the like) fetched every six hours, and the <b>Corps of Engineers</b> for lake operations.</p>'+
+    '<p>We only store an item that actually names your lake, and we drop pages that load but say nothing — that is why a source can be active and still show no reports.</p>'},
+  species:{t:'Species and seasons',b:
+    '<p>For a new lake, the species list and seasonal profile are generated by AI from what is publicly known about that water, then sharpened as you and your crew log real catches. Your own log always outranks it.</p>'+
+    '<p>If something reads wrong for water you know well, log a catch that says otherwise — that is what changes it.</p>'},
+  sharing:{t:'Who can see this',b:
+    '<p>Every spot, catch and waypoint carries its own setting: <b>just you</b>, <b>friends</b>, <b>a group</b>, or <b>everyone</b>. The default is whatever you set under Settings → Sharing; changing the default never changes anything you already shared.</p>'+
+    '<p>Group sharing has a second lock: each member decides what that group sees of their spots, catches and waypoints, and a group owner can turn data sharing off entirely.</p>'}
+};
+function helpBtn(id){ return HELP[id]?'<button class="hbtn" data-help="'+id+'" aria-label="What does this mean?">ⓘ</button>':''; }
+function openHelp(id){
+  const h=HELP[id]; if(!h)return;
+  const el=document.createElement('div');
+  el.className='hmodal';
+  el.innerHTML='<div class="hbox" role="dialog" aria-modal="true" aria-label="'+escHtml(h.t)+'">'+
+    '<div class="hhead"><b>'+escHtml(h.t)+'</b><button class="hclose" aria-label="Close">✕</button></div>'+
+    '<div class="hbody">'+h.b+'</div></div>';
+  el.addEventListener('click',function(e){ if(e.target===el||e.target.closest('.hclose'))el.remove(); });
+  document.body.appendChild(el);
+  const esc=function(e){ if(e.key==='Escape'){ el.remove(); document.removeEventListener('keydown',esc); } };
+  document.addEventListener('keydown',esc);
+}
+document.addEventListener('click',function(e){
+  const b=e.target.closest('[data-help]');
+  if(b){ e.preventDefault(); openHelp(b.dataset.help); }
+});
+
+/* ---- dam release ----
+   On a regulated lake, current is the day's biggest variable — the planner has
+   used this for months, and until now the angler could not see it. Cached
+   server-side, so opening the page repeatedly is cheap. */
+async function loadRelease(){
+  const box=$('releaseOut'); if(!box)return;
+  if(!AUTH.user||!ACTIVE.id){ box.innerHTML='<p class="snap">Sign in to see dam data for this lake.</p>'; return; }
+  try{
+    const r=await apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/release');
+    if(!r.ok){ box.innerHTML='<p class="snap">Could not reach the dam data just now.</p>'; return; }
+    const d=(await r.json()).release;
+    if(!d){ box.innerHTML='<p class="snap">No Corps of Engineers dam publishes release data for this water — nothing to watch here.</p>'; return; }
+    const on=d.generatingNow;
+    box.innerHTML='<div class="live" style="margin-top:0"><div class="live-top"><span class="dot"></span>'+
+      '<span>'+escHtml(d.project)+(d.latestAt?' · reading '+whenAgo(d.latestAt):'')+'</span></div>'+
+      '<div class="live-grid">'+
+        '<div class="stat"><div class="stat-k">Right now</div><div class="stat-v">'+(on?'Moving':'Slack')+'</div></div>'+
+        '<div class="stat"><div class="stat-k">Latest</div><div class="stat-v">'+(d.latestCfs!=null?d.latestCfs:'—')+'<small> '+escHtml(d.units||'cfs')+'</small></div></div>'+
+        '<div class="stat"><div class="stat-k">Peak, 24h</div><div class="stat-v">'+(d.peakCfs!=null?d.peakCfs:'—')+'<small> '+escHtml(d.units||'cfs')+'</small></div></div>'+
+        '<div class="stat"><div class="stat-k">Hours moving</div><div class="stat-v">'+d.hoursMoving+'<small>/'+d.hoursSeen+'</small></div></div>'+
+      '</div>'+
+      '<div class="verdict">'+escHtml(d.summary||'')+'</div></div>';
+  }catch(e){ box.innerHTML='<p class="snap">Could not reach the dam data just now.</p>'; }
+}
 
 /* ---- fishing reports ----
    Agency feeds and anglers who were actually there, newest first. These feed

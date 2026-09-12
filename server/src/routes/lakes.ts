@@ -7,6 +7,7 @@ import { generateLakeProfile } from '../services/aiProfile';
 import { enrichLake } from '../services/enrichLake';
 import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 import { rampsForLake } from '../services/ramps';
+import { releaseFor, summarizeRelease } from '../services/corps';
 
 const GRANBURY_OSM_REF = 'seed:lake-granbury';
 
@@ -177,6 +178,36 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     }
     const { ramps, source } = await rampsForLake(String((req.params as { id: string }).id));
     return reply.send({ ramps, source });
+  });
+
+  /**
+   * Dam release for this lake, if it sits below a Corps project.
+   *
+   * The planner has used this for a while; anglers could not see it. On a
+   * regulated lake it is often the strongest single signal of the day — bait
+   * moves with the current and fish set up on it — so it belongs on the water
+   * page, not only inside a prompt.
+   */
+  app.get('/api/lakes/:id/release', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const id = String((req.params as { id: string }).id);
+    const release = await releaseFor(id).catch(() => null);
+    if (!release) return reply.send({ release: null });
+    const last = release.readings[release.readings.length - 1];
+    return reply.send({
+      release: {
+        project: release.project,
+        units: release.units,
+        generatingNow: release.generatingNow,
+        latestCfs: last ? Math.round(last.cfs) : null,
+        latestAt: last ? last.at : null,
+        peakCfs: release.peakCfs ? Math.round(release.peakCfs) : null,
+        hoursMoving: release.readings.filter((r: { cfs: number }) => r.cfs > 0).length,
+        hoursSeen: release.readings.length,
+        summary: summarizeRelease(release),
+      },
+    });
   });
 
   // Lake detail + its profile (AI or hand-verified).
