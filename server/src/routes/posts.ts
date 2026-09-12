@@ -239,13 +239,15 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
+        status: true,
         id: true, displayName: true, avatarUrl: true, location: true, bio: true,
         favoriteSpecies: true, favoriteLure: true, hasBoat: true, boatType: true,
         yearsFishing: true, createdAt: true, discoverability: true,
         favoriteLake: { select: { id: true, name: true } },
       },
     });
-    if (!user) return reply.code(404).send({ error: 'No such angler.' });
+    // A closed account has no page. Same answer as a made-up id, on purpose.
+    if (!user || user.status !== 'active') return reply.code(404).send({ error: 'No such angler.' });
 
     const mine = id === me.id;
     const friend = mine || (await areFriends(me.id, id));
@@ -276,7 +278,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       prisma.friendship.count({ where: { status: 'accepted', OR: [{ userId: id }, { friendId: id }] } }),
     ]);
 
-    const { discoverability: _d, ...profile } = user;
+    const { discoverability: _d, status: _s, ...profile } = user;
     return {
       user: { ...profile, isMe: mine, isFriend: friend, friendCount },
       posts: posts.map((p) => shape(p, me.id, liked)),

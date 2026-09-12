@@ -114,7 +114,7 @@ export function summarise(rows: CatchRow[]): SpeciesKnowledge[] {
 export async function knowledgeFor(lakeId: string): Promise<SpeciesKnowledge[]> {
   const rows = await prisma.trip.findMany({
     // Private means private, even inside a statistic.
-    where: { lakeId, visibility: { not: 'private' }, species: { not: null } },
+    where: { lakeId, visibility: { not: 'private' }, species: { not: null }, user: { status: 'active' } },
     select: { species: true, weight: true, lure: true, date: true, userId: true, waterTempF: true, pressureTrend: true },
     orderBy: { date: 'desc' },
     take: 2000,

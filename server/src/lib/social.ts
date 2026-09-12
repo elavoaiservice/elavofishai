@@ -6,7 +6,17 @@ export async function friendIds(userId: string): Promise<string[]> {
     where: { status: 'accepted', OR: [{ userId }, { friendId: userId }] },
     select: { userId: true, friendId: true },
   });
-  return fs.map((f) => (f.userId === userId ? f.friendId : f.userId));
+  const ids = fs.map((f) => (f.userId === userId ? f.friendId : f.userId));
+  if (!ids.length) return ids;
+  // A deleted or suspended angler drops out of every list that runs through
+  // here — the feed, the map, the group pages. Marking an account deleted used
+  // to hide it only from its owner: their catches, spots and wall carried on
+  // being served to everyone else, which is the opposite of what delete means.
+  const live = await prisma.user.findMany({
+    where: { id: { in: ids }, status: 'active' },
+    select: { id: true },
+  });
+  return live.map((u) => u.id);
 }
 
 // Has either user blocked the other? Blocking is stored as a Friendship row

@@ -11,7 +11,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { prisma } from '../src/db';
 import { needsRenewal } from '../src/lib/auth';
 import { ADMIN_SESSION_MS, ADMIN_SESSION_HOURS } from '../src/lib/admin-auth';
-import { as, closeApp, getApp, HAS_DB, resetDb, signIn, type TestUser } from './helpers';
+import { HAS_DB, as, closeApp, getApp, makeLake, resetDb, signIn, type TestUser } from './helpers';
 
 const DAY = 86400000;
 
@@ -103,5 +103,47 @@ describe('a deleted account stops working immediately', { skip: HAS_DB ? false :
     const me = await signIn('odd@example.com');
     await prisma.user.update({ where: { id: me.id }, data: { status: 'deleted' } });
     assert.equal((await as(me, { method: 'GET', url: '/api/friends' })).statusCode, 401);
+  });
+});
+
+describe('a closed account disappears from everyone else, not just its owner', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () => {
+  before(getApp);
+  after(closeApp);
+
+  test('their catches, wall and searchability all go with the account', async () => {
+    await resetDb();
+    const gone = await signIn('gone@example.com');
+    const mate = await signIn('mate@example.com');
+    const lakeId = await makeLake();
+    await prisma.friendship.create({ data: { userId: gone.id, friendId: mate.id, requestedBy: gone.id, status: 'accepted' } });
+    await as(gone, {
+      method: 'POST',
+      url: `/api/lakes/${lakeId}/catches`,
+      payload: { species: 'Largemouth bass', visibility: 'friends' },
+    });
+
+    // While the account is live, the friend sees the catch and the page.
+    const before = (await as(mate, { method: 'GET', url: `/api/lakes/${lakeId}/feed` })).json() as { catches: unknown[] };
+    assert.equal(before.catches.length, 1);
+    assert.equal((await as(mate, { method: 'GET', url: `/api/users/${gone.id}/wall` })).statusCode, 200);
+
+    // Deleting used to hide the account from its owner and nobody else.
+    await prisma.user.update({ where: { id: gone.id }, data: { status: 'deleted', deletedAt: new Date() } });
+
+    const after = (await as(mate, { method: 'GET', url: `/api/lakes/${lakeId}/feed` })).json() as { catches: unknown[] };
+    assert.equal(after.catches.length, 0);
+    assert.equal((await as(mate, { method: 'GET', url: `/api/users/${gone.id}/wall` })).statusCode, 404);
+    const search = (await as(mate, { method: 'POST', url: '/api/friends/request', payload: { email: 'gone@example.com' } })).statusCode;
+    assert.equal(search, 404);
+  });
+
+  test('a suspended angler is hidden the same way', async () => {
+    await resetDb();
+    const bad = await signIn('bad@example.com');
+    const mate = await signIn('mate@example.com');
+    await prisma.friendship.create({ data: { userId: bad.id, friendId: mate.id, requestedBy: bad.id, status: 'accepted' } });
+    await prisma.user.update({ where: { id: bad.id }, data: { status: 'suspended' } });
+    const friends = (await as(mate, { method: 'GET', url: '/api/friends' })).json() as { friends: unknown[] };
+    assert.equal(friends.friends.length, 0);
   });
 });

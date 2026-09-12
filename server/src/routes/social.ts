@@ -32,12 +32,18 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!me) return;
     const rows = await prisma.friendship.findMany({
       where: { OR: [{ userId: me.id }, { friendId: me.id }] },
-      include: { user: { select: { id: true, displayName: true, email: true } }, friend: { select: { id: true, displayName: true, email: true } } },
+      include: {
+        user: { select: { id: true, displayName: true, email: true, status: true } },
+        friend: { select: { id: true, displayName: true, email: true, status: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     const friends: unknown[] = [], incoming: unknown[] = [], outgoing: unknown[] = [], blocked: unknown[] = [];
     for (const r of rows) {
-      const other = r.userId === me.id ? r.friend : r.user;
+      const withStatus = r.userId === me.id ? r.friend : r.user;
+      // A closed or suspended account leaves every list, not just the feed.
+      if (withStatus.status !== 'active') continue;
+      const { status: _s, ...other } = withStatus;
       if (r.status === 'accepted') friends.push({ friendshipId: r.id, ...other });
       else if (r.status === 'pending') {
         if (r.requestedBy === me.id) outgoing.push({ friendshipId: r.id, ...other });
@@ -61,7 +67,8 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const target = userId
       ? await prisma.user.findUnique({ where: { id: userId } })
       : await prisma.user.findUnique({ where: { email } });
-    if (!target) return reply.code(404).send({ error: 'No ElavoFishAI user with that email yet — invite them to sign up!' });
+    // A closed account is not findable by address either.
+    if (!target || target.status !== 'active') return reply.code(404).send({ error: 'No ElavoFishAI user with that email yet — invite them to sign up!' });
     if (target.id === me.id) return reply.code(400).send({ error: "That's you!" });
     const existing = await prisma.friendship.findFirst({
       where: { OR: [{ userId: me.id, friendId: target.id }, { userId: target.id, friendId: me.id }] },

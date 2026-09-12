@@ -80,6 +80,11 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
 
     const mine = photo.userId === me.id;
     if (!mine) {
+      // A closed account's pictures go with it.
+      const owner = await prisma.user.findUnique({ where: { id: photo.userId }, select: { status: true } });
+      if (!owner || owner.status !== 'active') return reply.code(404).send({ error: 'No such photo.' });
+    }
+    if (!mine) {
       // Blocked either way: the photo does not exist as far as they're concerned.
       if ((await blockState(me.id, photo.userId)) !== 'none') return reply.code(404).send({ error: 'No such photo.' });
 
