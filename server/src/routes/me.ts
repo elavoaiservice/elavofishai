@@ -36,7 +36,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, favoriteLakeId: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
-        plotterBrand: true, ffsBrand: true, discoverability: true,
+        plotterBrand: true, ffsBrand: true, discoverability: true, postDefault: true,
         termsAcceptedAt: true, termsVersion: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         messagePrivacy: true, createdAt: true,
@@ -102,6 +102,16 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       data.discoverability = d;
     }
 
+    // Where a new post goes when they don't choose. Friends by default; public
+    // only if the angler has said so here or per post.
+    if ('postDefault' in b) {
+      const v = String(b.postDefault || '').toLowerCase();
+      if (!['private', 'friends', 'public'].includes(v)) {
+        return reply.code(400).send({ error: 'Post default must be private, friends or public.' });
+      }
+      data.postDefault = v;
+    }
+
     if ('messagePrivacy' in b) {
       const mp = String(b.messagePrivacy || '').toLowerCase();
       if (!MESSAGE_PRIVACY_CHOICES.includes(mp)) return reply.code(400).send({ error: 'Invalid message setting.' });
@@ -124,7 +134,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
         id: true, email: true, displayName: true, username: true, avatarUrl: true,
         location: true, bio: true, favoriteSpecies: true, messagePrivacy: true,
         favoriteLure: true, hasBoat: true, boatType: true, yearsFishing: true, onboardedAt: true,
-        plotterBrand: true, ffsBrand: true, discoverability: true,
+        plotterBrand: true, ffsBrand: true, discoverability: true, postDefault: true,
         termsAcceptedAt: true, termsVersion: true,
         favoriteLake: { select: { id: true, name: true, region: true } },
         createdAt: true,

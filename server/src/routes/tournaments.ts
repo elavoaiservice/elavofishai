@@ -55,6 +55,8 @@ function shape(
     lake: t.lake,
     isHost: t.hostId === meId,
     myStatus: mine ? mine.status : null,
+    resultsNote: (t as { resultsNote?: string | null }).resultsNote ?? null,
+    entered: (t as { _count?: { catches: number } })._count?.catches ?? 0,
     counts: {
       in: t.entries.filter((e) => e.status === 'in').length,
       out: t.entries.filter((e) => e.status === 'out').length,
@@ -66,6 +68,7 @@ function shape(
 }
 
 const INCLUDE = {
+  _count: { select: { catches: true } },
   host: { select: { id: true, displayName: true, avatarUrl: true } },
   lake: { select: { id: true, name: true } },
   entries: {
@@ -85,7 +88,109 @@ export async function tournamentsForGroup(groupId: string, meId: string) {
   return rows.map((t) => shape(t, meId));
 }
 
+/**
+ * May this catch be entered in this tournament? Right lake, inside the window,
+ * tournament still open, and the angler said they were fishing it. Anything
+ * else and the board would show a fish that does not belong on it.
+ */
+export async function eligibleForTournament(
+  userId: string,
+  tournamentId: string,
+  lakeId: string,
+  caughtAt: Date
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const t = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { lakeId: true, startsAt: true, endsAt: true, status: true, entries: { where: { userId }, select: { status: true } } },
+  });
+  if (!t) return { ok: false, reason: 'No such tournament.' };
+  if (t.status !== 'open') return { ok: false, reason: 'That tournament is closed.' };
+  if (t.lakeId && t.lakeId !== lakeId) return { ok: false, reason: 'That tournament is on a different lake.' };
+  const at = caughtAt.getTime();
+  // A little slack either side: people log at the ramp, not at the moment of the hookset.
+  if (at < t.startsAt.getTime() - 3600000 || at > t.endsAt.getTime() + 3 * 3600000) {
+    return { ok: false, reason: 'That catch is outside the tournament hours.' };
+  }
+  if (t.entries[0]?.status !== 'in') return { ok: false, reason: "You haven't said you're fishing this tournament." };
+  return { ok: true };
+}
+
+/**
+ * The board, computed from entered catches. Three formats, three sums:
+ *   heaviest_bag — the angler's five heaviest fish, added up
+ *   biggest_fish — their single heaviest
+ *   most_fish    — how many they entered
+ * Weight is what people entered; nothing here was weighed by us, and the UI
+ * says so.
+ */
+export async function resultsFor(tournamentId: string) {
+  const t = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { format: true, species: true, status: true, resultsNote: true },
+  });
+  if (!t) return null;
+  const catches = await prisma.trip.findMany({
+    where: { tournamentId },
+    select: { id: true, userId: true, species: true, weight: true, length: true, date: true, user: { select: { id: true, displayName: true, avatarUrl: true } }, photos: { select: { id: true } } },
+    orderBy: { date: 'asc' },
+  });
+  const byUser = new Map<string, typeof catches>();
+  for (const c of catches) {
+    if (!byUser.has(c.userId)) byUser.set(c.userId, []);
+    byUser.get(c.userId)!.push(c);
+  }
+  const rows = [...byUser.entries()].map(([userId, list]) => {
+    const weights = list.map((c) => c.weight || 0).sort((a, b) => b - a);
+    const bag = weights.slice(0, 5).reduce((a, b) => a + b, 0);
+    const big = weights[0] || 0;
+    const score = t.format === 'biggest_fish' ? big : t.format === 'most_fish' ? list.length : bag;
+    return {
+      user: list[0].user,
+      fish: list.length,
+      bagLb: Math.round(bag * 100) / 100,
+      bigLb: Math.round(big * 100) / 100,
+      score: Math.round(score * 100) / 100,
+      catches: list.map((c) => ({ id: c.id, species: c.species, weight: c.weight, length: c.length, date: c.date, photos: c.photos.map((p) => p.id) })),
+    };
+  });
+  rows.sort((a, b) => b.score - a.score || b.bigLb - a.bigLb);
+  return { format: t.format, species: t.species, status: t.status, resultsNote: t.resultsNote, rows };
+}
+
 export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * Open tournaments on this lake that the angler is fishing — what the catch
+   * form offers as "enter this in…".
+   */
+  app.get('/api/tournaments/active', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const lakeId = String((req.query as { lakeId?: string }).lakeId || '');
+    const now = new Date();
+    const rows = await prisma.tournament.findMany({
+      where: {
+        status: 'open',
+        startsAt: { lte: new Date(now.getTime() + 3600000) },
+        endsAt: { gte: new Date(now.getTime() - 3 * 3600000) },
+        ...(lakeId ? { OR: [{ lakeId }, { lakeId: null }] } : {}),
+        entries: { some: { userId: me.id, status: 'in' } },
+      },
+      select: { id: true, name: true, species: true, format: true, endsAt: true, group: { select: { name: true } } },
+      orderBy: { endsAt: 'asc' },
+    });
+    return { tournaments: rows.map((t) => ({ id: t.id, name: t.name, species: t.species, format: t.format, endsAt: t.endsAt, group: t.group.name })) };
+  });
+
+  app.get('/api/tournaments/:id/results', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const id = String((req.params as { id: string }).id);
+    const t = await prisma.tournament.findUnique({ where: { id }, select: { groupId: true } });
+    if (!t) return reply.code(404).send({ error: 'No such tournament.' });
+    if (!(await roleIn(t.groupId, me.id))) return reply.code(404).send({ error: 'No such tournament.' });
+    return { results: await resultsFor(id) };
+  });
+
   /** Every tournament this angler has been asked about, across their groups. */
   app.get('/api/tournaments', async (req, reply) => {
     const me = await requireUser(req, reply);
@@ -162,6 +267,7 @@ export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
     if (typeof b.entryFee === 'string') data.entryFee = b.entryFee.slice(0, 80) || null;
     if (typeof b.format === 'string' && FORMATS.includes(b.format as (typeof FORMATS)[number])) data.format = b.format;
     if (typeof b.status === 'string' && ['open', 'cancelled', 'done'].includes(b.status)) data.status = b.status;
+    if (typeof b.resultsNote === 'string') data.resultsNote = b.resultsNote.slice(0, 2000) || null;
     if (b.startsAt || b.endsAt) {
       const current = await prisma.tournament.findUniqueOrThrow({ where: { id }, select: { startsAt: true, endsAt: true } });
       const win = parseWindow(b.startsAt || current.startsAt, b.endsAt || current.endsAt);
@@ -173,7 +279,7 @@ export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
 
     // Everyone who said they were fishing it needs to know it moved or was
     // called off — silence here is how someone drives to a cancelled event.
-    if (data.status === 'cancelled' || data.startsAt || data.endsAt) {
+    if (data.status === 'cancelled' || data.status === 'done' || data.startsAt || data.endsAt) {
       const entries = await prisma.tournamentEntry.findMany({
         where: { tournamentId: id, status: { in: ['in', 'maybe', 'invited'] } },
         select: { userId: true },
@@ -186,7 +292,7 @@ export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
           type: 'tournament_changed',
           groupId: t.groupId,
           tournamentId: id,
-          snippet: `${updated.name} — ${data.status === 'cancelled' ? 'cancelled' : 'the time changed'}`,
+          snippet: `${updated.name} — ${data.status === 'cancelled' ? 'cancelled' : data.status === 'done' ? 'results are in' : 'the time changed'}`,
         });
       }
     }

@@ -1051,6 +1051,9 @@ body.feed-loading .stat-v *{visibility:hidden}
   <details class="sec" id="secWeek">
   <summary class="sec-t">The next 7 days</summary>
   <p class="lede">Tap a day for the reasoning. <button class="hbtn" data-help="score" aria-label="How is the score worked out?">ⓘ How the score works</button></p>
+  <div class="soc-row" style="margin:0 0 10px"><label class="snap" for="scoreSpecies">Scoring for</label>
+    <select class="soc-in" id="scoreSpecies" style="max-width:240px"><option value="any">Whatever bites</option></select>
+    <span class="snap" id="scoreSpeciesNote"></span></div>
   <div class="days" id="days"><div class="empty">Waiting on the forecast…</div></div>
   <div class="note" id="bestNote" hidden></div>
 
@@ -1510,6 +1513,7 @@ body.feed-loading .stat-v *{visibility:hidden}
     <h3 style="margin-top:22px">Your friends</h3>
     <div id="frRequests" style="margin-top:12px"></div>
     <div id="frList" style="margin-top:6px"></div>
+    <div id="frSuggested"></div>
 
     <h3 style="margin-top:24px">Groups</h3>
     <p class="lede" style="margin-top:2px">Group friends so you can share with just one crew.</p>
@@ -1659,6 +1663,16 @@ body.feed-loading .stat-v *{visibility:hidden}
     
     <p class="lede" style="margin-top:2px">Who sees a new spot, catch or waypoint when you don't pick something else. Set it once.
        <button class="hbtn" data-help="sharing" aria-label="How sharing works">ⓘ How sharing works</button></p>
+    <div class="fr-card" style="margin:0 0 14px">
+      <div class="fr-row" style="border:none;padding:0;flex-wrap:wrap"><span><b>📰 Posts</b>
+        <span class="snap">Who a new post goes to when you don't choose. Friends unless you open it up — nothing is public by accident.</span></span>
+        <select class="fr-in" id="shPostDefault" style="max-width:220px" aria-label="Default audience for posts">
+          <option value="friends">Friends only</option>
+          <option value="public">Everyone on ElavoFishAI</option>
+          <option value="private">Just me</option>
+        </select></div>
+      <div class="snap" id="shPostMsg" style="margin-top:6px"></div>
+    </div>
     <div id="shDefaults" class="shareGrid"></div>
     <div class="formfoot" style="margin-top:10px"><button class="btn" id="shDefSave">Save defaults</button><span class="snap" id="shDefMsg" style="color:var(--muted)"></span></div>
   </div>
@@ -1842,6 +1856,7 @@ body.feed-loading .stat-v *{visibility:hidden}
       <div class="soc-shots" id="fdPreview" hidden></div>
     </div>
     <div id="fdList"></div>
+    <div id="fdDiscover"></div>
     <div style="text-align:center;margin:14px 0"><button class="btn ghost" id="fdMore" hidden>Older posts</button></div>
   </div>
 </section>
@@ -2674,7 +2689,9 @@ function scoreDay(d){
   // Water temperature and the moon. Both are the same for every day in the
   // week, so they move the absolute score — "is it worth going at all" —
   // rather than the ranking between days.
-  const wt=waterTempScore(waterTemp!=null?waterTemp:estWater(), waterTemp==null);
+  const spT=speciesTemp(SCORE_SPECIES);
+  const wt=spT?speciesTempScore(waterTemp!=null?waterTemp:estWater(), waterTemp==null, spT)
+              :waterTempScore(waterTemp!=null?waterTemp:estWater(), waterTemp==null);
   s+=wt.pts; if(wt.plus)plus.push(wt.plus); if(wt.minus)minus.push(wt.minus);
   const mn=moonScore(new Date(d.start.valueOf()+12*3600000));
   s+=mn.pts; if(mn.plus)plus.push(mn.plus);
@@ -2842,6 +2859,7 @@ function drawSpecies(){
 }
 
 function drawBestDays(){
+  populateScoreSpecies();
   if(!FORECAST.length||FORECAST[0].synthetic){
     $('days').innerHTML='<div class="empty">The 7-day ranking needs the live forecast. If the feed is blocked, open this file directly in your browser.</div>';
     $('bestNote').hidden=true; return;
@@ -3540,6 +3558,7 @@ function setActiveLake(l){
   applyActive();
   if(!isG){ spots=[]; waypoints=[]; LAKE_PROFILE=null; }
   LAKE_RAMPS=[]; if(typeof loadRamps==='function')loadRamps();   // ramps are per lake
+  if(typeof loadActiveTourneys==='function')loadActiveTourneys(); // so is the "enter in…" box
   renderLakeHeader();
   applyLakeNotes();
 }
@@ -3620,6 +3639,8 @@ async function obFinish(){
     await apiFetch('/api/me/sharing',{method:'PUT',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({spots:{scope:OB.share,groupIds:[]},trips:{scope:OB.share,groupIds:[]},waypoints:{scope:OB.share,groupIds:[]}})});
   }catch(e){ /* profile is optional — never trap someone in onboarding */ }
+  // The first thing they see after this should be a plan, not a dashboard.
+  try{ localStorage.setItem('efa:firstplan',body.favoriteSpecies||'any'); }catch(e){}
   location.reload();
 }
 function wireOnboard(){
@@ -4072,7 +4093,7 @@ async function shareThing(){
     const up=await uploadPendingPhoto();
     if(!up.ok){ $('shMsg').textContent=up.error+' The catch was not shared — try again without the photo.'; return; }
     body={species:name,weight:isNaN(w)?undefined:w,lure:$('shLure').value.trim(),notes:notes,visibility:vis,groupId:groupId,
-      photoIds:up.id?[up.id]:undefined};
+      photoIds:up.id?[up.id]:undefined, tournamentId:enteredTourneyId()||undefined};
   }else{
     if(!name||isNaN(lat)||isNaN(lon)){ $('shMsg').textContent='Needs a name and a pin — tap “Use GPS”.'; return; }
     url='/api/lakes/'+ACTIVE.id+'/'+(SH_TYPE==='spot'?'spots':'waypoints');
@@ -4975,11 +4996,11 @@ function go(id,push){
   if(id==='today'){ renderToday(); }
   if(id==='log'){ goSub(document.querySelector('#waterTabs .tab[aria-selected="true"]')?.dataset.w||'map'); }
   if(id==='plan'){ drawBrief(); }
-  if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
+  if(id==='friends'){ loadFriends(); loadInvites(); loadGroupInvites(); loadSuggested(); goCrew(CREW_TAB); } else { stopThreadPoll(); }
   if(id==='profile'){ loadProfile(); }
   if(id==='lakes'){ $('lakesAuth').hidden=!!AUTH.user; refreshMyLakes(); }
   if(id==='sharing'){ $('sharingAuth').hidden=!!AUTH.user; $('sharingMain').hidden=!AUTH.user;
-    if(AUTH.user){ refreshGroups(); loadSharing(); } }
+    if(AUTH.user){ refreshGroups(); loadSharing(); loadPostDefault(); } }
   if(id==='blocked'){ refreshFriends(); }
   if(id==='data'){ drawWpList(); }
   if(id==='reports'){ loadReports(); }
@@ -5111,7 +5132,8 @@ async function loadSocialFeed(more){
     const d=await r.json();
     const html=(d.posts||[]).map(p=>postCard(p)).join('');
     if(more)$('fdList').insertAdjacentHTML('beforeend',html); else $('fdList').innerHTML=html||
-      '<p class="snap">Nothing here yet. Post something, or add a few anglers to your crew — their public and friends-only posts land here.</p>';
+      '<p class="snap">Your crew hasn’t posted yet. This page is your friends and your groups; add a few anglers and it fills up.</p>';
+    if(!more)renderDiscover(d.discover||[]);
     FD_BEFORE=d.nextBefore;
     $('fdMore').hidden=!d.nextBefore;
   }catch(e){}
@@ -5678,6 +5700,8 @@ function tournamentsHtml(list,me,g){
         '<span class="snap">'+t.counts.in+' in · '+t.counts.maybe+' maybe · '+t.counts.waiting+' yet to answer</span>'+
       '</div>'+
       (who.length?'<div class="snap" style="margin-top:6px">Fishing it: '+who.map(e=>escHtml(e.user.displayName)+(e.note?' ('+escHtml(e.note)+')':'')).join(', ')+'</div>':'')+
+      '<div class="soc-row"><button class="btn ghost btn-sm" data-tboard="'+escHtml(t.id)+'">'+(t.status==='done'?'Final board':'Board so far')+(t.entered?' ('+t.entered+' entered)':'')+'</button>'+
+        ((t.isHost||canHost)&&t.status==='open'?'<button class="btn btn-sm" data-tclose="'+escHtml(t.id)+'">Close &amp; publish results</button>':'')+'</div>'+
     '</div>';
   }).join('');
   return '<div class="soc-card"><div class="soc-head" style="margin-bottom:0"><div style="flex:1"><h3 style="margin:0">Tournaments</h3>'+
@@ -5862,6 +5886,158 @@ function openHelp(id){
 document.addEventListener('click',function(e){
   const b=e.target.closest('[data-help]');
   if(b){ e.preventDefault(); openHelp(b.dataset.help); }
+});
+
+/* ---- posts default (Settings → Sharing) ---- */
+async function loadPostDefault(){
+  const sel=$('shPostDefault'); if(!sel||!AUTH.user)return;
+  try{ const r=await apiFetch('/api/me/profile'); if(!r.ok)return; const d=await r.json();
+    const v=(d.profile||d).postDefault||'friends'; sel.value=v;
+    const fd=$('fdVis'); if(fd)fd.value=v;
+  }catch(e){}
+}
+document.addEventListener('change',async function(e){
+  if(e.target&&e.target.id==='shPostDefault'){
+    const r=await apiFetch('/api/me/profile',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({postDefault:e.target.value})});
+    $('shPostMsg').textContent=r.ok?'Saved ✓ — the composer will preselect this.':'Could not save that.';
+    const fd=$('fdVis'); if(fd&&r.ok)fd.value=e.target.value;
+  }
+});
+
+/* ---- species-aware scoring ----
+   The same day is not the same day for a crappie angler and a catfish angler.
+   These are feeding-temperature windows per species group, from state-agency
+   and extension guidance (TPWD, MDC, MN DNR): the band where the species feeds
+   hardest, and the floor below which it barely feeds. Used INSTEAD of the
+   general curve when the angler has said what they are after. */
+const SPECIES_TEMP=[
+  {m:/crappie/i,            lo:45, best:[55,72], hi:85, note:'crappie feed best 55–72°'},
+  {m:/largemouth|black bass|bass$/i, lo:48, best:[60,80], hi:90, note:'largemouth feed best 60–80°'},
+  {m:/smallmouth/i,         lo:45, best:[58,72], hi:82, note:'smallmouth feed best 58–72°'},
+  {m:/spotted bass|kentucky/i, lo:48, best:[60,78], hi:88, note:'spotted bass feed best 60–78°'},
+  {m:/white bass|sand bass/i, lo:48, best:[58,75], hi:85, note:'white bass feed best 58–75°'},
+  {m:/strip|hybrid|wiper/i, lo:45, best:[55,70], hi:80, note:'stripers feed best 55–70° and suffer above 80°'},
+  {m:/blue cat/i,           lo:38, best:[45,80], hi:92, note:'blue catfish feed right through cold water'},
+  {m:/flathead/i,           lo:60, best:[70,88], hi:95, note:'flatheads want warm water, 70°+'},
+  {m:/channel cat|catfish/i, lo:50, best:[65,85], hi:92, note:'channel cats feed best 65–85°'},
+  {m:/sunfish|bluegill|bream|perch$/i, lo:55, best:[65,85], hi:92, note:'sunfish feed best 65–85°'},
+  {m:/walleye|sauger/i,     lo:38, best:[50,68], hi:75, note:'walleye feed best 50–68°'},
+  {m:/trout/i,              lo:35, best:[45,62], hi:68, note:'trout feed best 45–62° and stress above 68°'},
+  {m:/salmon|steelhead/i,   lo:35, best:[42,58], hi:65, note:'salmon want cold water, 42–58°'},
+  {m:/pike|musk|pickerel/i, lo:38, best:[50,70], hi:78, note:'pike and musky feed best 50–70°'},
+  {m:/yellow perch|perch/i, lo:36, best:[45,68], hi:75, note:'perch feed best 45–68°'},
+];
+function speciesTemp(name){
+  if(!name||name==='any')return null;
+  for(const r of SPECIES_TEMP) if(r.m.test(name))return r;
+  return null;
+}
+function speciesTempScore(t,estimated,sp){
+  const n=Math.round(t), w='water '+n+'°'+(estimated?' (seasonal estimate)':'');
+  const k=estimated?0.5:1;
+  const at=(pts,label,good)=>({pts:Math.round(pts*k),[good?'plus':'minus']:label});
+  if(t<sp.lo)         return at(-12, w+' — too cold for '+sp.note.split(' ')[0], false);
+  if(t<sp.best[0])    return at(2,   w+' — warming toward the '+sp.note.split(' ')[0]+' window', true);
+  if(t<=sp.best[1])   return at(10,  w+' — '+sp.note, true);
+  if(t<=sp.hi)        return at(-2,  w+' — warm for '+sp.note.split(' ')[0]+', fish early and late', false);
+  return at(-14, w+' — too hot for '+sp.note.split(' ')[0], false);
+}
+let SCORE_SPECIES=(function(){ try{ return localStorage.getItem('efa:scoreSpecies')||'any'; }catch(e){ return 'any'; } })();
+function populateScoreSpecies(){
+  const sel=$('scoreSpecies'); if(!sel)return;
+  const names=(typeof speciesNames==='function'?speciesNames():[])||[];
+  const cur=SCORE_SPECIES;
+  sel.innerHTML='<option value="any">Whatever bites</option>'+names.map(n=>'<option value="'+escHtml(n)+'"'+(n===cur?' selected':'')+'>'+escHtml(n)+'</option>').join('');
+  if(!names.includes(cur))sel.value='any';
+  const sp=speciesTemp(sel.value);
+  const note=$('scoreSpeciesNote'); if(note)note.textContent=sp?'Using the '+sp.note.split(' ')[0]+' temperature window.':'General water-temperature curve.';
+}
+document.addEventListener('change',function(e){
+  if(e.target&&e.target.id==='scoreSpecies'){
+    SCORE_SPECIES=e.target.value; try{ localStorage.setItem('efa:scoreSpecies',SCORE_SPECIES); }catch(x){}
+    populateScoreSpecies(); if(typeof drawBestDays==='function')drawBestDays(); if(typeof renderToday==='function')renderToday();
+  }
+});
+
+/* ---- first run ends in a plan ----
+   Onboarding asks what you fish for; the least it can do is go and plan it.
+   The flag survives the reload that finishing onboarding triggers. */
+async function firstRunPlan(){
+  let want=null; try{ want=localStorage.getItem('efa:firstplan'); localStorage.removeItem('efa:firstplan'); }catch(e){}
+  if(!want||!AUTH.user)return;
+  go('plan');
+  const sel=$('aiSpecies');
+  if(sel){ const opt=[].slice.call(sel.options).find(o=>o.value.toLowerCase()===want.toLowerCase()); sel.value=opt?opt.value:'any'; }
+  const out=$('aiPlanOut');
+  if(out)out.innerHTML='<div class="note"><b>Welcome aboard.</b> You said you fish for '+escHtml(want)+' — here is a plan for the next good day on '+escHtml(ACTIVE.name)+'. Change anything above and hit Generate again; rate it 👍/👎 when you have fished it.</div>';
+  // Wait for the forecast to land, then plan without making them find the button.
+  let tries=0; const tick=setInterval(function(){ tries++; if((typeof FORECAST!=='undefined'&&FORECAST.length)||tries>20){ clearInterval(tick); if(typeof genAiPlan==='function')genAiPlan(false); } },500);
+}
+
+/* ---- feed discovery + suggested anglers ---- */
+function renderDiscover(list){
+  const box=$('fdDiscover'); if(!box)return;
+  if(!list||!list.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="soc-when" style="margin:16px 0 8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">From anglers around the app — public posts only</div>'+
+    list.map(p=>postCard(p)).join('')+
+    '<p class="snap">These anglers chose to post publicly. Add a few to your crew and this page becomes theirs.</p>';
+}
+async function loadSuggested(){
+  const box=$('frSuggested'); if(!box||!AUTH.user)return;
+  try{
+    const r=await apiFetch('/api/users/suggested'); if(!r.ok)return;
+    const rows=(await r.json()).suggested||[];
+    box.innerHTML=rows.length?('<h3 style="margin-top:22px">Anglers on your lakes</h3><p class="lede" style="margin-top:2px">People who fish where you fish and chose to be findable. A request is all it takes.</p>'+
+      rows.map(u=>'<div class="fr-row"><span>'+avatarHtml(u)+' <span class="soc-who" data-wall="'+escHtml(u.id)+'">'+escHtml(u.displayName)+'</span> <span class="snap">'+escHtml(u.lakes.join(', '))+(u.favoriteSpecies?' · '+escHtml(u.favoriteSpecies):'')+'</span></span>'+
+        '<button class="btn ghost btn-sm" data-suggest-add="'+escHtml(u.id)+'">Send request</button></div>').join('')):'';
+  }catch(e){}
+}
+document.addEventListener('click',async function(e){
+  const b=e.target.closest('[data-suggest-add]'); if(!b)return;
+  b.disabled=true;
+  const r=await apiFetch('/api/friends/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:b.dataset.suggestAdd})});
+  b.textContent=r.ok?'Requested ✓':'Could not send';
+});
+
+/* ---- tournaments: entering a catch, and the board ---- */
+let ACTIVE_TOURNEYS=[];
+async function loadActiveTourneys(){
+  ACTIVE_TOURNEYS=[];
+  const host=$('shGroup'); if(!host||!AUTH.user||!ACTIVE.id)return;
+  try{
+    const r=await apiFetch('/api/tournaments/active?lakeId='+encodeURIComponent(ACTIVE.id)); if(!r.ok)return;
+    ACTIVE_TOURNEYS=(await r.json()).tournaments||[];
+  }catch(e){}
+  let box=$('shTourney');
+  if(!box){ const row=host.closest('.formfoot')||host.parentElement; row.insertAdjacentHTML('afterend','<div id="shTourney" style="margin:6px 0"></div>'); box=$('shTourney'); }
+  box.innerHTML=ACTIVE_TOURNEYS.length?ACTIVE_TOURNEYS.map(t=>'<label class="btn ghost btn-sm" style="cursor:pointer;margin-right:6px"><input type="checkbox" data-tourney-enter="'+escHtml(t.id)+'" style="margin-right:6px">🏆 Enter in '+escHtml(t.name)+' <span class="snap">('+escHtml(t.group)+')</span></label>').join(''):'';
+}
+function enteredTourneyId(){ const c=document.querySelector('[data-tourney-enter]:checked'); return c?c.dataset.tourneyEnter:null; }
+async function loadResults(tid,into){
+  try{
+    const r=await apiFetch('/api/tournaments/'+encodeURIComponent(tid)+'/results'); if(!r.ok)return;
+    const res=(await r.json()).results; if(!res)return;
+    const unit=res.format==='most_fish'?' fish':' lb';
+    into.innerHTML='<div class="snap" style="font-weight:700;margin-top:8px">Board — '+escHtml(TFORMAT[res.format]||res.format)+(res.status==='done'?' · final':' · so far')+'</div>'+
+      (res.rows.length?'<table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:4px">'+
+        res.rows.map((row,i)=>'<tr><td style="padding:4px 6px;width:24px;color:var(--muted)">'+(i+1)+'</td><td style="padding:4px 6px"><span class="soc-who" data-wall="'+escHtml(row.user.id)+'">'+escHtml(row.user.displayName)+'</span></td>'+
+          '<td style="padding:4px 6px;text-align:right"><b>'+row.score+unit+'</b></td><td style="padding:4px 6px;text-align:right;color:var(--muted)">'+row.fish+' fish · big '+row.bigLb+' lb</td></tr>').join('')+'</table>'
+        :'<p class="snap">No catches entered yet. Tick “Enter in…” when you log a fish.</p>')+
+      (res.resultsNote?'<div class="note" style="margin-top:8px"><b>From the host:</b> '+escHtml(res.resultsNote)+'</div>':'')+
+      '<p class="snap" style="margin-top:6px">Weights are what anglers typed in. Nothing here was weighed by us — settle it at the ramp.</p>';
+  }catch(e){}
+}
+document.addEventListener('click',async function(e){
+  const t=e.target;
+  const show=t.closest('[data-tboard]');
+  if(show){ const card=show.closest('[data-tourney]'); let into=card.querySelector('[data-tboard-into]'); if(!into){ card.insertAdjacentHTML('beforeend','<div data-tboard-into></div>'); into=card.querySelector('[data-tboard-into]'); } loadResults(show.dataset.tboard,into); return; }
+  const close=t.closest('[data-tclose]');
+  if(close){
+    const note=prompt('Close this tournament and publish the board. Anything to add for the group? (optional)')
+    if(note===null)return;
+    const r=await apiFetch('/api/tournaments/'+encodeURIComponent(close.dataset.tclose),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'done',resultsNote:note})});
+    if(r.ok)loadGroupPage(); return;
+  }
 });
 
 /* ---- dam release ----
@@ -6349,7 +6525,7 @@ drawTrips();
   $('lkSearch').oninput=onLakeSearch;
   $('lkResults').onclick=(e)=>{const a=e.target.closest('[data-add]');if(!a)return;e.preventDefault();const x=(window.__lk||[])[+a.getAttribute('data-add')];if(x)addLakeAndGo(x);};
   $('lkMine').onclick=(e)=>{const a=e.target.closest('[data-home]');if(!a)return;e.preventDefault();switchHome(a.getAttribute('data-home'));};
-  await checkAi(); checkPhotos(); startAlertPoll(); populateAiSpecies(); populateAiLaunch(); loadRamps();
+  await checkAi(); checkPhotos(); startAlertPoll(); populateAiSpecies(); populateAiLaunch(); loadRamps(); loadPostDefault(); loadActiveTourneys(); firstRunPlan();
   // Default the plan to today, and don't offer days the forecast can't reach.
   const dEl=$('aiDate');
   if(dEl){

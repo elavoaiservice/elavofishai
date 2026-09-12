@@ -6,6 +6,7 @@ import { blockedUserIds, blockState, friendIds } from '../lib/social';
 import { canInvite, canManageMembers, canRemoveMember, canSetRole, roleIn, type GroupRole } from '../lib/groups';
 import { notify } from '../services/notify';
 import { groupClauses, type GroupClause } from '../lib/groupSharing';
+import { eligibleForTournament } from './tournaments';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
 import {
@@ -92,6 +93,47 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!f || (f.friendId !== me.id && f.userId !== me.id)) return reply.code(404).send({ error: 'No such request.' });
     await prisma.friendship.delete({ where: { id } });
     return reply.send({ ok: true });
+  });
+
+  /**
+   * Anglers worth knowing, for someone with an empty crew: people who fish the
+   * same lakes and have set themselves to "everyone can find me". Someone set
+   * to friends-of-friends is not suggested to a stranger — that is the whole
+   * point of that setting — and blocks apply both ways.
+   */
+  app.get('/api/users/suggested', async (req, reply) => {
+    const me = await requireUser(req, reply);
+    if (!me) return;
+    const [friends, blocked, myLakes] = await Promise.all([
+      friendIds(me.id),
+      blockedUserIds(me.id),
+      prisma.userLake.findMany({ where: { userId: me.id }, select: { lakeId: true } }),
+    ]);
+    const lakeIds = myLakes.map((l) => l.lakeId);
+    if (!lakeIds.length) return { suggested: [] };
+    const pending = await prisma.friendship.findMany({
+      where: { status: 'pending', OR: [{ userId: me.id }, { friendId: me.id }] },
+      select: { userId: true, friendId: true },
+    });
+    const skip = new Set([me.id, ...friends, ...blocked, ...pending.flatMap((f) => [f.userId, f.friendId])]);
+    const rows = await prisma.userLake.findMany({
+      where: { lakeId: { in: lakeIds }, user: { status: 'active', discoverability: 'everyone' } },
+      include: { user: { select: { id: true, displayName: true, avatarUrl: true, location: true, favoriteSpecies: true } }, lake: { select: { name: true } } },
+      take: 200,
+    });
+    const byUser = new Map<string, { user: (typeof rows)[number]['user']; lakes: string[] }>();
+    for (const r of rows) {
+      if (skip.has(r.userId)) continue;
+      const cur = byUser.get(r.userId) || { user: r.user, lakes: [] };
+      if (!cur.lakes.includes(r.lake.name)) cur.lakes.push(r.lake.name);
+      byUser.set(r.userId, cur);
+    }
+    return {
+      suggested: [...byUser.values()]
+        .sort((a, b) => b.lakes.length - a.lakes.length)
+        .slice(0, 12)
+        .map((x) => ({ ...x.user, lakes: x.lakes })),
+    };
   });
 
   // ---------- finding people ----------
@@ -438,15 +480,24 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     const me = await requireUser(req, reply);
     if (!me) return;
     const lakeId = String((req.params as { id: string }).id);
-    const b = (req.body || {}) as { species?: string; weight?: number; length?: number; lure?: string; lat?: number; lon?: number; notes?: string; date?: string; visibility?: string; groupId?: string };
+    const b = (req.body || {}) as { species?: string; weight?: number; length?: number; lure?: string; lat?: number; lon?: number; notes?: string; date?: string; visibility?: string; groupId?: string; tournamentId?: string };
     if (!b.species) return reply.code(400).send({ error: 'What did you catch?' });
     let vis;
     try { vis = await resolveVisibility(me.id, 'trips', b.visibility, b.groupId); } catch { return reply.code(400).send({ error: 'Pick one of your groups.' }); }
     const date = b.date && !Number.isNaN(Date.parse(b.date)) ? new Date(b.date) : new Date();
+    // Entering a catch in a tournament is a claim the whole group will see, so
+    // it has to hold up: right lake, inside the window, and the angler said
+    // they were fishing it.
+    let tournamentId: string | null = null;
+    if (b.tournamentId) {
+      const check = await eligibleForTournament(me.id, String(b.tournamentId), lakeId, date);
+      if (!check.ok) return reply.code(400).send({ error: check.reason });
+      tournamentId = String(b.tournamentId);
+    }
     const photoIds = Array.isArray((b as { photoIds?: string[] }).photoIds)
       ? (b as { photoIds: string[] }).photoIds.slice(0, 4).map(String)
       : [];
-    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId } });
+    const trip = await prisma.trip.create({ data: { userId: me.id, lakeId, date, species: String(b.species).slice(0, 60), weight: b.weight != null ? Number(b.weight) : null, length: b.length != null ? Number(b.length) : null, lure: b.lure ? String(b.lure).slice(0, 80) : null, lat: b.lat != null ? Number(b.lat) : null, lon: b.lon != null ? Number(b.lon) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, visibility: vis.visibility, groupId: vis.groupId, tournamentId } });
     // Attach only photos this angler uploaded and hasn't already attached.
     if (photoIds.length) {
       await prisma.photo.updateMany({

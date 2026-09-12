@@ -36,9 +36,11 @@ describe('posts', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, () 
     assert.deepEqual(await feed(stranger), []);
   });
 
-  test('a public post reaches a stranger', async () => {
+  test('a public post reaches a stranger — through discovery, not their crew feed', async () => {
     await write(owner, 'Water is 62 degrees', { visibility: 'public' });
-    assert.deepEqual(await feed(stranger), ['Water is 62 degrees']);
+    assert.deepEqual(await feed(stranger), []);
+    const d = (await as(stranger, { method: 'GET', url: '/api/feed' })).json() as { discover: { body: string }[] };
+    assert.deepEqual(d.discover.map((p) => p.body), ['Water is 62 degrees']);
   });
 
   test('a private post reaches nobody but its author', async () => {

@@ -106,6 +106,9 @@ model User {
   // out of search entirely — a request by exact email still reaches them,
   // because knowing the address is its own kind of introduction.
   discoverability String @default("friends_of_friends") // everyone | friends_of_friends | nobody
+  // Who a new post goes to when the angler doesn't pick. Friends, unless they
+  // have deliberately opened up — nothing is public by default.
+  postDefault     String @default("friends") // private | friends | public
 
   // ---- messaging ----
   messagePrivacy   String    @default("friends") // everyone | friends | nobody
@@ -309,27 +312,33 @@ model Kv {
 // ---- P2 social: normalized, shareable fishing data ----
 
 model Trip {
-  id         String     @id @default(cuid())
-  userId     String
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lakeId     String
-  lake       Lake       @relation(fields: [lakeId], references: [id], onDelete: Cascade)
-  date       DateTime
-  species    String?
-  weight     Float?
-  length     Float?
-  lure       String?
-  lat        Float?
-  lon        Float?
-  notes      String?    @db.Text
-  weather    Json?
-  visibility Visibility @default(private)
-  groupId    String? // when visibility = group
-  photos     Photo[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lakeId       String
+  lake         Lake        @relation(fields: [lakeId], references: [id], onDelete: Cascade)
+  date         DateTime
+  species      String?
+  weight       Float?
+  length       Float?
+  lure         String?
+  lat          Float?
+  lon          Float?
+  notes        String?     @db.Text
+  weather      Json?
+  visibility   Visibility  @default(private)
+  groupId      String? // when visibility = group
+  // Set when the angler enters this catch into a group tournament. Explicit on
+  // purpose: a fish that happens to be caught during the window is not an
+  // entry until its owner says so.
+  tournamentId String?
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  photos       Photo[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@index([userId, lakeId])
+  @@index([tournamentId])
   @@index([lakeId, visibility])
 }
 
@@ -850,28 +859,32 @@ model Invite {
 // results at the ramp, and a leaderboard nobody trusts is worse than none.
 // ---------------------------------------------------------------------------
 model Tournament {
-  id        String      @id @default(cuid())
-  groupId   String
-  group     FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  hostId    String
-  host      User        @relation("TournamentHost", fields: [hostId], references: [id], onDelete: Cascade)
-  name      String
-  details   String?     @db.Text
-  lakeId    String?
-  lake      Lake?       @relation(fields: [lakeId], references: [id], onDelete: SetNull)
+  id          String      @id @default(cuid())
+  groupId     String
+  group       FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  hostId      String
+  host        User        @relation("TournamentHost", fields: [hostId], references: [id], onDelete: Cascade)
+  name        String
+  details     String?     @db.Text
+  lakeId      String?
+  lake        Lake?       @relation(fields: [lakeId], references: [id], onDelete: SetNull)
   // Where to meet, in words — a ramp name beats coordinates nobody reads.
-  meetAt    String?
-  startsAt  DateTime
-  endsAt    DateTime
-  species   String? // "Largemouth bass", or null for anything that swims
+  meetAt      String?
+  startsAt    DateTime
+  endsAt      DateTime
+  species     String? // "Largemouth bass", or null for anything that swims
   // biggest_fish | heaviest_bag | most_fish | other
-  format    String      @default("heaviest_bag")
-  entryFee  String? // free text: "$20 a boat", "bring a dish"
-  status    String      @default("open") // open | cancelled | done
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  format      String      @default("heaviest_bag")
+  entryFee    String? // free text: "$20 a boat", "bring a dish"
+  status      String      @default("open") // open | cancelled | done
+  // The host's word on the outcome, written when they close it. The board is
+  // computed from entered catches; this is for "Dave's 6.2 was foul-hooked".
+  resultsNote String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   entries TournamentEntry[]
+  catches Trip[]
 
   @@index([groupId, startsAt])
 }

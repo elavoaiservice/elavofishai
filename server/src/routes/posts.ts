@@ -113,7 +113,11 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(403).send({ error: 'You can read this group but not post to it.' });
       }
     }
-    const visibility = groupId ? 'group' : VISIBILITIES.has(String(b.visibility)) ? String(b.visibility) : 'friends';
+    // No audience given → the angler's own default, which is friends unless
+    // they have deliberately opened up. Never public by accident.
+    const mine = await prisma.user.findUnique({ where: { id: me.id }, select: { postDefault: true } });
+    const fallback = VISIBILITIES.has(String(mine?.postDefault)) ? String(mine!.postDefault) : 'friends';
+    const visibility = groupId ? 'group' : VISIBILITIES.has(String(b.visibility)) ? String(b.visibility) : fallback;
 
     const post = await prisma.post.create({
       data: { authorId: me.id, groupId, lakeId: b.lakeId ? String(b.lakeId) : null, body, visibility },
@@ -174,11 +178,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         createdAt: q.before ? { lt: new Date(String(q.before)) } : undefined,
         authorId: { notIn: blocked },
         ...(search ? { body: { contains: search, mode: 'insensitive' as const } } : {}),
+        // The feed is the people you chose: you, your groups, your friends.
+        // A stranger's public post is not in here — it goes to "discover"
+        // below when the feed is thin, or is found through their page. That
+        // is what "only friends by default" means in practice.
         OR: [
           { authorId: me.id },
           { groupId: { in: groups } },
-          { groupId: null, visibility: 'public' },
-          { groupId: null, visibility: 'friends', authorId: { in: visible } },
+          { groupId: null, visibility: { in: ['public', 'friends'] }, authorId: { in: visible } },
         ],
       },
       include: INCLUDE,
@@ -187,9 +194,39 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     })) as unknown as PostRow[];
 
     const liked = await likedSet(me.id, posts.map((p) => p.id));
+
+    // The empty room. A new angler with no crew sees nothing above, which
+    // reads as "this app is dead". Fill it with posts strangers made PUBLIC —
+    // never anything friends-only, however sparse the feed is — starting with
+    // people who fish the same lakes, then the whole app. Only on the first
+    // page, and only when the real feed is thin, so it never buries a friend.
+    let discover: ReturnType<typeof shape>[] = [];
+    if (!q.before && !search && posts.length < 5) {
+      const seen = new Set(posts.map((p) => p.id));
+      const lakeMates = await prisma.userLake.findMany({
+        where: { lakeId: { in: (await prisma.userLake.findMany({ where: { userId: me.id }, select: { lakeId: true } })).map((l) => l.lakeId) } },
+        select: { userId: true },
+        take: 500,
+      });
+      const mates = [...new Set(lakeMates.map((m) => m.userId))].filter((id) => id !== me.id && !blocked.includes(id));
+      const pick = async (where: object, n: number) =>
+        (await prisma.post.findMany({
+          where: { groupId: null, visibility: 'public', authorId: { notIn: [...blocked, me.id] }, author: { status: 'active' }, ...where },
+          include: INCLUDE,
+          orderBy: { createdAt: 'desc' },
+          take: n,
+        })) as unknown as PostRow[];
+      const nearby = mates.length ? await pick({ authorId: { in: mates } }, 15) : [];
+      const wide = nearby.length < 15 ? await pick({ authorId: { notIn: [...blocked, me.id, ...mates] } }, 15 - nearby.length) : [];
+      const extra = [...nearby, ...wide].filter((p) => !seen.has(p.id));
+      const likedX = await likedSet(me.id, extra.map((p) => p.id));
+      discover = extra.map((p) => shape(p, me.id, likedX));
+    }
+
     return {
       posts: posts.map((p) => shape(p, me.id, liked)),
       nextBefore: posts.length === take ? posts[posts.length - 1].createdAt : null,
+      discover,
     };
   });
 
