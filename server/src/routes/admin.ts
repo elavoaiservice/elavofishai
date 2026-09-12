@@ -44,7 +44,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ---- auth ----
   app.post('/api/admin/login', async (req, reply) => {
     const b = (req.body || {}) as { username?: string; password?: string };
-    if (await overLimit(`adminlogin:${clientIp(req)}`, 10, 10 * 60000)) {
+    const who = String(b.username || '').trim().toLowerCase();
+    if (await overLimit(`adminlogin:${clientIp(req)}`, 10, 10 * 60000) || await overLimit(`adminlogin:user:${who}`, 10, 10 * 60000)) {
       return reply.code(429).send({ error: 'Too many attempts. Wait a few minutes.' });
     }
     const r = await startAdminLogin(String(b.username || ''), String(b.password || ''));
@@ -55,7 +56,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/admin/mfa', async (req, reply) => {
     const b = (req.body || {}) as { username?: string; code?: string };
-    const ok = await completeAdminLogin(String(b.username || ''), String(b.code || ''), reply);
+    // Keyed by username as well as address: rotating a header must not buy
+    // more guesses, and neither must a botnet.
+    const who = String(b.username || '').trim().toLowerCase();
+    if (await overLimit(`adminmfa:${who}`, 10, 10 * 60000) || await overLimit(`adminmfa:ip:${clientIp(req)}`, 20, 10 * 60000)) {
+      return reply.code(429).send({ error: 'Too many attempts. Sign in again for a new code.' });
+    }
+    const ok = await completeAdminLogin(who, String(b.code || ''), reply);
     if (!ok) return reply.code(401).send({ error: 'Invalid or expired code.' });
     return reply.send({ ok: true });
   });

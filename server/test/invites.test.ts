@@ -34,9 +34,9 @@ describe('invites', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, (
 
   // Signing in is what redeems: the magic-link verify calls redeemInvites, so
   // by the time the new angler is holding a session the friendship exists.
-  test('a new angler who accepts lands in the inviter"s crew', async () => {
-    await writeInvite('newbie@example.com');
-    const newbie = await signIn('newbie@example.com');
+  test('a new angler who signs up THROUGH the link lands in the inviter"s crew', async () => {
+    const inv = await writeInvite('newbie@example.com');
+    const newbie = await signIn('newbie@example.com', inv.code);
     const f = await prisma.friendship.findFirstOrThrow({
       where: { OR: [{ userId: inviter.id, friendId: newbie.id }, { userId: newbie.id, friendId: inviter.id }] },
     });
@@ -44,8 +44,8 @@ describe('invites', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, (
   });
 
   test('the inviter is told their invite was taken up', async () => {
-    await writeInvite('newbie@example.com');
-    await signIn('newbie@example.com');
+    const inv = await writeInvite('newbie@example.com');
+    await signIn('newbie@example.com', inv.code);
     const n = await prisma.notification.findFirstOrThrow({ where: { userId: inviter.id } });
     assert.equal(n.type, 'invite_accepted');
   });
@@ -63,11 +63,30 @@ describe('invites', { skip: HAS_DB ? false : 'set TEST_DATABASE_URL to run' }, (
   });
 
   test('redeeming twice does not stack friendships or notifications', async () => {
-    await writeInvite('newbie@example.com');
-    const newbie = await signIn('newbie@example.com');
-    assert.equal(await redeemInvites(newbie.id), 0); // sign-in already did it
-    assert.equal(await redeemInvites(newbie.id), 0);
+    const inv = await writeInvite('newbie@example.com');
+    const newbie = await signIn('newbie@example.com', inv.code);
+    assert.equal(await redeemInvites(newbie.id, inv.code), 0); // sign-in already did it
     assert.equal(await prisma.friendship.count(), 1);
+  });
+
+  test('an invite planted at a stranger"s address does NOT befriend them when they join on their own', async () => {
+    // The whole point of carrying the code: signing up from the front page a
+    // week later is not evidence that this invite is welcome.
+    await writeInvite('stranger@example.com');
+    const stranger = await signIn('stranger@example.com');   // no code: the front page
+    const f = await prisma.friendship.findFirstOrThrow({
+      where: { OR: [{ userId: inviter.id, friendId: stranger.id }, { userId: stranger.id, friendId: inviter.id }] },
+    });
+    assert.equal(f.status, 'pending');
+  });
+
+  test('a code from a different invite does not unlock this one', async () => {
+    await writeInvite('newbie@example.com', 'code-real');
+    const newbie = await signIn('newbie@example.com', 'code-someone-elses');
+    const f = await prisma.friendship.findFirstOrThrow({
+      where: { OR: [{ userId: inviter.id, friendId: newbie.id }, { userId: newbie.id, friendId: inviter.id }] },
+    });
+    assert.equal(f.status, 'pending');
   });
 
   test('a revoked invite is not redeemed', async () => {

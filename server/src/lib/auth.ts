@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../db';
+import { isPrivateIp } from './net';
 import { env } from '../env';
 import { randomToken, sha256 } from './crypto';
 
@@ -100,10 +101,37 @@ export async function endSession(req: FastifyRequest, reply: FastifyReply): Prom
   reply.clearCookie(env.cookieName, { path: '/' });
 }
 
+/**
+ * Who is actually calling.
+ *
+ * This used to read the first entry of X-Forwarded-For, which is whatever the
+ * caller typed. Verified against production: sending `X-Forwarded-For:
+ * 1.2.3.4` from the open internet made the server log that as the client
+ * address, so every per-IP rate limit — sign-in links, admin login, lake
+ * search — could be bypassed by changing a header on each request.
+ *
+ * The rule now: proxy headers are only believed when the connection itself
+ * comes from a private address, which is the only case where the proxy is
+ * ours (the Cloudflare tunnel runs beside the app on the Docker network).
+ * A request straight off the internet is judged by its socket address and
+ * nothing else. Exported for tests.
+ */
+export function resolveClientIp(peer: string, headers: Record<string, unknown>): string {
+  const first = (v: unknown): string => {
+    const raw = Array.isArray(v) ? v[0] : v;
+    return typeof raw === 'string' ? raw.split(',')[0].trim() : '';
+  };
+  if (!isPrivateIp(peer)) return peer;
+  // Cloudflare overwrites CF-Connecting-IP at its edge, so behind the tunnel
+  // it is the one header a client cannot forge.
+  return first(headers['cf-connecting-ip']) || first(headers['x-forwarded-for']) || peer;
+}
+
 export function clientIp(req: FastifyRequest): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length) return xff.split(',')[0].trim();
-  return req.ip;
+  // req.socket.remoteAddress is the real peer; req.ip follows trustProxy and
+  // would give back the spoofable header value.
+  const peer = req.socket?.remoteAddress || req.ip || '';
+  return resolveClientIp(peer, req.headers as Record<string, unknown>) || peer;
 }
 
 // Route guard: returns the user or sends 401 and returns null.

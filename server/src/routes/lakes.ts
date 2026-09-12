@@ -8,6 +8,8 @@ import { enrichLake } from '../services/enrichLake';
 import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 import { rampsForLake } from '../services/ramps';
 import { releaseFor, summarizeRelease } from '../services/corps';
+import { waterFor } from '../services/water';
+import { alertsFor, discussionFor } from '../services/nws';
 
 const GRANBURY_OSM_REF = 'seed:lake-granbury';
 
@@ -208,6 +210,35 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
         summary: summarizeRelease(release),
       },
     });
+  });
+
+  /**
+   * Level and water temperature for this lake. The client used to ask USGS
+   * directly for a parameter code that most lake gauges do not publish; the
+   * server knows which code each gauge actually uses, and where to look when
+   * there is no gauge at all. See services/water.ts.
+   */
+  app.get('/api/lakes/:id/water', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    return reply.send(await waterFor(String((req.params as { id: string }).id)));
+  });
+
+  /**
+   * Active National Weather Service alerts for this lake, plus the local
+   * forecaster's own near-term reasoning. A Lake Wind Advisory is a reason not
+   * to launch, not a number to weigh against cloud cover.
+   */
+  app.get('/api/lakes/:id/alerts', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const lake = await prisma.lake.findUnique({ where: { id: String((req.params as { id: string }).id) }, select: { lat: true, lon: true } });
+    if (!lake) return reply.code(404).send({ error: 'Lake not found.' });
+    const [alerts, discussion] = await Promise.all([
+      alertsFor(lake.lat, lake.lon).catch(() => []),
+      discussionFor(lake.lat, lake.lon).catch(() => null),
+    ]);
+    return reply.send({ alerts, discussion });
   });
 
   // Lake detail + its profile (AI or hand-verified).

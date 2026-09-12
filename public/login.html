@@ -76,6 +76,15 @@
       <a href="/privacy.html" style="color:var(--muted)">Privacy</a></p>
   </div>
 <script>
+  // A used or expired link lands here with the reason in the query string.
+  // It used to be sent to /app, which has no session and bounced to this page
+  // without it, so an expired link looked like nothing had happened at all.
+  (function(){
+    const err=new URLSearchParams(location.search).get('auth_error');
+    if(!err)return;
+    const box=document.getElementById('msg')||document.getElementById('loginMsg');
+    if(box){ box.className='err'; box.textContent=err; }
+  })();
   const $=id=>document.getElementById(id);
   $('form').addEventListener('submit', async function(e){
     e.preventDefault();

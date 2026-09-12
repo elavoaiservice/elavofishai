@@ -70,6 +70,13 @@ export async function startAdminLogin(username: string, password: string): Promi
     return { ok: false, error: 'Wrong username or password.' };
   }
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  // Only ever one code alive per admin. They used to accumulate: asking for
+  // ten codes made ten of the million possibilities correct at once, and
+  // guessing got ten times easier for every request an attacker sent.
+  await prisma.adminMfaCode.updateMany({
+    where: { adminId: admin.id, usedAt: null },
+    data: { usedAt: new Date() },
+  });
   await prisma.adminMfaCode.create({
     data: { adminId: admin.id, codeHash: sha256(code), expiresAt: new Date(Date.now() + 10 * 60000) },
   });
@@ -87,14 +94,33 @@ export async function startAdminLogin(username: string, password: string): Promi
 }
 
 // Step 2: verify the MFA code → start an admin session.
+/**
+ * Six digits is a million possibilities, which sounds like a lot until you
+ * realise nothing was counting the guesses: an attacker with the password
+ * could sit on this endpoint at a few hundred requests a second and be inside
+ * within the code's ten-minute life. Five wrong answers now burns the code
+ * entirely — the admin simply signs in again and gets a fresh one, which
+ * costs them a moment and costs an attacker the whole attempt.
+ */
+const MAX_MFA_TRIES = 5;
+const mfaTries = new Map<string, number>();
+
 export async function completeAdminLogin(username: string, code: string, reply: FastifyReply): Promise<boolean> {
   const admin = await prisma.adminUser.findUnique({ where: { username: username.trim().toLowerCase() } });
   if (!admin) return false;
+  const tries = (mfaTries.get(admin.id) || 0) + 1;
+  if (tries > MAX_MFA_TRIES) {
+    await prisma.adminMfaCode.updateMany({ where: { adminId: admin.id, usedAt: null }, data: { usedAt: new Date() } });
+    mfaTries.delete(admin.id);
+    return false;
+  }
+  mfaTries.set(admin.id, tries);
   const rec = await prisma.adminMfaCode.findFirst({
     where: { adminId: admin.id, codeHash: sha256(code), usedAt: null, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'desc' },
   });
   if (!rec) return false;
+  mfaTries.delete(admin.id);
   await prisma.adminMfaCode.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
 
   const token = crypto.randomBytes(32).toString('base64url');

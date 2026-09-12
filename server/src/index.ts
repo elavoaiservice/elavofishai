@@ -39,7 +39,10 @@ const PUBLIC_DIR = process.env.PUBLIC_DIR || path.join(__dirname, '..', '..', 'p
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: env.isProd ? 'info' : 'info' },
-    trustProxy: true,
+    // Do NOT trust X-Forwarded-For blindly: with trustProxy on, req.ip is
+    // whatever the caller put in a header. clientIp() decides what to believe
+    // based on where the connection actually came from.
+    trustProxy: false,
     bodyLimit: env.maxKeyBytes + 1024, // KV PUTs carry the largest bodies
   });
 

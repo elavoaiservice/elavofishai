@@ -9,6 +9,16 @@ import { consumeMagicLink, issueMagicLink } from '../services/magicLink';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Where a link we email should point.
+ *
+ * A magic link carries a credential, so the address in it must never come
+ * from a header the caller controls: "Host: evil.example" would have us email
+ * the user a working sign-in token pointing at someone else's server. When
+ * PUBLIC_BASE_URL is configured — which production requires, see env.ts — it
+ * is the only thing used. The header fallback survives for local development,
+ * where the host is a loopback address anyway.
+ */
 export function baseUrlFor(req: { headers: Record<string, unknown>; protocol: string }): string {
   if (env.publicBaseUrl) return env.publicBaseUrl;
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
@@ -19,7 +29,7 @@ export function baseUrlFor(req: { headers: Record<string, unknown>; protocol: st
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Request a magic link — unified login + self-registration.
   app.post('/api/auth/request-link', async (req, reply) => {
-    const body = (req.body || {}) as { email?: string; displayName?: string };
+    const body = (req.body || {}) as { email?: string; displayName?: string; invite?: string };
     const email = String(body.email || '').trim().toLowerCase();
     if (!EMAIL_RE.test(email)) {
       return reply.code(400).send({ error: 'Enter a valid email address.' });
@@ -33,16 +43,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(429).send({ error: 'Too many links sent to that email. Check your inbox.' });
     }
 
-    const link = await issueMagicLink(email, body.displayName, ip, baseUrlFor(req));
+    const link = await issueMagicLink(email, body.displayName, ip, baseUrlFor(req), String(body.invite || '').slice(0, 64) || undefined);
 
     // With email configured the response says nothing beyond "check your inbox".
+    // The same answer whichever it was: telling an anonymous caller whether an
+    // address already has an account turns this into an account checker.
     const payload: Record<string, unknown> = {
       ok: true,
       purpose: link.purpose,
-      message:
-        link.purpose === 'signup'
-          ? 'Check your email to finish creating your account.'
-          : 'Check your email for your sign-in link.',
+      message: 'Check your email — your link is on its way.',
     };
 
     // Only surface the link in-app when we did NOT email it (dev/console mode),
@@ -73,13 +82,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const result = await consumeMagicLink(token, clientIp(req));
     if (!result.ok || !result.userId) {
       // Bounce back to the app with an error the UI can show.
+      // /app has no session at this point and bounces to /login, dropping the
+      // query string — so the reason for the failure never reached anyone.
       const msg = encodeURIComponent(result.error || 'This link is invalid.');
-      return reply.redirect(`/app?auth_error=${msg}`);
+      return reply.redirect(`/login?auth_error=${msg}`);
     }
     await startSession(reply, req, result.userId);
     // An invite sent to this address becomes a friendship the moment they
     // arrive — see redeemInvites() for why it keys off the email.
-    const redeemed = await redeemInvites(result.userId).catch(() => 0);
+    const redeemed = await redeemInvites(result.userId, result.inviteCode || null).catch(() => 0);
     return reply.redirect(`/app?signed_in=1${redeemed ? '&invited=' + redeemed : ''}`);
   });
 

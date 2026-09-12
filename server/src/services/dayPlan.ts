@@ -2,6 +2,7 @@ import { complete } from './llm';
 import { recentReports, reportsForPrompt } from './reports';
 import { releaseFor, summarizeRelease } from './corps';
 import { featuresForLake, snapStops, type Candidate } from './features';
+import { alertsFor, discussionFor } from './nws';
 import { rampsForLake } from './ramps';
 import { prisma } from '../db';
 import { env } from '../env';
@@ -149,12 +150,30 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const release = await releaseFor(lakeId).catch(() => null);
   const releaseLine = release ? summarizeRelease(release) : '';
 
+  // What the National Weather Service is saying. An advisory outranks every
+  // other input: a plan that reads well and puts someone on the water in a
+  // thunderstorm is a bad plan.
+  const [alerts, discussion] = await Promise.all([
+    alertsFor(lake.lat, lake.lon).catch(() => []),
+    discussionFor(lake.lat, lake.lon).catch(() => null),
+  ]);
+  const nwsLine = alerts.length
+    ? `ACTIVE NATIONAL WEATHER SERVICE ALERTS: ${alerts.map((a) => `${a.event}${a.ends ? ` (until ${a.ends})` : ''} — ${a.headline}`).join(' | ')}\n` +
+      `Treat any wind, storm, flood or heat alert as a hard safety limit. Say it FIRST in "summary", in plain words, and build the day around it — or say plainly that the day is not fishable.\n\n`
+    : '';
+  const afdLine = discussion
+    ? `The local NWS forecaster's own reasoning (${discussion.office}, issued ${discussion.issued}):\n${discussion.text}\n` +
+      `This is a human forecaster on the ground; where it disagrees with the raw numbers, trust it on timing.\n\n`
+    : '';
+
   const prompt =
     `You are a veteran fishing guide building an hour-by-hour game plan.\n` +
     `Lake: ${where} (${lake.lat.toFixed(4)}, ${lake.lon.toFixed(4)}). Date: ${date} (${out} days out).\n` +
     `Target: ${target}\n${goalLine}\n${platform}\n${hours}\n${launch}\n` +
     `Lake profile (JSON, may be empty): ${profileText}\n` +
     `Conditions for the day (JSON: weather/solunar/moon/water temp/best hours, may be sparse): ${condText}\n\n` +
+    nwsLine +
+    afdLine +
     (releaseLine
       ? `Dam release / hydropower generation (USACE, last 24h): ${releaseLine}\n` +
         `On a regulated lake this drives where fish are: current pulls bait, and the bite often turns on and ` +

@@ -48,12 +48,14 @@ export interface TestUser {
 
 // Sign a user in the way a real client does: request a magic link from a
 // private-network address, then follow it.
-export async function signIn(email: string): Promise<TestUser> {
+export async function signIn(email: string, invite?: string): Promise<TestUser> {
   const a = await getApp();
   const req = await a.inject({
     method: 'POST',
     url: '/api/auth/request-link',
-    payload: { email },
+    // `invite` is the code from an invitation email; carrying it is what
+    // separates "they came through my invite" from "they happened to join".
+    payload: invite ? { email, invite } : { email },
     remoteAddress: '127.0.0.1',
   });
   const { devLink } = req.json() as { devLink?: string };

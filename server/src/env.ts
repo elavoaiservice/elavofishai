@@ -47,6 +47,16 @@ export const env = {
 };
 
 export function requireEnv(): void {
+  // A magic link is a credential, and without this the address inside it would
+  // be built from a request header the caller controls — "Host: evil.example"
+  // and the user is emailed a working token pointing somewhere else.
+  if (env.isProd && !env.publicBaseUrl) {
+    throw new Error(
+      'Refusing to start: PUBLIC_BASE_URL is required in production. Sign-in links ' +
+        'are built from it, and falling back to the Host header lets a caller choose ' +
+        'where a user\'s token gets sent. Set PUBLIC_BASE_URL=https://your.domain'
+    );
+  }
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required');
   }

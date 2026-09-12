@@ -19,7 +19,8 @@ export async function issueMagicLink(
   email: string,
   displayName: string | undefined,
   ip: string,
-  baseUrl: string
+  baseUrl: string,
+  inviteCode?: string
 ): Promise<IssuedLink> {
   const existing = await prisma.user.findUnique({ where: { email } });
   const purpose: 'login' | 'signup' = existing ? 'login' : 'signup';
@@ -32,6 +33,7 @@ export async function issueMagicLink(
       tokenHash: sha256(token),
       purpose,
       displayName: existing ? null : (displayName || email.split('@')[0]),
+      inviteCode: inviteCode || null,
       expiresAt,
       ip,
     },
@@ -57,6 +59,7 @@ export async function issueMagicLink(
 }
 
 export interface ConsumeResult {
+  inviteCode?: string | null;
   ok: boolean;
   userId?: string;
   error?: string;
@@ -85,7 +88,7 @@ export async function consumeMagicLink(rawToken: string, ip: string): Promise<Co
     });
   }
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  return { ok: true, userId: user.id };
+  return { ok: true, userId: user.id, inviteCode: rec.inviteCode };
 }
 
 // Best-effort sweep of expired/used tokens.

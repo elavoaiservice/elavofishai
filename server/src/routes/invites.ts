@@ -107,7 +107,7 @@ export async function inviteRoutes(app: FastifyInstance, opts: { baseUrlFor: (re
  * Called once a magic link has produced a session. Returns how many invites
  * were turned into friendships, for logging.
  */
-export async function redeemInvites(userId: string): Promise<number> {
+export async function redeemInvites(userId: string, throughCode?: string | null): Promise<number> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, createdAt: true, displayName: true } });
   if (!user) return 0;
   const invites = await prisma.invite.findMany({
@@ -120,9 +120,12 @@ export async function redeemInvites(userId: string): Promise<number> {
     if (inv.inviterId === userId) continue;
     if ((await blockState(userId, inv.inviterId)) !== 'none') continue;
 
-    // A brand-new account is one created after the invite was written; that is
-    // what makes the automatic friendship safe.
-    const isNew = user.createdAt.getTime() >= inv.createdAt.getTime();
+    // An automatic friendship needs proof that this person actually came
+    // through this invite: the code travelled from the emailed link, through
+    // the signup form, onto the sign-in token. Without that, anyone could
+    // plant an invite at a stranger's address and be in their crew the day
+    // they joined — so every other match becomes an ordinary request.
+    const isNew = !!throughCode && throughCode === inv.code && user.createdAt.getTime() >= inv.createdAt.getTime();
     const already = await prisma.friendship.findFirst({
       where: { OR: [{ userId, friendId: inv.inviterId }, { userId: inv.inviterId, friendId: userId }] },
       select: { id: true, status: true },

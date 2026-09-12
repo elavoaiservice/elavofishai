@@ -153,6 +153,10 @@ model AuthToken {
   tokenHash   String      @unique
   purpose     AuthPurpose @default(login)
   displayName String?
+  // The invite this signup came through, if any. Without it we cannot tell a
+  // link-driven signup from someone who happened to sign up later, and an
+  // invite planted at a stranger's address would silently befriend them.
+  inviteCode  String?
   expiresAt   DateTime
   usedAt      DateTime?
   ip          String?
