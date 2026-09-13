@@ -52,7 +52,7 @@ import { rateFor, recalculateCosts } from '../services/aiUsage';
 import { fetchSource, refreshAllSources } from '../services/reports';
 import { buildIndex } from '../services/corps';
 import { attachOfficialSourcesForAll } from '../services/agencySources';
-import { attention, featureCounts, funnel, latestBackup } from '../services/adminInsight';
+import { attention, egressOk, featureCounts, funnel, latestBackup } from '../services/adminInsight';
 import { deleteObject, listObjects, storageConfigured } from '../services/storage';
 import { pushConfigured } from '../services/push';
 import { issueMagicLink } from '../services/magicLink';
@@ -596,6 +596,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // down or lost data at some point in its life, and none of them was on
     // this page until it did.
     const backup = latestBackup();
+    // The failure that made this worth reporting: the container lost outbound
+    // networking and every health surface still said "ok", because they all
+    // check the database and the database is local.
+    const net = await egressOk();
     const [photoAgg, pushCount, sourcesFailing, sourcesTotal, lastReading] = await Promise.all([
       prisma.photo.aggregate({ _count: { _all: true }, _sum: { bytes: true } }).catch(() => null),
       prisma.pushSubscription.count({ where: { failedAt: null } }).catch(() => 0),
@@ -613,6 +617,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         bytes: photoAgg?._sum.bytes || 0,
       },
       push: { configured: pushConfigured(), devices: pushCount },
+      internet: net,
       backup: backup ? { name: backup.name, at: new Date(backup.at).toISOString(), bytes: backup.bytes, ageHours: Math.round((Date.now() - backup.at) / 3600_000), offsite: backup.offsite ?? null } : null,
       feeds: { active: sourcesTotal, failing: sourcesFailing },
       water: { lastReadingAt: lastReading?.at || null },

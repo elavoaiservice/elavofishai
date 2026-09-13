@@ -1143,6 +1143,12 @@ async function tHealth(){ $('content').innerHTML='<div class="muted">Loading sys
         +((h.push&&h.push.configured)
           ? '<span class="pill ok">on</span> <span class="snap">'+(h.push.devices||0)+' device'+(h.push.devices===1?'':'s')+'</span>'
           : '<span class="pill down">off</span> <span class="snap">the bell only works in-app</span>')+'</td></tr>'
+      + '<tr><td class="muted">Internet</td><td style="text-align:right">'
+        +(h.internet
+          ? (h.internet.ok?'<span class="pill ok">reachable</span>':'<span class="pill down">UNREACHABLE</span>')
+            +' <span class="snap">'+esc(h.internet.detail||'')+'</span>'
+          : '<span class="snap">not checked</span>')
+      + '</td></tr>'
       + '<tr><td class="muted">Last backup</td><td style="text-align:right">'
         +(h.backup
           ? ((h.backup.ageHours<48?'<span class="pill ok">'+h.backup.ageHours+'h ago</span>':'<span class="pill down">'+Math.round(h.backup.ageHours/24)+'d ago</span>')

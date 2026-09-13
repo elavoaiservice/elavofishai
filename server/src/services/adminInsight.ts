@@ -13,6 +13,45 @@ import { storageConfigured } from './storage';
 import { pushConfigured } from './push';
 import { emailStatus } from './email';
 
+/**
+ * Can this process reach the internet at all?
+ *
+ * Worth its own check because of how it failed: the container lost outbound
+ * networking entirely — no weather, no gauges, no Overpass, no Anthropic, no
+ * email — and every health surface still said "ok", because they all check the
+ * database and the database is local. The app looked perfectly well while
+ * being unable to do most of what it does.
+ *
+ * Deliberately NOT part of /health/ready: that is what the watchdog restarts
+ * on, and restarting a container will not fix somebody else's DNS. This is for
+ * the dashboard, where a human can read it and know where to look.
+ */
+let egressMemo: { at: number; ok: boolean; detail: string } | null = null;
+
+export async function egressOk(): Promise<{ ok: boolean; detail: string }> {
+  if (egressMemo && Date.now() - egressMemo.at < 5 * 60_000) return egressMemo;
+  // Two unrelated hosts, so one service having a bad day is not read as "the
+  // internet is gone". Either answering is enough.
+  const targets = ['https://api.weather.gov/', 'https://www.waterqualitydata.us/'];
+  const tries = await Promise.all(
+    targets.map(async (url) => {
+      try {
+        const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8_000) });
+        return { url, ok: res.status < 500, note: String(res.status) };
+      } catch (e) {
+        const cause = (e as { cause?: { code?: string } }).cause;
+        return { url, ok: false, note: cause?.code || (e as Error).message };
+      }
+    })
+  );
+  const ok = tries.some((t) => t.ok);
+  const detail = ok
+    ? `${tries.filter((t) => t.ok).length} of ${tries.length} upstreams answered`
+    : tries.map((t) => `${new URL(t.url).host}: ${t.note}`).join(' · ');
+  egressMemo = { at: Date.now(), ok, detail };
+  return egressMemo;
+}
+
 export interface Attention {
   level: 'ok' | 'warn' | 'bad';
   title: string;
@@ -35,6 +74,17 @@ export async function attention(): Promise<Attention[]> {
     prisma.clientError.count({ where: { createdAt: { gte: new Date(Date.now() - day) } } }).catch(() => 0),
     prisma.aiUsage.count({ where: { ok: false, createdAt: { gte: new Date(Date.now() - 7 * day) } } }).catch(() => 0),
   ]);
+
+  // First, because nothing else on this list means much if it is true.
+  const net = await egressOk();
+  if (!net.ok) {
+    out.push({
+      level: 'bad',
+      title: 'The app cannot reach the internet',
+      detail: `No upstream answered (${net.detail}). Weather, gauges, maps, AI plans and sign-in emails are all down, even though the site itself is up. Check the container's network before anything else here.`,
+      tab: 'health',
+    });
+  }
 
   if (flags) out.push({ level: 'warn', title: `${flags} report${flags === 1 ? '' : 's'} waiting`, detail: 'Someone flagged content and nobody has decided yet.', tab: 'flags' });
   if (failingSources) out.push({ level: 'warn', title: `${failingSources} report source${failingSources === 1 ? '' : 's'} failing`, detail: 'A feed is erroring, so those lakes are getting no agency reports.', tab: 'sources' });
