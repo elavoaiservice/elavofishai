@@ -416,6 +416,17 @@ export async function tournamentRoutes(app: FastifyInstance): Promise<void> {
     if ('error' in win) return reply.code(400).send({ error: win.error });
     const format = FORMATS.includes(String(b.format) as (typeof FORMATS)[number]) ? String(b.format) : 'heaviest_bag';
 
+    // A series id from another group would have quietly added this event to
+    // that group's standings, and a made-up lake id would have come back as a
+    // 500 from the foreign key. Neither is the caller's to choose freely.
+    if (b.seriesId) {
+      const ser = await prisma.tournamentSeries.findUnique({ where: { id: String(b.seriesId) }, select: { groupId: true } });
+      if (!ser || ser.groupId !== groupId) return reply.code(400).send({ error: 'That season belongs to a different group.' });
+    }
+    if (b.lakeId && !(await prisma.lake.count({ where: { id: String(b.lakeId) } }))) {
+      return reply.code(400).send({ error: 'We do not have that lake.' });
+    }
+
     const t = await prisma.tournament.create({
       data: {
         groupId,

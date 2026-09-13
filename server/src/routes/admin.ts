@@ -31,8 +31,10 @@ function shortDevice(ua: string): string {
   if (!ua) return 'unknown device';
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
     : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'unknown';
-  const browser = /CriOS|Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox'
-    : /Edg\//.test(ua) ? 'Edge' : /Safari/.test(ua) ? 'Safari' : 'browser';
+  // Order matters: Edge's user agent contains "Chrome", and Chrome's contains
+  // "Safari". Most specific first, or everything reads as Chrome.
+  const browser = /Edg[A-Z]?\//.test(ua) ? 'Edge' : /Firefox|FxiOS/.test(ua) ? 'Firefox'
+    : /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'browser';
   return `${browser} on ${os}`;
 }
 
@@ -1194,13 +1196,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const stillUsed = await prisma.photo.findMany({ where: { key: { in: keys.map(String) } }, select: { key: true } });
     const used = new Set(stillUsed.map((k) => k.key));
     let removed = 0;
+    let failed = 0;
+    let kept = 0;
     for (const key of keys.map(String).slice(0, 500)) {
-      if (used.has(key) || /^backups\//.test(key)) continue;
-      await deleteObject(key).catch(() => {});
-      removed += 1;
+      if (used.has(key) || /^backups\//.test(key)) { kept += 1; continue; }
+      if (await deleteObject(key).catch(() => false)) removed += 1;
+      else failed += 1;
     }
-    await audit(admin.username, 'storage.sweep', String(removed), { requested: keys.length });
-    return reply.send({ ok: true, removed, kept: keys.length - removed });
+    await audit(admin.username, 'storage.sweep', String(removed), { requested: keys.length, failed });
+    return reply.send({ ok: true, removed, kept, failed });
   });
 
   /** One lake and everything we know about it. The lakes tab was a list. */
@@ -1379,7 +1383,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // the fourth is a pattern, and the decision is different.
     const history = author.id
       ? await prisma.contentFlag.count({ where: { targetId: author.id, targetType: 'user' } }) +
-        await prisma.contentFlag.count({ where: { targetType: { in: ['post', 'comment', 'listing'] }, targetId: { not: flag.targetId }, snapshot: { contains: author.displayName } } })
+        // A blank display name would make `contains: ''` match every snapshot
+        // on the platform, so the name has to be worth searching for.
+        (author.displayName.trim().length >= 3
+          ? await prisma.contentFlag.count({ where: { targetType: { in: ['post', 'comment', 'listing'] }, targetId: { not: flag.targetId }, snapshot: { contains: author.displayName } } })
+          : 0)
       : 0;
 
     return { flag, author, thread, gone, priorReports: history, snapshot: flag.snapshot };

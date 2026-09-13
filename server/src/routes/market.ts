@@ -57,6 +57,9 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
           : q.sellerId
             ? (blocked.includes(String(q.sellerId)) ? '__blocked__' : String(q.sellerId))
             : { notIn: blocked },
+        // A closed or suspended seller's board goes with the account — it was
+        // still taking messages nobody would read.
+        ...(q.mine === '1' ? {} : { seller: { status: 'active' } }),
         // Your own withdrawn ads stay visible to you; everyone else sees the board.
         status: q.mine === '1' ? undefined : { in: ['active', 'sold'] },
         category: q.category && (CATEGORIES as readonly string[]).includes(q.category) ? q.category : undefined,
@@ -182,9 +185,14 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
     const id = String((req.params as { id: string }).id);
     const body = String((req.body as { body?: string }).body || '').trim().slice(0, 2000);
     if (!body) return reply.code(400).send({ error: 'Write a message first.' });
-    const listing = await prisma.listing.findUnique({ where: { id }, select: { sellerId: true, title: true, status: true } });
+    const listing = await prisma.listing.findUnique({
+      where: { id },
+      select: { sellerId: true, title: true, status: true, seller: { select: { status: true } } },
+    });
     if (!listing) return reply.code(404).send({ error: 'No such listing.' });
     if (listing.sellerId === me.id) return reply.code(400).send({ error: 'That is your own listing.' });
+    // Writing to a seller whose account has gone looked like it worked.
+    if (listing.seller.status !== 'active') return reply.code(410).send({ error: 'That seller is no longer on the app.' });
     if ((await blockState(me.id, listing.sellerId)) !== 'none') return reply.code(404).send({ error: 'No such listing.' });
     if (await overLimit(`contact:${me.id}`, 30, 3600_000)) {
       return reply.code(429).send({ error: 'Too many messages this hour — try again later.' });

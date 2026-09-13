@@ -4366,9 +4366,14 @@ function wireFriends(){
 }
 /* ---- Profile ---- */
 let PF_PENDING_AVATAR=undefined; // undefined = unchanged, null = cleared, string = new data URL
-function avInitials(name){ return (String(name||'?').trim()[0]||'?').toUpperCase(); }
+// Escaped: this goes straight into innerHTML in the message list, and a
+// display name is free text.
+function avInitials(name){ return escHtml((String(name||'?').trim()[0]||'?').toUpperCase()); }
 function paintAvatar(el,url,name){
-  if(url){ el.innerHTML=''; el.style.backgroundImage='url("'+url+'")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
+  // A quote or a bracket in the URL used to close the CSS url() early — the
+  // same reason every other image here goes through safeImgUrl.
+  const safe=safeImgUrl(url);
+  if(safe){ el.innerHTML=''; el.style.backgroundImage='url("'+safe+'")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
   else { el.style.backgroundImage=''; el.textContent=avInitials(name); }
 }
 async function loadProfile(){
@@ -5770,10 +5775,11 @@ function openLightbox(src){
   const el=document.createElement('div');
   el.className='lb';
   el.innerHTML='<img src="'+escHtml(src)+'" alt=""><button aria-label="Close">✕</button>';
-  el.addEventListener('click',function(){ el.remove(); });
+  const shut=function(){ el.remove(); document.removeEventListener('keydown',onKey); };
+  el.addEventListener('click',shut);
   document.body.appendChild(el);
-  const esc=function(e){ if(e.key==='Escape'){ el.remove(); document.removeEventListener('keydown',esc); } };
-  document.addEventListener('keydown',esc);
+  const onKey=function(e){ if(e.key==='Escape')shut(); };
+  document.addEventListener('keydown',onKey);
 }
 
 /* ---- several photos at once ----
@@ -6208,10 +6214,11 @@ function openHelp(id){
   el.innerHTML='<div class="hbox" role="dialog" aria-modal="true" aria-label="'+escHtml(h.t)+'">'+
     '<div class="hhead"><b>'+escHtml(h.t)+'</b><button class="hclose" aria-label="Close">✕</button></div>'+
     '<div class="hbody">'+h.b+'</div></div>';
-  el.addEventListener('click',function(e){ if(e.target===el||e.target.closest('.hclose'))el.remove(); });
+  const shut=function(){ el.remove(); document.removeEventListener('keydown',onKey); };
+  el.addEventListener('click',function(e){ if(e.target===el||e.target.closest('.hclose'))shut(); });
   document.body.appendChild(el);
-  const esc=function(e){ if(e.key==='Escape'){ el.remove(); document.removeEventListener('keydown',esc); } };
-  document.addEventListener('keydown',esc);
+  const onKey=function(e){ if(e.key==='Escape')shut(); };
+  document.addEventListener('keydown',onKey);
 }
 document.addEventListener('click',function(e){
   const b=e.target.closest('[data-help]');

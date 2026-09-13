@@ -77,7 +77,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
     const otherId = String((req.params as { userId: string }).userId);
     const other = await prisma.user.findUnique({
       where: { id: otherId },
-      select: { id: true, displayName: true, avatarUrl: true, messagePrivacy: true },
+      select: { id: true, displayName: true, avatarUrl: true, messagePrivacy: true, status: true },
     });
     if (!other) return reply.code(404).send({ error: 'Angler not found.' });
     if ((await blockedUserIds(me.id)).includes(otherId)) {
@@ -122,7 +122,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(429).send({ error: 'Slow down — too many messages.' });
     }
 
-    const other = await prisma.user.findUnique({ where: { id: otherId }, select: { id: true, messagePrivacy: true } });
+    const other = await prisma.user.findUnique({ where: { id: otherId }, select: { id: true, messagePrivacy: true, status: true } });
     if (!other) return reply.code(404).send({ error: 'Angler not found.' });
 
     const gate = await canMessage(me.id, other);

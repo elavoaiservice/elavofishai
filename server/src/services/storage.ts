@@ -142,11 +142,21 @@ export async function getObject(key: string): Promise<{ body: Buffer; contentTyp
   };
 }
 
-export async function deleteObject(key: string): Promise<void> {
+/**
+ * Returns whether the object is actually gone.
+ *
+ * This used to swallow everything and return void, which meant a bucket
+ * refusing deletes reported a clean sweep — the admin saw "removed 40" and was
+ * still being billed for all forty.
+ */
+export async function deleteObject(key: string): Promise<boolean> {
   const cfg = storageConfig();
-  if (!cfg) return;
+  if (!cfg) return false;
   const { url, headers } = signRequest({ cfg, method: 'DELETE', key, payloadHash: sha256hex('') });
-  await fetch(url, { method: 'DELETE', headers, signal: AbortSignal.timeout(20_000) }).catch(() => {});
+  const res = await fetch(url, { method: 'DELETE', headers, signal: AbortSignal.timeout(20_000) }).catch(() => null);
+  // S3 answers 204 for a delete, and 404 means it was already gone — which is
+  // the outcome we wanted either way.
+  return !!res && (res.ok || res.status === 404);
 }
 
 /** Does the configured bucket actually accept our credentials? */

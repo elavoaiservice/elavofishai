@@ -751,7 +751,7 @@ async function loadUsers(){
       (gone
         ? '<button class="btn btn-ghost btn-sm ur" data-id="'+u.id+'">Restore</button>'
         : '<button class="btn btn-ghost btn-sm us" data-id="'+u.id+'" data-s="'+(u.status==='active'?'suspended':'active')+'">'+(u.status==='active'?'Suspend':'Reactivate')+'</button> '+
-          '<button class="btn btn-danger btn-sm ud" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">Delete</button>')+
+          (ME.owner===false?'':'<button class="btn btn-danger btn-sm ud" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">Delete</button>'))+
     '</td></tr>';
   }).join('')||'<tr><td colspan="9" class="muted">No users.</td></tr>';
   if($('uAll'))$('uAll').onchange=()=>{ $('uTable').querySelectorAll('.ucb').forEach(c=>{c.checked=$('uAll').checked;}); drawBulk(); };
@@ -774,6 +774,10 @@ function drawBulk(){
   const picked=[...document.querySelectorAll('.ucb:checked')];
   if(!picked.length){ bar.style.display='none'; bar.innerHTML=''; return; }
   bar.style.display='';
+  if(ME.owner===false){
+    bar.innerHTML='<div class="snap">Bulk actions need an owner account. You are signed in as support.</div>';
+    return;
+  }
   bar.innerHTML='<div class="row" style="align-items:center"><b>'+picked.length+' selected</b>'
     +'<button class="btn btn-ghost btn-sm" id="bkSus">Suspend them</button>'
     +'<button class="btn btn-ghost btn-sm" id="bkAct">Reactivate them</button>'
@@ -1009,7 +1013,8 @@ async function tStorage(){
     +metricCard(fmtBytes(t.orphanBytes||0),'Wasted','billed every month')
     +'</div>'
     +'<div class="card" style="margin-bottom:14px"><div class="row" style="align-items:center">'
-      +'<button class="btn btn-danger btn-sm" id="stSweep"'+(t.orphans?'':' disabled')+'>Delete the '+(t.orphans||0)+' orphan(s) on this page</button>'
+      +'<button class="btn btn-danger btn-sm" id="stSweep"'+((t.orphans&&ME.owner!==false)?'':' disabled')+'>Delete the '+(t.orphans||0)+' orphan(s) on this page</button>'
+      +(ME.owner===false?'<span class="snap">Sweeping needs an owner account.</span>':'')
       +'<span class="snap">Backups are never touched, and anything the database still points at is refused even if it is asked for.</span>'
       +'<span class="msg" id="stMsg"></span></div></div>'
     +'<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Key</th><th>Size</th><th>Modified</th><th>Status</th></tr></thead><tbody>'
@@ -1030,7 +1035,9 @@ async function tStorage(){
     const r=await api('/api/admin/storage/sweep',{method:'POST',body:JSON.stringify({keys})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok){ $('stMsg').className='msg err'; $('stMsg').textContent=j.error||'Failed.'; return; }
-    $('stMsg').className='msg ok'; $('stMsg').textContent='Removed '+j.removed+(j.kept?', kept '+j.kept+' still in use':'');
+    $('stMsg').className=j.failed?'msg err':'msg ok';
+    $('stMsg').textContent='Removed '+j.removed+(j.kept?', kept '+j.kept+' still in use':'')
+      +(j.failed?' — '+j.failed+' would not delete, so they are still being billed. Check the bucket permissions.':'');
     setTimeout(tStorage,1200);
   };
 }

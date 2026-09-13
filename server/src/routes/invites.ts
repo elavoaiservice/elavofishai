@@ -119,6 +119,10 @@ export async function redeemInvites(userId: string, throughCode?: string | null)
   for (const inv of invites) {
     if (inv.inviterId === userId) continue;
     if ((await blockState(userId, inv.inviterId)) !== 'none') continue;
+    // The inviter may have left or been suspended between sending this and it
+    // being taken up. Joining a crew of one closed account is not a welcome.
+    const inviter = await prisma.user.findUnique({ where: { id: inv.inviterId }, select: { status: true } });
+    if (!inviter || inviter.status !== 'active') continue;
 
     // An automatic friendship needs proof that this person actually came
     // through this invite: the code travelled from the emailed link, through

@@ -54,10 +54,14 @@ export async function photoRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(502).send({ error: 'Could not store that photo — try again.' });
     }
 
+    // A lake id we do not have came back as a foreign-key 500 after the object
+    // was already in the bucket. The photo is still good without it.
+    const lakeId = b.lakeId && (await prisma.lake.count({ where: { id: String(b.lakeId) } })) ? String(b.lakeId) : null;
+
     const photo = await prisma.photo.create({
       data: {
         key, userId: me.id, mediaType, bytes: bytes.length,
-        lakeId: b.lakeId ? String(b.lakeId) : null,
+        lakeId,
         width: Number.isFinite(b.width) ? Number(b.width) : null,
         height: Number.isFinite(b.height) ? Number(b.height) : null,
       },
@@ -140,7 +144,10 @@ export async function sweepOrphanPhotos(): Promise<void> {
     take: 200,
   });
   for (const o of orphans) {
-    await deleteObject(o.key);
-    await prisma.photo.delete({ where: { id: o.id } }).catch(() => {});
+    // Only forget the row once the object is really gone (a 404 counts) —
+    // dropping the row first would leave an object nothing can ever find.
+    if (await deleteObject(o.key).catch(() => false)) {
+      await prisma.photo.delete({ where: { id: o.id } }).catch(() => {});
+    }
   }
 }

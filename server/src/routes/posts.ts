@@ -50,6 +50,8 @@ const INCLUDE = {
   lake: { select: { id: true, name: true } },
   photos: { select: { id: true } },
   comments: {
+    // A comment from a closed account should not outlive the account.
+    where: { author: { status: 'active' } },
     orderBy: { createdAt: 'asc' as const },
     take: 20,
     include: { author: { select: { id: true, displayName: true, avatarUrl: true } } },
@@ -182,6 +184,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         // A stranger's public post is not in here — it goes to "discover"
         // below when the feed is thin, or is found through their page. That
         // is what "only friends by default" means in practice.
+        // friendIds() already drops closed accounts, but a group post from
+        // someone since suspended would otherwise keep appearing.
+        author: { status: 'active' },
         OR: [
           { authorId: me.id },
           { groupId: { in: groups } },

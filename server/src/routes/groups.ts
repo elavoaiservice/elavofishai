@@ -49,12 +49,16 @@ export async function groupPageRoutes(app: FastifyInstance): Promise<void> {
     const mine = group.members.find((m) => m.memberId === me.id);
 
     const posts = await prisma.post.findMany({
-      where: { groupId: id },
+      // A closed or suspended account leaves the roster, and its posts go with
+      // it — the page should not still be showing words from someone the app
+      // says is gone.
+      where: { groupId: id, author: { status: 'active' } },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
         lake: { select: { id: true, name: true } },
         photos: { select: { id: true } },
         comments: {
+          where: { author: { status: 'active' } },
           orderBy: { createdAt: 'asc' },
           take: 20,
           include: { author: { select: { id: true, displayName: true, avatarUrl: true } } },

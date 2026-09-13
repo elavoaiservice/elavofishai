@@ -72,9 +72,14 @@ export async function areFriends(a: string, b: string): Promise<boolean> {
 // only, `nobody` = messaging disabled.
 export async function canMessage(
   senderId: string,
-  recipient: { id: string; messagePrivacy: string }
+  recipient: { id: string; messagePrivacy: string; status?: string }
 ): Promise<{ ok: boolean; reason?: string }> {
   if (senderId === recipient.id) return { ok: false, reason: "You can't message yourself." };
+  // Messages to a closed account went nowhere and looked like they had been
+  // delivered. Suspended is the same answer — nobody is reading it.
+  if (recipient.status && recipient.status !== 'active') {
+    return { ok: false, reason: 'That account is no longer active.' };
+  }
   // A block outranks every privacy setting, in both directions. The reason is
   // deliberately the same either way — telling someone they've been blocked is
   // itself information they can act on.

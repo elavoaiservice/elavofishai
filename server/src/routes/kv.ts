@@ -49,12 +49,21 @@ export async function kvRoutes(app: FastifyInstance): Promise<void> {
     // Enforce per-user caps in a transaction so concurrent writes can't race past them.
     try {
       await prisma.$transaction(async (tx) => {
-        const existing = await tx.kv.findMany({ where: { userId: user.id }, select: { key: true, value: true } });
-        const isNew = !existing.some((r) => r.key === key);
-        if (isNew && existing.length >= env.maxKeysPerUser) {
+        // Counting bytes used to mean loading every stored value into Node on
+        // every single write — up to 16 MB of text to decide whether 2 MB more
+        // would fit. Postgres can add up octet_length without sending any of it.
+        const [tally] = await tx.$queryRaw<{ others: bigint; otherbytes: bigint; mine: bigint }[]>`
+          SELECT
+            COUNT(*) FILTER (WHERE "key" <> ${key})::bigint AS others,
+            COALESCE(SUM(octet_length("value")) FILTER (WHERE "key" <> ${key}), 0)::bigint AS otherbytes,
+            COUNT(*) FILTER (WHERE "key" = ${key})::bigint AS mine
+          FROM "Kv" WHERE "userId" = ${user.id}`;
+        const others = Number(tally?.others || 0);
+        const otherBytes = Number(tally?.otherbytes || 0);
+        const isNew = Number(tally?.mine || 0) === 0;
+        if (isNew && others >= env.maxKeysPerUser) {
           throw new Error('too_many_keys');
         }
-        const otherBytes = existing.reduce((n, r) => (r.key === key ? n : n + byteLen(r.value)), 0);
         if (otherBytes + byteLen(raw) > env.maxUserBytes) {
           throw new Error('account_full');
         }
