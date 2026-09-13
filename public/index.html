@@ -1137,7 +1137,10 @@ body.feed-loading .stat-v *{visibility:hidden}
   <div class="hours" id="whours"></div>
   <div class="hrlab" id="whrlab"></div>
   <div id="wsum" class="win-b" style="margin-top:10px"></div>
-  <h3>Which bank</h3>
+  <h3>Which bank the wind is loading</h3>
+  <p class="lede" style="margin:-4px 0 10px">Wind pushes the lake's plankton across to the downwind shore. Bait follows the
+     plankton, and everything else follows the bait — so the bank the wind is blowing <b>into</b> is usually the one worth
+     fishing. <button class="hbtn" data-help="bank" aria-label="More about wind and banks">ⓘ Why this works</button></p>
   <div id="bank"></div>
   <div id="aiPlanBox" style="margin-top:22px;border:1px solid var(--border);border-radius:16px;padding:18px;background:var(--surface)">
     <h3 style="margin:0 0 4px">🧠 AI day plan</h3>
@@ -4121,6 +4124,11 @@ async function genAiPlan(force){
   if(day&&!cond.forecastCovers){ $('aiPlanMsg').textContent='That date is beyond the 7-day forecast — the plan will lean on the season, not the weather.'; }
   const species=$('aiSpecies').value||'any';
   const goal=$('aiGoal').value||'numbers';
+  // The date the SERVER will file this plan under. The date box is blank
+  // whenever the angler just wants today, and polling for a blank date asks
+  // the server a question it has to refuse — which is why recovering a dropped
+  // plan never once worked.
+  const planDate=day||cond.date;
   const launch=aiLaunchPoint();
   const window={from:$('aiFrom').value||'',to:$('aiTo').value||''};
   const platform=$('aiPlatform').value||'boat';
@@ -4128,25 +4136,37 @@ async function genAiPlan(force){
   $('aiPlanBtn').disabled=true;
   try{
     const r=await apiFetch('/api/ai/day-plan',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lakeId:ACTIVE.id,date:day||cond.date,species:species,goal:goal,launch:launch,
+      body:JSON.stringify({lakeId:ACTIVE.id,date:planDate,species:species,goal:goal,launch:launch,
         window:window,platform:platform,conditions:cond,force:!!force})});
     const d=await r.json();
-    if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
+    // 202: the server ran out of time to answer inside the proxy's window but
+    // is still working, and will cache the plan when it lands. Go and collect
+    // it rather than making them press the button again.
+    if(r.status===202||(d&&d.pending)){
+      $('aiPlanMsg').textContent='Still working — this one is taking longer than usual. Waiting for it…';
+      const got=await pollDayPlan(planDate,species,goal);
+      if(got){ $('aiPlanMsg').textContent=''; AI_PLANNED=true; renderAiPlan(got,species); }
+      else $('aiPlanMsg').textContent='It is still generating. Press the button again in a minute and it will be waiting.';
+    }
+    else if(!r.ok){ $('aiPlanMsg').textContent=d.needsKey?'AI isn’t configured yet (no API key).':(d.error||'Could not generate.'); }
     else { $('aiPlanMsg').textContent=''; AI_PLANNED=true; renderAiPlan(d,species); }
   }catch(e){
     // The connection dropped, but the server finishes the plan and caches it
     // regardless — so go back for it rather than throwing the work away.
     $('aiPlanMsg').textContent='Connection dropped mid-plan — checking whether it finished…';
-    const got=await pollDayPlan(day,species,goal);
+    const got=await pollDayPlan(planDate,species,goal);
     $('aiPlanMsg').textContent = got ? '' : 'Couldn’t reach the server. Your plan may still be generating — try again in a moment.';
-    if(got) renderAiPlan(got,species);
+    if(got){ AI_PLANNED=true; renderAiPlan(got,species); }
   }
   $('aiPlanBtn').disabled=false;
 }
 // Collect a plan the server may have finished after our request died.
 async function pollDayPlan(date,species,goal){
-  for(let i=0;i<6;i++){
-    await new Promise(r=>setTimeout(r,5000));
+  if(!date)return null;
+  // Up to two minutes. A plan that has gone past the proxy's window is waiting
+  // on the model, and that is measured in tens of seconds, not milliseconds.
+  for(let i=0;i<16;i++){
+    await new Promise(r=>setTimeout(r,i<4?4000:8000));
     try{
       const q='?lakeId='+encodeURIComponent(ACTIVE.id)+'&date='+encodeURIComponent(date)+'&species='+encodeURIComponent(species)+'&goal='+encodeURIComponent(goal||'numbers');
       const r=await apiFetch('/api/ai/day-plan'+q);
@@ -6304,6 +6324,12 @@ const HELP={
     '<p>“Look for” is what to check <b>on arrival</b> at that exact spot: depth, cover, bait, where the shade or current is. '+
     'The dashed line is the order of the day, not a route to drive — use your own judgement on the water.</p>'+
     '<p>Places come from OpenStreetMap, which is thorough on some lakes and thin on others. Add your own spots under My water and they go straight into the list.</p>'},
+  bank:{t:'Which bank the wind is loading',b:
+    '<p>Plankton drifts. It cannot swim against wind-driven current, so a steady wind slowly pushes the lake’s plankton across to the far shore and piles it up there.</p>'+
+    '<p>Shad eat plankton, so the shad go where it ends up. Crappie, bass, whites and stripers eat shad, so they go where the shad are. Two or three days of wind out of the same direction and the downwind bank is where the whole food chain has moved.</p>'+
+    '<p><b>So: fish the bank the wind is blowing into, with the wind at your back.</b> It is the least comfortable side to fish and it is usually where they are. Cove ends on that side are better still — the food gets trapped and cannot drift any further.</p>'+
+    '<p>The exceptions are worth knowing. A wind that has just switched has not moved anything yet, so give it a day. And once it is over about 20 mph, boat control and safety outrank the bait — that is the point where you fish the sheltered side and accept fewer bites.</p>'+
+    '<p>The section also tells you how rough it will be out there, which depends on how the wind lines up with the long axis of your lake: wind running the length of it has miles to build waves, wind cutting across it does not.</p>'},
   sharing:{t:'Who can see this',b:
     '<p>Every spot, catch and waypoint carries its own setting: <b>just you</b>, <b>friends</b>, <b>a group</b>, or <b>everyone</b>. The default is whatever you set under Settings → Sharing; changing the default never changes anything you already shared.</p>'+
     '<p>Group sharing has a second lock: each member decides what that group sees of their spots, catches and waypoints, and a group owner can turn data sharing off entirely.</p>'}

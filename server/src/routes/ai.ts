@@ -9,6 +9,10 @@ import { identifyCatch } from '../services/identifyCatch';
 
 const MAX_PHOTO_CHARS = 900_000; // ~670KB image (client resizes first)
 
+/* Comfortably inside Cloudflare's 100-second ceiling, with room for the
+   response itself to get back through the tunnel. */
+const PLAN_BUDGET_MS = 75_000;
+
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   // Is the AI configured? Lets the UI show the right state.
   app.get('/api/ai/status', async () => ({ configured: !!process.env.ANTHROPIC_API_KEY }));
@@ -52,7 +56,15 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     if (await overLimit(`dayplan:any:${user.id}`, 120, 3600000)) {
       return reply.code(429).send({ error: 'That is a lot of plans in an hour — try again shortly.' });
     }
-    const r = await getOrGenerateDayPlan({
+    /* Answer before the proxy gives up on us.
+       Cloudflare cuts a request off at 100 seconds and the browser just sees
+       the connection die — which is exactly what anglers were getting:
+       "connection dropped mid-plan". The work itself is fine; it finishes and
+       caches either way. So race it against a budget comfortably inside that
+       ceiling and, if the budget wins, answer "still working" and let the
+       client come back for it. Nothing is thrown away and nothing is charged
+       twice. */
+    const work = getOrGenerateDayPlan({
       lakeId: String(b.lakeId || ''),
       date: String(b.date || ''),
       species: String(b.species || ''),
@@ -64,6 +76,25 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       window: b.window || null,
       platform: String(b.platform || 'boat'),
     });
+    // Keep a handle on the failure so an abandoned plan cannot take the process
+    // down as an unhandled rejection after we have already replied.
+    work.catch((e) => req.log.error({ err: e }, 'day plan failed after the request returned'));
+
+    let timer: NodeJS.Timeout | undefined;
+    const budget = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), PLAN_BUDGET_MS);
+      timer.unref?.();
+    });
+    const r = await Promise.race([work, budget]);
+    if (timer) clearTimeout(timer);
+
+    if (!r) {
+      return reply.code(202).send({
+        ok: false,
+        pending: true,
+        error: 'Still working on it — this plan is taking longer than usual. It will be ready in a moment.',
+      });
+    }
     if (!r.ok) return reply.code(r.needsKey ? 503 : 400).send({ error: r.error, needsKey: r.needsKey });
     return reply.send(r);
   });

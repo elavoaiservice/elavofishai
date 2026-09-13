@@ -151,6 +151,16 @@ else
   done
   echo "[smoke] ok   admin router"
 fi
+# Buttons carrying data-tab are rendered in panels, not just the nav — the
+# dashboard's "needs attention" row is the main one. A listener bound to the nav
+# element only catches the nav's own, which is why every Open on that row did
+# nothing. The delegation has to be on the document.
+if grep -q "\$('nav').addEventListener('click'" "$ADMIN"; then
+  echo "[smoke] FAIL admin — data-tab clicks are bound to the nav, so buttons rendered elsewhere are dead"; FAIL=1
+fi
+grep -q "document.addEventListener('click'" "$ADMIN" || {
+  echo "[smoke] FAIL admin — nothing delegates data-tab clicks at the document level"; FAIL=1; }
+
 # Every panel the router names must actually exist as a function.
 for fn in $(printf '%s' "$ROUTES" | grep -oE '[a-z]+:t[A-Za-z]+' | sed 's/.*://' | sort -u); do
   grep -q "function $fn(" "$ADMIN" || { echo "[smoke] FAIL admin — the router points at $fn(), which is not defined"; FAIL=1; }

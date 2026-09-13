@@ -154,46 +154,41 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     ? candidates.map((c) => `- ${c.name} [${c.kind}] ${c.lat.toFixed(4)},${c.lon.toFixed(4)}${c.hint ? ` — ${c.hint}` : ''}`).join('\n')
     : '';
 
-  // What this lake's own anglers have caught. Evidence about THIS water beats
-  // general knowledge about lakes in general — that is the whole reason the
-  // log exists.
-  const localLines = knowledgeForPrompt(await knowledgeFor(lakeId).catch(() => []));
+  /* Everything the prompt still needs, fetched at once.
+     This used to be five sequential awaits — the lake's own log, the plan
+     complaints, the stored reports, the Corps release and then the weather —
+     each waiting on a different upstream. Added up they could take longer than
+     the model call, and the total is what put the request past Cloudflare's
+     100-second ceiling and dropped the connection on the angler. None of them
+     depend on each other, so none of them need to queue.
 
-  /* What anglers said went wrong with previous plans for this lake.
-     The 👍/👎 has been collected and only ever read by an admin. A plan that
-     was wrong about this water in a way someone took the trouble to write down
-     is the most specific correction available, so it goes in front of the
-     model — as complaints to avoid repeating, never as instructions. */
-  const gripes = await prisma.planFeedback
-    .findMany({
-      where: { helpful: false, note: { not: null }, plan: { lakeId } },
-      select: { note: true, createdAt: true, plan: { select: { species: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    })
-    .catch(() => []);
-  const gripeLines = gripes.length
-    ? gripes.map((g) => `- (${g.plan?.species || 'any'}) ${String(g.note).slice(0, 200)}`).join('\n')
-    : '';
-
-  // Real reports about this water beat anything a model can infer. Agency feeds
-  // and angler reports are already collected; put the recent ones in front of
-  // it, dated and attributed.
-  const reports = reportsForPrompt(await recentReports(lakeId).catch(() => []));
-
-  // On a regulated lake, moving water beats almost everything else — fish set
-  // up on current. Empty for lakes with no Corps project nearby.
-  const release = await releaseFor(lakeId).catch(() => null);
-  const releaseLine = release ? summarizeRelease(release) : '';
-
-  // What the National Weather Service is saying. An advisory outranks every
-  // other input: a plan that reads well and puts someone on the water in a
-  // thunderstorm is a bad plan.
-  const [alerts, discussion, outlook] = await Promise.all([
+     - localLines: what anglers have actually caught here; beats general knowledge.
+     - gripeLines: what people said was wrong with earlier plans for this lake.
+     - reports: agency and angler reports, dated and attributed.
+     - release: on a regulated lake, current drives everything.
+     - alerts/discussion/outlook: an advisory outranks every other input. */
+  const [knowledge, gripes, rawReports, release, alerts, discussion, outlook] = await Promise.all([
+    knowledgeFor(lakeId).catch(() => []),
+    prisma.planFeedback
+      .findMany({
+        where: { helpful: false, note: { not: null }, plan: { lakeId } },
+        select: { note: true, createdAt: true, plan: { select: { species: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      })
+      .catch(() => []),
+    recentReports(lakeId).catch(() => []),
+    releaseFor(lakeId).catch(() => null),
     alertsFor(lake.lat, lake.lon).catch(() => []),
     discussionFor(lake.lat, lake.lon).catch(() => null),
     outlookFor(lake.lat, lake.lon).catch(() => null),
   ]);
+  const localLines = knowledgeForPrompt(knowledge);
+  const gripeLines = gripes.length
+    ? gripes.map((g) => `- (${g.plan?.species || 'any'}) ${String(g.note).slice(0, 200)}`).join('\n')
+    : '';
+  const reports = reportsForPrompt(rawReports);
+  const releaseLine = release ? summarizeRelease(release) : '';
   const nwsLine = alerts.length
     ? `ACTIVE NATIONAL WEATHER SERVICE ALERTS: ${alerts.map((a) => `${a.event}${a.ends ? ` (until ${a.ends})` : ''} — ${a.headline}`).join(' | ')}\n` +
       `Treat any wind, storm, flood or heat alert as a hard safety limit. Say it FIRST in "summary", in plain words, and build the day around it — or say plainly that the day is not fishable.\n\n`

@@ -199,7 +199,13 @@ function showDash(admin){ ME=admin||{}; $('loginView').classList.add('hidden'); 
   $('whoami').textContent='Signed in as '+admin.username+(admin.owner===false?' (support)':'')+(admin.expiresAt?' · session ends '+new Date(admin.expiresAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
   armSessionTimer(admin.expiresAt);
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
-  $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
+  if(!document.body.dataset.tabsWired){
+    document.body.dataset.tabsWired='1';
+    document.addEventListener('click',e=>{
+      const b=e.target.closest('[data-tab]');
+      if(b){ e.preventDefault(); go(b.dataset.tab); }
+    });
+  }
   go('dashboard');
 }
 function go(tab){
