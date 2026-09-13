@@ -1,7 +1,7 @@
 import { complete } from './llm';
 import { recentReports, reportsForPrompt } from './reports';
 import { releaseFor, summarizeRelease } from './corps';
-import { featuresForLake, snapStops, type Candidate } from './features';
+import { featuresForLake, outlineForLake, waterGuard, snapStops, type Candidate } from './features';
 import { alertsFor, discussionFor, outlookFor } from './nws';
 import { knowledgeFor, knowledgeForPrompt } from './localKnowledge';
 import { rampsForLake } from './ramps';
@@ -50,7 +50,7 @@ export interface DayPlanResult {
  *     edge left every pin on the bank, which is what an angler was seeing on
  *     the map, three fixes running.
  */
-export const PLAN_VERSION = 3;
+export const PLAN_VERSION = 4;
 
 /** Is a stored plan still good enough to hand back without regenerating? */
 export function planIsCurrent(content: unknown): boolean {
@@ -171,9 +171,20 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     req.userId ? prisma.spot.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, notes: true }, take: 25 }) : Promise.resolve([]),
     req.userId ? prisma.waypoint.findMany({ where: { userId: req.userId, lakeId }, select: { name: true, lat: true, lon: true, kind: true }, take: 25 }) : Promise.resolve([]),
   ]);
+  // Ramps come from their own query with `out center`, so their coordinate is
+  // the middle of the slipway's bounding box — the parking lot, not the water.
+  // Features are already placed on the water by featuresForLake; the ramps
+  // were not, and a ramp copied onto a stop is how a waypoint ends up on dry
+  // land. Read the stored outline (no network) and put them right. The
+  // angler's own spots and waypoints are left exactly where they marked them.
+  const rings = await outlineForLake(lakeId).catch(() => []);
+  const rampStops = waterGuard(
+    rampList.map((r) => ({ name: r.name, lat: r.lat, lon: r.lon, kind: 'ramp' })),
+    rings
+  );
   const candidates: Candidate[] = [
     ...features.map((f) => ({ name: f.name, lat: f.lat, lon: f.lon, kind: f.kind, hint: f.hint })),
-    ...rampList.map((r) => ({ name: r.name, lat: r.lat, lon: r.lon, kind: 'ramp' })),
+    ...rampStops,
     ...ownSpots.map((x) => ({ name: x.name, lat: x.lat, lon: x.lon, kind: 'your spot', hint: x.notes || undefined })),
     ...ownWps.map((x) => ({ name: x.name, lat: x.lat, lon: x.lon, kind: x.kind ? `your waypoint (${x.kind})` : 'your waypoint' })),
   ];

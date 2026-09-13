@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { buildQuery, closeRings, digest, inWater, kindOf, metresToShore, placeOnWater, snapStops, snapToShore, splitResponse } from '../src/services/features';
+import { buildQuery, closeRings, digest, inWater, kindOf, metresToShore, placeOnWater, simplifyRing, simplifyRings, snapStops, snapToShore, splitResponse, waterGuard } from '../src/services/features';
 
 const LAKE = { lat: 32.43, lon: -97.78 };
 const BBOX: [number, number, number, number] = [-97.90, 32.35, -97.65, 32.50];
@@ -338,5 +338,88 @@ describe('stops belong in the water, not on the line around it', () => {
     for (const f of out) {
       assert.ok(inWater(f.lat, f.lon, lake), `${f.name} was offered on dry land`);
     }
+  });
+});
+
+/**
+ * The bug behind this: the planner's candidate list is not only the features.
+ * Boat ramps come from their own Overpass query with `out center`, so a
+ * slipway's coordinate is the middle of its bounding box — the parking lot.
+ * Nothing checked them, and snapStops() copies a candidate's coordinates onto
+ * the stop verbatim, so a ramp chosen as a stop put a pin on dry land however
+ * careful the feature pipeline had become. Measured against the real Lake
+ * Granbury outline, three of its four cached ramps sat 8–78 m inland.
+ */
+describe('ramps have to be on the water too', () => {
+  // ~66 m of water running east–west, with an island in the middle of it.
+  const lake = [
+    [[32.4397, -97.80], [32.4403, -97.80], [32.4403, -97.70], [32.4397, -97.70], [32.4397, -97.80]],
+    [[32.43995, -97.751], [32.44005, -97.751], [32.44005, -97.749], [32.43995, -97.749], [32.43995, -97.751]],
+  ] as [number, number][][];
+
+  test('a ramp coordinate on the bank is moved onto the water', () => {
+    const [r] = waterGuard([{ name: 'Boat ramp', lat: 32.4412, lon: -97.76, kind: 'ramp' }], lake);
+    assert.ok(r, 'the ramp was dropped instead of being placed');
+    assert.ok(inWater(r.lat, r.lon, lake), 'the ramp is still on dry land');
+    assert.equal(r.name, 'Boat ramp');
+    assert.equal(r.kind, 'ramp');
+  });
+
+  test('a ramp on some other pond is dropped, not dragged across', () => {
+    assert.deepEqual(waterGuard([{ name: 'Elsewhere ramp', lat: 32.52, lon: -97.60, kind: 'ramp' }], lake), []);
+  });
+
+  test('the pin does not land on an island inside the lake', () => {
+    const [r] = waterGuard([{ name: 'Island ramp', lat: 32.44, lon: -97.75, kind: 'ramp' }], lake);
+    assert.ok(r && inWater(r.lat, r.lon, lake), 'the ramp was left on the island');
+  });
+
+  test('with no outline stored it has no opinion and changes nothing', () => {
+    const list = [{ name: 'Boat ramp', lat: 32.4412, lon: -97.76, kind: 'ramp' }];
+    assert.deepEqual(waterGuard(list, []), list);
+  });
+
+  test('a ramp already out on the water is left alone', () => {
+    const [r] = waterGuard([{ name: 'Good ramp', lat: 32.44, lon: -97.77, kind: 'ramp' }], lake);
+    assert.ok(r && inWater(r.lat, r.lon, lake));
+  });
+});
+
+describe('thinning the outline', () => {
+  test('collinear points go, corners stay', () => {
+    // A square with twenty points along each side. Only the four corners
+    // carry the shape, and the ring has to stay closed.
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 20; i += 1) ring.push([32.44, -97.80 + i * 0.0005]);
+    for (let i = 0; i < 20; i += 1) ring.push([32.44 + i * 0.0005, -97.79]);
+    for (let i = 0; i < 20; i += 1) ring.push([32.45, -97.79 - i * 0.0005]);
+    for (let i = 0; i < 20; i += 1) ring.push([32.45 - i * 0.0005, -97.80]);
+    ring.push(ring[0]);
+    const out = simplifyRing(ring);
+    assert.equal(out.length, 5, `kept ${out.length} points of ${ring.length}`);
+    assert.deepEqual(out[0], out[out.length - 1], 'the ring came back open');
+  });
+
+  test('it keeps deciding inside from outside', () => {
+    // A ragged ring: a square with a metre of jitter on every edge point.
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= 200; i += 1) {
+      const t = i / 200;
+      const j = ((i * 7919) % 17) / 17 * 0.00001; // deterministic sub-metre noise
+      if (t < 0.25) ring.push([32.44 + t * 4 * 0.01, -97.80 + j]);
+      else if (t < 0.5) ring.push([32.45 + j, -97.80 + (t - 0.25) * 4 * 0.01]);
+      else if (t < 0.75) ring.push([32.45 - (t - 0.5) * 4 * 0.01, -97.79 + j]);
+      else ring.push([32.44 + j, -97.79 - (t - 0.75) * 4 * 0.01]);
+    }
+    ring.push(ring[0]);
+    const simp = simplifyRings([ring]);
+    assert.ok(simp[0].length < ring.length / 4, `thinned to ${simp[0].length} of ${ring.length}`);
+    assert.equal(inWater(32.445, -97.795, simp), inWater(32.445, -97.795, [ring]));
+    assert.equal(inWater(32.43, -97.795, simp), inWater(32.43, -97.795, [ring]));
+  });
+
+  test('a ring too small to thin is handed back whole', () => {
+    const tiny: [number, number][] = [[32.44, -97.80], [32.4401, -97.80], [32.4401, -97.7999], [32.44, -97.80]];
+    assert.deepEqual(simplifyRing(tiny), tiny);
   });
 });

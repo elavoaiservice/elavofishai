@@ -358,6 +358,55 @@ export function placeOnWater(
   return best ? { ...best, onWater: true } : { lat: edge.lat, lon: edge.lon, m: 0, onWater: false };
 }
 
+/**
+ * Thin a ring down to the points that carry its shape.
+ *
+ * Granbury's outline is ~20,000 points across 32 rings, and every one of them
+ * is stored on the lake row and walked on every containment test. At a 6 m
+ * tolerance the shape a boat cares about is unchanged — the lake is hundreds
+ * of metres across and the stop placement works in 10 m steps — and the ring
+ * gets several times smaller. Perpendicular-distance (Douglas-Peucker),
+ * iterative so a long shoreline cannot blow the stack.
+ */
+export function simplifyRing(ring: Array<[number, number]>, tolM = 6): Array<[number, number]> {
+  if (ring.length < 4) return ring;
+  const kx = 111_000 * Math.cos((ring[0][0] * Math.PI) / 180);
+  const ky = 111_000;
+  const keep = new Array<boolean>(ring.length).fill(false);
+  keep[0] = true;
+  keep[ring.length - 1] = true;
+  const stack: Array<[number, number]> = [[0, ring.length - 1]];
+  while (stack.length) {
+    const [lo, hi] = stack.pop() as [number, number];
+    if (hi - lo < 2) continue;
+    const ax = ring[lo][1] * kx, ay = ring[lo][0] * ky;
+    const bx = ring[hi][1] * kx, by = ring[hi][0] * ky;
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let far = -1;
+    let farD = tolM;
+    for (let i = lo + 1; i < hi; i += 1) {
+      const px = ring[i][1] * kx - ax, py = ring[i][0] * ky - ay;
+      const t = len2 ? Math.max(0, Math.min(1, (px * dx + py * dy) / len2)) : 0;
+      const qx = px - t * dx, qy = py - t * dy;
+      const d = Math.sqrt(qx * qx + qy * qy);
+      if (d > farD) { farD = d; far = i; }
+    }
+    if (far < 0) continue;
+    keep[far] = true;
+    stack.push([lo, far], [far, hi]);
+  }
+  const out = ring.filter((_, i) => keep[i]);
+  // A ring that thins below a triangle is not a ring any more; keep the
+  // original rather than hand back something inWater() cannot use.
+  return out.length >= 4 ? out : ring;
+}
+
+/** Simplify every ring, dropping any that collapsed. */
+export function simplifyRings(rings: Shoreline, tolM = 6): Shoreline {
+  return rings.map((r) => simplifyRing(r, tolM)).filter((r) => r.length >= 4);
+}
+
 /** How close to the water a thing has to be to count as being on the lake. */
 export const SHORE_M: Record<FeatureKind, number> = {
   creek: 150, river: 150, point: 300, bay: 300, island: 300, bridge: 40, dam: 150, pier: 80, marina: 120, beach: 200,
@@ -447,7 +496,7 @@ async function shorelineFor(
 export async function featuresForLake(lakeId: string, launch?: { lat?: number; lon?: number } | null): Promise<LakeFeature[]> {
   const lake = await prisma.lake.findUnique({
     where: { id: lakeId },
-    select: { id: true, name: true, lat: true, lon: true, bbox: true, featuresJson: true, featuresAt: true },
+    select: { id: true, name: true, lat: true, lon: true, bbox: true, featuresJson: true, featuresAt: true, outlineJson: true },
   });
   if (!lake) return [];
   const bbox = parseBbox(lake.bbox);
@@ -475,14 +524,30 @@ export async function featuresForLake(lakeId: string, launch?: { lat?: number; l
     }
   }
 
-  const fresh = lake.featuresAt && Date.now() - lake.featuresAt.getTime() < CACHE_DAYS * 86400000;
+  /* A cache from before the outline was stored is still a good feature list,
+     but it leaves the ramp guard with nothing to check against. Treat a
+     missing outline as stale so the next build backfills it — rather than
+     clearing featuresAt in the migration, which would also disable the
+     serve-the-last-good-cache fallback below on the first Overpass hiccup. */
+  const fresh = lake.featuresAt && lake.outlineJson && Date.now() - lake.featuresAt.getTime() < CACHE_DAYS * 86400000;
   if (fresh && lake.featuresJson) {
     try { return JSON.parse(lake.featuresJson) as LakeFeature[]; } catch { /* refetch */ }
   }
   try {
     const { cand, shore } = await shorelineFor(lake.name, lake.lat, lake.lon, radius, null);
     const out = digest(cand, lake.lat, lake.lon, bbox, shore);
-    await prisma.lake.update({ where: { id: lake.id }, data: { featuresJson: JSON.stringify(out), featuresAt: new Date() } }).catch(() => {});
+    // Keep the outline too. It costs nothing extra here — we already have the
+    // geometry — and it is what lets the ramps, which come from a different
+    // query, be checked against the water without a second trip to Overpass.
+    const rings = simplifyRings(closeRings(shore));
+    await prisma.lake.update({
+      where: { id: lake.id },
+      data: {
+        featuresJson: JSON.stringify(out),
+        featuresAt: new Date(),
+        ...(rings.length ? { outlineJson: JSON.stringify(rings), outlineAt: new Date() } : {}),
+      },
+    }).catch(() => {});
     return out;
   } catch {
     /* Fall back to the cache only if it was ever good.
@@ -499,8 +564,61 @@ export async function featuresForLake(lakeId: string, launch?: { lat?: number; l
   }
 }
 
+/**
+ * The lake's stored outline rings, or an empty list.
+ *
+ * Read-only on purpose: this never calls Overpass. It is filled as a
+ * by-product of building the feature list, so a caller that wants to know
+ * whether a coordinate is in the water gets an answer for the price of a
+ * column read, and gets no answer at all rather than adding load to a service
+ * that is already rate-limiting us.
+ */
+export async function outlineForLake(lakeId: string): Promise<Shoreline> {
+  const lake = await prisma.lake.findUnique({ where: { id: lakeId }, select: { outlineJson: true } }).catch(() => null);
+  if (!lake?.outlineJson) return [];
+  try {
+    const rings = JSON.parse(lake.outlineJson) as Shoreline;
+    return Array.isArray(rings) ? rings.filter((r) => Array.isArray(r) && r.length >= 4) : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface Candidate { name: string; lat: number; lon: number; kind: string; hint?: string }
 export interface Stop { name: string; lat: number; lon: number; lookFor?: string; when?: string; kind?: string }
+
+/**
+ * Put OSM-derived candidates on the water, and drop the ones that are not on
+ * this lake at all.
+ *
+ * Boat ramps are the case this exists for. They come from their own Overpass
+ * query with `out center`, so a slipway's coordinate is the middle of its
+ * bounding box — the parking lot — and nothing ever checked it. They went into
+ * the planner's candidate list raw, and since snapStops() copies a candidate's
+ * coordinates onto the stop verbatim, a ramp chosen as a stop put a pin on dry
+ * land no matter how careful the feature pipeline had become.
+ *
+ * With no outline stored we have no opinion and the list passes through
+ * unchanged: this must never turn "we could not check" into "there is nowhere
+ * to fish".
+ *
+ * Not for the angler's own spots and waypoints — they put those there on
+ * purpose, and a marked bank spot is a real place to fish.
+ */
+export function waterGuard(list: Candidate[], rings: Shoreline, maxFromWaterM = 400): Candidate[] {
+  if (!rings.length) return list;
+  const out: Candidate[] = [];
+  for (const c of list) {
+    if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
+    // Far from this lake's water: a ramp on the neighbouring pond, or a site
+    // that is dry. Either way it is not a stop on this lake.
+    if (snapToShore(c.lat, c.lon, rings).m > maxFromWaterM) continue;
+    const at = placeOnWater(c.lat, c.lon, rings);
+    if (!at.onWater) continue;
+    out.push({ ...c, lat: at.lat, lon: at.lon });
+  }
+  return out;
+}
 
 /**
  * The guard. Whatever the model returns as stops, keep only those that match a

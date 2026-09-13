@@ -216,6 +216,11 @@ model Lake {
   rampsAt      DateTime? // when that cache was filled
   featuresJson String?     @db.Text // cached named features (creek mouths, points, bridges, dams…)
   featuresAt   DateTime?
+  // Closed outline rings for the water itself, stitched from the OSM member
+  // ways. Shared by anything that has to ask whether a coordinate is in the
+  // lake — features, and now boat ramps.
+  outlineJson  String?     @db.Text
+  outlineAt    DateTime?
   regsJson     String?     @db.Text // limits and exceptions for this water
   // Secchi-disk clarity history from the EPA Water Quality Portal. Cached as
   // the raw readings rather than a summary so it can answer for any month, and
