@@ -35,6 +35,26 @@ export interface DayPlanResult {
   error?: string;
 }
 
+/**
+ * Bumped whenever a stored plan stops being good enough to serve.
+ *
+ * A cached plan is normally exactly what you want — same lake, same day, same
+ * target, no reason to pay for another. But when the shape or the correctness
+ * of a plan changes underneath it, the cache quietly keeps handing back the
+ * old one and the fix looks like it did not work. That is precisely what
+ * happened with stops: they were snapped to the shoreline, and the plan the
+ * angler kept seeing still carried coordinates from before.
+ *
+ * 2 — stops snapped to the lake's shoreline, and a plain-language game plan.
+ */
+export const PLAN_VERSION = 2;
+
+/** Is a stored plan still good enough to hand back without regenerating? */
+export function planIsCurrent(content: unknown): boolean {
+  const v = (content as { planVersion?: number } | null)?.planVersion;
+  return typeof v === 'number' && v >= PLAN_VERSION;
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -73,7 +93,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
 
   // Serve cache unless forced, unless it's gone stale, or unless we're now
   // closer to the day than when it was generated (the forecast has firmed up).
-  if (cached && !req.force && sameInputs(cached.content)) {
+  if (cached && !req.force && sameInputs(cached.content) && planIsCurrent(cached.content)) {
     const stale = Date.now() - cached.generatedAt.getTime() > 12 * 3600000;
     const closer = out < cached.daysOutAtGen;
     if (!stale && !closer) {
@@ -288,6 +308,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       : `No mapped places are known for this lake, so return "stops": [] and describe water types in the timeline.\n\n`) +
     `Return ONLY valid JSON (no prose, no code fence):\n` +
     `{"summary": string, ` +
+    `"gameplan": string, ` +
     `"timeline": [{"time": string, "advice": string}], ` +
     `"stops": [{"name": string, "lat": number, "lon": number, "when": string, "lookFor": string}], ` +
     `"lures": [string], ` +
@@ -295,7 +316,12 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     `"notes": string}\n\n` +
     `Rules: 4-6 timeline blocks across the fishable day (dawn to dusk), each tying location + presentation to the ` +
     `feeding windows and weather. Be specific to this water and season. ` +
-    `Hard limits so the plan fits on a phone: "summary" under 30 words, each "advice" under 30 words, ` +
+    `"gameplan" is how you would explain the day to someone in the boat before you untie: 2-4 sentences, ` +
+    `no bullet points, written the way a guide talks. Name the species you are fishing for and say why it, ` +
+    `where the day starts and roughly where it goes as the light and the heat change, and the one thing that ` +
+    `will decide whether it works. If the angler let you choose the species, this is where you say which and why. ` +
+    `"summary" stays a single short line — the headline above the game plan.\n` +
+    `Hard limits so the plan fits on a phone: "summary" under 30 words, "gameplan" under 90 words, each "advice" under 30 words, ` +
     `at most 5 lures, at most 5 stops with "lookFor" under 30 words each, "notes" under 25 words. Plain language a working angler uses — no jargon. ` +
     `If conditions look tough, say so honestly. Do not invent regulations, reports or sources.`;
 
@@ -344,7 +370,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   if (parsed && typeof parsed === 'object') {
     (parsed as Record<string, unknown>).stops = snapStops((parsed as Record<string, unknown>).stops, candidates);
   }
-  const content = parsed && typeof parsed === 'object' ? { ...(parsed as object), inputs } : parsed;
+  const content = parsed && typeof parsed === 'object' ? { ...(parsed as object), inputs, planVersion: PLAN_VERSION } : parsed;
   if (!content) {
     // eslint-disable-next-line no-console
     console.error(`[dayplan] could not parse ${text.length} chars from ${model}: ${text.slice(0, 200)}`);

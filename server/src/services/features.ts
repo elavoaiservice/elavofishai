@@ -280,7 +280,7 @@ export function splitResponse(raw: OverpassEl[]): { cand: OverpassEl[]; shore: S
   return { cand, shore };
 }
 
-async function fetchFromOverpass(query: string): Promise<OverpassEl[]> {
+async function overpassOnce(query: string): Promise<OverpassEl[]> {
   const res = await fetch(OVERPASS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ElavoFishAI/1.0 (elavofishai.elavoai.com)' },
@@ -293,6 +293,26 @@ async function fetchFromOverpass(query: string): Promise<OverpassEl[]> {
   // that must not be cached as "this lake has no features".
   if (json.remark && /timed out|error/i.test(json.remark) && !(json.elements || []).length) throw new Error(json.remark);
   return json.elements || [];
+}
+
+/**
+ * Overpass is a free public service under constant load, and it sheds it with
+ * 504s and "query timed out". One refused request used to mean a whole lake
+ * fell back to whatever was cached — which, right after the stops fix, meant
+ * serving the very coordinates that fix was replacing. A couple of patient
+ * retries turn most of those into an answer.
+ */
+async function fetchFromOverpass(query: string): Promise<OverpassEl[]> {
+  let last: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await overpassOnce(query);
+    } catch (e) {
+      last = e as Error;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000 * (attempt + 1)));
+    }
+  }
+  throw last || new Error('Overpass unavailable');
 }
 
 /** Big water: the whole shoreline is too much, so anchor on the launch point. */
@@ -364,7 +384,17 @@ export async function featuresForLake(lakeId: string, launch?: { lat?: number; l
     await prisma.lake.update({ where: { id: lake.id }, data: { featuresJson: JSON.stringify(out), featuresAt: new Date() } }).catch(() => {});
     return out;
   } catch {
-    return lake.featuresJson ? (JSON.parse(lake.featuresJson) as LakeFeature[]) : [];
+    /* Fall back to the cache only if it was ever good.
+       featuresAt is cleared whenever the stored coordinates stop being
+       trustworthy — migration 0031 did exactly that after stops started being
+       snapped to the shoreline. Without this check the fallback happily served
+       the unsnapped coordinates the fix existed to replace, every time
+       Overpass was busy, which is how a stop stayed a mile off the lake after
+       the fix shipped. No stops beats wrong stops. */
+    if (lake.featuresAt && lake.featuresJson) {
+      try { return JSON.parse(lake.featuresJson) as LakeFeature[]; } catch { return []; }
+    }
+    return [];
   }
 }
 

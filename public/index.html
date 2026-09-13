@@ -4341,7 +4341,13 @@ function renderAiPlan(d,species){
   const fresh=out!=null?(out===0?'for today':(out+' day'+(out===1?'':'s')+' out')):'';
   let h='<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface-alt)">';
   h+='<div style="font-weight:800;font-size:15px;margin-bottom:6px">'+escHtml(species)+' — game plan</div>';
-  if(c.summary)h+='<p style="margin:0 0 12px">'+escHtml(c.summary)+'</p>';
+  if(c.summary)h+='<p style="margin:0 0 10px;font-weight:600">'+escHtml(c.summary)+'</p>';
+  /* The game plan: how a guide would talk you through the day before you
+     untie, in plain sentences, before any of the hour-by-hour detail. When
+     the angler let the planner pick the species, this is where it says which
+     one and why. Older cached plans have no gameplan and simply skip it. */
+  if(c.gameplan)h+='<div style="margin:0 0 14px;padding:12px 14px;border-left:3px solid var(--primary);'
+    +'background:var(--surface);border-radius:0 10px 10px 0;line-height:1.5">'+escHtml(c.gameplan)+'</div>';
   if(Array.isArray(c.timeline)&&c.timeline.length)
     h+='<div style="display:grid;gap:9px">'+c.timeline.map(t=>'<div style="display:flex;gap:12px"><div style="min-width:90px;font-weight:700;color:var(--primary-dark)">'+escHtml(t.time||'')+'</div><div style="color:var(--muted)">'+escHtml(t.advice||'')+'</div></div>').join('')+'</div>';
   if(Array.isArray(c.stops)&&c.stops.length){
