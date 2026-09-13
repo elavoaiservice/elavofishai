@@ -28,6 +28,10 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$DEST"
 OUT="$DEST/elavofish-$STAMP.sql.gz"
 
+# Left behind by a dump that died mid-stream. The prune below only matches
+# finished files, so these sat there for good.
+find "$DEST" -name 'elavofish-*.sql.gz.part' -mmin +120 -print -delete 2>/dev/null || true
+
 echo "[backup] $(date -Iseconds) → $OUT"
 # --clean --if-exists so the dump can be replayed over an existing database.
 # Without pipefail the status of this line is gzip's, and gzip will happily
@@ -67,8 +71,17 @@ STATUS_DIR="${DEPLOY_DIR:-$HOME/efa-deploy}"
 # Offsite copy. A backup that lives on the machine it is backing up survives
 # nothing worth surviving — a dead disk takes both. Uploaded through the app
 # container, which holds the credentials and the signing code.
+# 0 = in the bucket, 3 = there is no bucket configured, anything else = tried
+# and failed. Only the first one is allowed to call itself offsite.
 OFFSITE=true
-if ! docker compose exec -T app node tools/upload-backup.js "$(basename "$OUT")" < "$OUT"; then
+set +e
+docker compose exec -T app node tools/upload-backup.js "$(basename "$OUT")" < "$OUT"
+UP=$?
+set -e
+if [ "$UP" -eq 3 ]; then
+  OFFSITE=false
+  echo "[backup] NOTE: no object storage configured — this dump exists only on this machine"
+elif [ "$UP" -ne 0 ]; then
   OFFSITE=false
   echo "[backup] WARNING: offsite copy failed — the local dump is still good"
 fi

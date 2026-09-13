@@ -51,7 +51,7 @@ export async function attention(): Promise<Attention[]> {
     out.push({ level: 'warn', title: 'Cannot see the backups', detail: 'Nothing reports backup status here yet. Run scripts/backup.sh once so it writes its status where the app can read it.', tab: 'health' });
   } else if (backup.offsite === false) {
     // The dump is good and it is sitting on the machine it is a backup of.
-    out.push({ level: 'bad', title: 'Backups are not leaving the machine', detail: 'The nightly dump is being written, but the copy to storage failed. A dead disk would take both.', tab: 'health' });
+    out.push({ level: 'bad', title: 'Backups are not leaving the machine', detail: 'The nightly dump is being written, but no copy is reaching object storage — either it is not configured or the upload is failing. A dead disk would take both.', tab: 'health' });
   } else if (Date.now() - backup.at > 2 * day) {
     out.push({ level: 'bad', title: `Last backup is ${Math.round((Date.now() - backup.at) / day)} days old`, detail: 'The nightly job may have stopped. A backup nobody checks is a backup nobody has.', tab: 'health' });
   }
