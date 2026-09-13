@@ -70,6 +70,8 @@ export function kindOf(tags: Record<string, string>): FeatureKind | null {
  *    be worth naming by where they are
  */
 export function digest(raw: OverpassEl[], lakeLat: number, lakeLon: number, bbox: [number, number, number, number] | null, shore: Shoreline = []): LakeFeature[] {
+  // The outline has to be closed before "in the water" means anything.
+  const rings = closeRings(shore);
   const inBox = (la: number, lo: number) =>
     bbox ? la >= bbox[1] - 0.02 && la <= bbox[3] + 0.02 && lo >= bbox[0] - 0.02 && lo <= bbox[2] + 0.02
          : milesBetween(lakeLat, lakeLon, la, lo) < 25;
@@ -87,18 +89,21 @@ export function digest(raw: OverpassEl[], lakeLat: number, lakeLon: number, bbox
     // from the water and drops out here. Without a shoreline there is no way
     // to tell, and the honest answer is to offer nothing rather than a stop
     // that might be a mile inland — the map is the part an angler acts on.
-    if (!shore.length) continue;
-    const snapped = snapToShore(lat, lon, shore);
-    if (snapped.m > SHORE_M[kind]) continue;
+    if (!rings.length) continue;
+    if (snapToShore(lat, lon, rings).m > SHORE_M[kind]) continue;
+    // On the water, a boat-length off the bank — not on the bank line itself.
+    const snapped = placeOnWater(lat, lon, rings);
+    if (!snapped.onWater) continue;
     let name = t.name || t['name:en'] || '';
     if (!name) {
       if (kind !== 'dam' && kind !== 'pier' && kind !== 'marina') continue;
       const mi = milesBetween(lakeLat, lakeLon, snapped.lat, snapped.lon);
       name = `${kind === 'dam' ? 'Dam' : kind === 'pier' ? 'Fishing pier' : 'Marina'} — ${mi.toFixed(1)} mi ${bearingFrom(lakeLat, lakeLon, snapped.lat, snapped.lon)}`;
     }
-    // The stop is the point on the water, not the middle of the thing's
-    // bounding box — a creek's mouth rather than a spot a mile up the valley.
-    const d = snapped.m / 1609;
+    // How close the real thing is to the water, in miles — used only to pick
+    // between two features that share a name (the creek mouth beats the same
+    // creek five miles up the valley).
+    const d = snapToShore(lat, lon, rings).m / 1609;
     const key = `${kind}:${name.toLowerCase()}`;
     const cur = best.get(key);
     if (!cur || d < cur.d) best.set(key, { name, kind, lat: snapped.lat, lon: snapped.lon, hint: HINTS[kind], d });
@@ -255,6 +260,102 @@ export function snapToShore(
     }
   }
   return { lat: bLatOut, lon: bLonOut, m: best };
+}
+
+/**
+ * Stitch the open ways OSM returns into closed rings.
+ *
+ * A lake is usually a multipolygon relation, and its members come back as
+ * separate unclosed ways — 43 of them for Lake Granbury. Joined end to end
+ * they make the outline, plus a ring for each island. Without this there is no
+ * inside and outside, only a line, and a point "on the shoreline" is a point
+ * on the bank.
+ */
+export function closeRings(shore: Shoreline): Shoreline {
+  const open = shore.map((l) => [...l]);
+  const out: Shoreline = [];
+  const same = (a: [number, number], b: [number, number]) => a[0] === b[0] && a[1] === b[1];
+  while (open.length) {
+    let cur = open.shift() as [number, number][];
+    let joined = true;
+    while (joined && !same(cur[0], cur[cur.length - 1])) {
+      joined = false;
+      for (let i = 0; i < open.length; i += 1) {
+        const l = open[i];
+        if (same(l[0], cur[cur.length - 1])) { cur = cur.concat(l.slice(1)); open.splice(i, 1); joined = true; break; }
+        if (same(l[l.length - 1], cur[cur.length - 1])) { cur = cur.concat([...l].reverse().slice(1)); open.splice(i, 1); joined = true; break; }
+        if (same(l[l.length - 1], cur[0])) { cur = l.slice(0, -1).concat(cur); open.splice(i, 1); joined = true; break; }
+        if (same(l[0], cur[0])) { cur = [...l].reverse().slice(0, -1).concat(cur); open.splice(i, 1); joined = true; break; }
+      }
+    }
+    if (cur.length > 3 && same(cur[0], cur[cur.length - 1])) out.push(cur);
+  }
+  return out;
+}
+
+/**
+ * Is this point in the water?
+ *
+ * Even-odd across every ring, so an island inside the lake counts as land and
+ * a pond inside the island would count as water again.
+ */
+export function inWater(lat: number, lon: number, rings: Shoreline): boolean {
+  let crossings = 0;
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const [y1, x1] = ring[i];
+      const [y2, x2] = ring[i + 1];
+      if ((y1 > lat) !== (y2 > lat) && lon < ((x2 - x1) * (lat - y1)) / (y2 - y1) + x1) crossings += 1;
+    }
+  }
+  return crossings % 2 === 1;
+}
+
+/**
+ * Put the stop ON the water, and out in it rather than against the bank.
+ *
+ * Snapping to the nearest shoreline point was not enough, and this is the bug
+ * an angler kept reporting: measured against the real Lake Granbury polygon,
+ * every stop in a generated plan came back exactly 0.0 m from the edge — which
+ * is the bank. On satellite imagery a pin on the bank is a pin on the land,
+ * and it is not where a boat goes either.
+ *
+ * From the nearest edge point we try eight directions at a few distances and
+ * keep whichever candidate is in the water and has the most water around it.
+ * Maximising clearance rather than distance travelled is the part that
+ * matters: walking the longest straight line from a bank tends to run ALONG
+ * the shore, which keeps the pin against it. Clearance pushes out into the
+ * channel instead, so a creek arm forty metres wide gets a pin in the middle
+ * of it and open water gets one comfortably off the bank.
+ *
+ * Returns onWater:false when no candidate is in the water at all — the caller
+ * then drops the stop rather than offering a pin on dry land.
+ */
+export function placeOnWater(
+  lat: number,
+  lon: number,
+  rings: Shoreline,
+  capM = 40
+): { lat: number; lon: number; m: number; onWater: boolean } {
+  if (!rings.length) return { lat, lon, m: Infinity, onWater: false };
+  const edge = snapToShore(lat, lon, rings);
+  const kx = 111_000 * Math.cos((edge.lat * Math.PI) / 180);
+  const ky = 111_000;
+
+  let best: { lat: number; lon: number; m: number } | null = null;
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i * Math.PI) / 4;
+    const ux = Math.cos(a);
+    const uy = Math.sin(a);
+    for (let d = 10; d <= capM; d += 10) {
+      const la = edge.lat + (uy * d) / ky;
+      const lo = edge.lon + (ux * d) / kx;
+      if (!inWater(la, lo, rings)) break; // hit the far bank in this direction
+      const clear = snapToShore(la, lo, rings).m;
+      if (!best || clear > best.m) best = { lat: la, lon: lo, m: Math.round(clear) };
+    }
+  }
+  return best ? { ...best, onWater: true } : { lat: edge.lat, lon: edge.lon, m: 0, onWater: false };
 }
 
 /** How close to the water a thing has to be to count as being on the lake. */

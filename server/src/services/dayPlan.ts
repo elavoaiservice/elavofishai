@@ -46,8 +46,11 @@ export interface DayPlanResult {
  * angler kept seeing still carried coordinates from before.
  *
  * 2 — stops snapped to the lake's shoreline, and a plain-language game plan.
+ * 3 — stops placed IN the water rather than on the shoreline. Snapping to the
+ *     edge left every pin on the bank, which is what an angler was seeing on
+ *     the map, three fixes running.
  */
-export const PLAN_VERSION = 2;
+export const PLAN_VERSION = 3;
 
 /** Is a stored plan still good enough to hand back without regenerating? */
 export function planIsCurrent(content: unknown): boolean {

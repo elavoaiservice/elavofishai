@@ -5,17 +5,22 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { buildQuery, digest, kindOf, metresToShore, snapStops, snapToShore, splitResponse } from '../src/services/features';
+import { buildQuery, closeRings, digest, inWater, kindOf, metresToShore, placeOnWater, snapStops, snapToShore, splitResponse } from '../src/services/features';
 
 const LAKE = { lat: 32.43, lon: -97.78 };
 const BBOX: [number, number, number, number] = [-97.90, 32.35, -97.65, 32.50];
 
-/* A crude Lake Granbury: a shoreline running north–south through the points
-   these fixtures use. digest() will not offer a stop it cannot place on the
-   water, so every case needs one. */
-const LAKE_SHORE = [[
-  [32.40, -97.77], [32.4394, -97.7626], [32.44, -97.78], [32.44, -97.80],
-]] as [number, number][][];
+/* A crude Lake Granbury. These have to be CLOSED rings, not lines: digest()
+   will not offer a stop it cannot prove is in the water, and "in" needs an
+   inside. Two narrow bands of water, each about 66 m across, laid along the
+   places these fixtures use — narrow so that a thing on the bank is within the
+   few tens of metres that count as being on the lake. */
+const LAKE_SHORE = [
+  // The main body: an east–west channel at latitude 32.44.
+  [[32.4397, -97.805], [32.4403, -97.805], [32.4403, -97.760], [32.4397, -97.760], [32.4397, -97.805]],
+  // A separate arm further south, where the dam fixture sits.
+  [[32.3997, -97.775], [32.4003, -97.775], [32.4003, -97.765], [32.3997, -97.765], [32.3997, -97.775]],
+] as [number, number][][];
 
 describe('kindOf', () => {
   test('maps OSM tags to the kinds a plan talks about', () => {
@@ -123,8 +128,13 @@ describe('buildQuery', () => {
 });
 
 describe('the shoreline test', () => {
-  // A straight north–south shoreline at lon -97.78.
+  // A straight north–south shoreline at lon -97.78, for the distance maths.
   const shore = [[[32.40, -97.78], [32.46, -97.78]]] as [number, number][][];
+  // The same water as a closed ring — a channel about 56 m wide — for anything
+  // that has to decide whether a point is IN it.
+  const channel = [[
+    [32.39, -97.7803], [32.47, -97.7803], [32.47, -97.7797], [32.39, -97.7797], [32.39, -97.7803],
+  ]] as [number, number][][];
 
   test('measures metres from a point to the nearest segment', () => {
     const m = metresToShore(32.43, -97.78 + 0.001, shore); // ~94 m east of the line
@@ -136,7 +146,7 @@ describe('the shoreline test', () => {
       { type: 'way', id: 1, center: { lat: 32.43, lon: -97.78 + 0.02 }, tags: { bridge: 'yes', name: 'Main Street' } },
       { type: 'way', id: 2, center: { lat: 32.43, lon: -97.78 + 0.0004 }, tags: { bridge: 'yes', name: 'US 377' } },
     ];
-    assert.deepEqual(digest(raw, 32.43, -97.78, null, shore).map((f) => f.name), ['US 377']);
+    assert.deepEqual(digest(raw, 32.43, -97.78, null, channel).map((f) => f.name), ['US 377']);
   });
 
   test('with a shoreline, a creek"s mouth is the segment nearest the WATER, not the lake centre', () => {
@@ -144,9 +154,11 @@ describe('the shoreline test', () => {
       { type: 'way', id: 1, center: { lat: 32.43, lon: -97.78 + 0.0012 }, tags: { waterway: 'stream', name: 'Rough Creek' } }, // ~110 m from water, near centre
       { type: 'way', id: 2, center: { lat: 32.455, lon: -97.78 + 0.0002 }, tags: { waterway: 'stream', name: 'Rough Creek' } }, // ~20 m from water, far from centre
     ];
-    const out = digest(raw, 32.43, -97.78, null, shore);
+    const out = digest(raw, 32.43, -97.78, null, channel);
     assert.equal(out.length, 1);
-    assert.equal(out[0].lat, 32.455);
+    // The pin is moved into the water, so it is the creek it picked that
+    // matters, not the exact coordinate.
+    assert.ok(Math.abs(out[0].lat - 32.455) < 0.002, `picked the wrong creek: ${out[0].lat}`);
   });
 
   test('splitResponse separates shoreline geometry from candidates', () => {
@@ -161,8 +173,13 @@ describe('the shoreline test', () => {
 });
 
 describe('putting the pin on the water', () => {
-  // A shoreline running east–west along latitude 32.44.
+  // A shoreline running east–west along latitude 32.44, for the distance maths.
   const shore = [[[32.44, -97.80], [32.44, -97.70]]] as [number, number][][];
+  // The same water as a closed ring, about 66 m across, for the cases that
+  // need an inside.
+  const band = [[
+    [32.4397, -97.80], [32.4403, -97.80], [32.4403, -97.70], [32.4397, -97.70], [32.4397, -97.80],
+  ]] as [number, number][][];
 
   test('snaps a point inland to the nearest place on the lake edge', () => {
     const s = snapToShore(32.47, -97.75, shore); // ~3.3 km north of the water
@@ -192,10 +209,9 @@ describe('putting the pin on the water', () => {
       center: { lat: 32.4405, lon: -97.75 }, // 55 m up the valley from the water
       tags: { waterway: 'stream', name: 'Fall Branch' },
     }];
-    const out = digest(raw, 32.44, -97.75, null, shore);
+    const out = digest(raw, 32.44, -97.75, null, band);
     assert.equal(out.length, 1);
-    assert.equal(Math.round(out[0].lat * 1e6) / 1e6, 32.44, 'the pin is on the lake edge');
-    assert.equal(snapToShore(out[0].lat, out[0].lon, shore).m < 0.001, true);
+    assert.ok(inWater(out[0].lat, out[0].lon, band), 'the creek mouth is not on the water');
   });
 
   test('every stop offered sits on the water, whatever OSM said its centre was', () => {
@@ -206,10 +222,10 @@ describe('putting the pin on the water', () => {
       { type: 'node', id: 2, lat: 32.4409, lon: -97.72, tags: { leisure: 'marina', name: 'Harbor Marina' } },
       { type: 'way', id: 3, center: { lat: 32.4407, lon: -97.74 }, tags: { natural: 'cape', name: 'Long Point' } },
     ];
-    const out = digest(raw, 32.44, -97.75, null, shore);
+    const out = digest(raw, 32.44, -97.75, null, band);
     assert.equal(out.length, 3);
     for (const f of out) {
-      assert.ok(snapToShore(f.lat, f.lon, shore).m < 0.001, `${f.name} is off the water`);
+      assert.ok(inWater(f.lat, f.lon, band), `${f.name} is off the water`);
     }
   });
 
@@ -223,5 +239,104 @@ describe('putting the pin on the water', () => {
     assert.match(named, /\(way\.byname; way\(r\.byname\);\)/);
     const any = buildQuery('Lake Granbury', 32.44, -97.75, 20000, null, 'any');
     assert.match(any, /\(way\.water; way\(r\.water\);\)/);
+  });
+});
+
+/**
+ * The bug an angler reported three times.
+ *
+ * Snapping a stop to the nearest shoreline point put it exactly 0.0 m from the
+ * edge — measured against the real Lake Granbury polygon, every stop in a
+ * generated plan came back outside the water. The edge is the bank. On
+ * satellite imagery that is land, and it is not where a boat goes either.
+ */
+describe('stops belong in the water, not on the line around it', () => {
+  // A square kilometre of water: 0.01° of latitude is about 1.1 km.
+  const lake: [number, number][][] = [[
+    [32.44, -97.78], [32.45, -97.78], [32.45, -97.77], [32.44, -97.77], [32.44, -97.78],
+  ]];
+
+  test('stitches the open ways OSM returns into closed rings', () => {
+    // The same square, delivered as four unclosed ways in a jumbled order and
+    // with two of them running backwards — which is exactly how it arrives.
+    const open: [number, number][][] = [
+      [[32.45, -97.77], [32.44, -97.77]],
+      [[32.44, -97.78], [32.45, -97.78]],
+      [[32.44, -97.77], [32.44, -97.78]],
+      [[32.45, -97.78], [32.45, -97.77]],
+    ];
+    const rings = closeRings(open);
+    assert.equal(rings.length, 1);
+    assert.deepEqual(rings[0][0], rings[0][rings[0].length - 1], 'the ring is not closed');
+  });
+
+  test('knows inside from outside', () => {
+    assert.equal(inWater(32.445, -97.775, lake), true);
+    assert.equal(inWater(32.435, -97.775, lake), false); // south of the lake
+    assert.equal(inWater(32.455, -97.775, lake), false); // north of it
+    assert.equal(inWater(32.445, -97.79, lake), false);  // west of it
+  });
+
+  test('an island in the lake is land again', () => {
+    const withIsland = [...lake, [
+      [32.4445, -97.7755], [32.4455, -97.7755], [32.4455, -97.7745], [32.4445, -97.7745], [32.4445, -97.7755],
+    ]] as [number, number][][];
+    assert.equal(inWater(32.445, -97.775, withIsland), false, 'the island should be land');
+    assert.equal(inWater(32.4425, -97.775, withIsland), true, 'water around the island');
+  });
+
+  test('a point on the bank is moved out into the water', () => {
+    const p = placeOnWater(32.44, -97.775, lake); // dead on the south bank
+    assert.equal(p.onWater, true);
+    assert.ok(inWater(p.lat, p.lon, lake), 'still not in the water');
+    assert.ok(p.m >= 5, `only ${p.m} m off the bank`);
+  });
+
+  test('a point inland is brought onto the water', () => {
+    const p = placeOnWater(32.4380, -97.775, lake); // ~220 m south of the lake
+    assert.equal(p.onWater, true);
+    assert.ok(inWater(p.lat, p.lon, lake));
+  });
+
+  /* Half way along the longest run is what makes one rule work for a creek arm
+     and for open water: a narrow channel gets a pin mid-channel rather than
+     one against each bank. */
+  /* Maximising clearance rather than distance is what makes this work. The
+     longest straight line from a bank runs ALONG the shore, which would leave
+     the pin against it; clearance pushes out into the channel. */
+  test('a narrow creek arm gets a pin out in it, not against a bank', () => {
+    // A channel about 44 m wide running east–west for roughly a kilometre.
+    const creek: [number, number][][] = [[
+      [32.4400, -97.78], [32.4404, -97.78], [32.4404, -97.77], [32.4400, -97.77], [32.4400, -97.78],
+    ]];
+    const p = placeOnWater(32.4400, -97.775, creek);
+    assert.equal(p.onWater, true);
+    assert.ok(inWater(p.lat, p.lon, creek), 'landed on the far bank');
+    // The most water available in a 44 m channel is about 22 m from either side.
+    assert.ok(p.m >= 15 && p.m <= 25, `${p.m} m of clearance in a 44 m channel`);
+  });
+
+  test('with no outline at all there is nowhere to put it', () => {
+    assert.equal(placeOnWater(32.445, -97.775, []).onWater, false);
+  });
+
+  test('deciding a thing is too far from the lake is digest’s job, not this one', () => {
+    // placeOnWater will happily find water near the edge for any input; the
+    // proximity limit is what keeps a bridge in the next town out of a plan.
+    const faraway = [{ type: 'way', id: 1, center: { lat: 32.60, lon: -97.30 }, tags: { bridge: 'yes', name: 'Main Street' } }];
+    assert.deepEqual(digest(faraway, 32.445, -97.775, null, lake), []);
+  });
+
+  test('digest only offers stops that are actually on the water', () => {
+    const raw = [
+      { type: 'way', id: 1, center: { lat: 32.4401, lon: -97.775 }, tags: { bridge: 'yes', name: 'Pearl Street' } },
+      { type: 'way', id: 2, center: { lat: 32.4399, lon: -97.772 }, tags: { waterway: 'stream', name: 'Rough Creek' } },
+      { type: 'node', id: 3, lat: 32.4498, lon: -97.7752, tags: { leisure: 'marina', name: 'Harbor Marina' } },
+    ];
+    const out = digest(raw, 32.445, -97.775, null, lake[0].length ? lake : []);
+    assert.equal(out.length, 3);
+    for (const f of out) {
+      assert.ok(inWater(f.lat, f.lon, lake), `${f.name} was offered on dry land`);
+    }
   });
 });
