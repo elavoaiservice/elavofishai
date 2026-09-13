@@ -385,6 +385,37 @@ describe('ramps have to be on the water too', () => {
   });
 });
 
+describe('the outline digest uses is the outline that gets stored', () => {
+  /* These have to be the same geometry. They were not: digest() placed stops
+     against the full polygon while the lake row held a thinned copy, and
+     placeOnWater steps in 10 m while the thinning can move the bank by 6 — so
+     a creek mouth offered as a stop read as dry land the moment anything
+     checked it against the stored outline. Lake Granbury's Fall Branch did
+     exactly that. */
+  const raw: [number, number][] = [];
+  // A 66 m band of water with a ragged, densely-sampled bank.
+  for (let i = 0; i <= 120; i += 1) raw.push([32.4397 + (((i * 7919) % 13) / 13) * 0.00004, -97.80 + i * 0.0005]);
+  for (let i = 120; i >= 0; i -= 1) raw.push([32.4403 - (((i * 6421) % 11) / 11) * 0.00004, -97.80 + i * 0.0005]);
+  raw.push(raw[0]);
+  const shore = [raw] as [number, number][][];
+
+  test('every stop digest offers is in the water the lake row remembers', () => {
+    const stored = simplifyRings(closeRings(shore));
+    const out = digest(
+      [
+        { type: 'way', id: 1, center: { lat: 32.4401, lon: -97.775 }, tags: { waterway: 'stream', name: 'Fall Branch' } },
+        { type: 'way', id: 2, center: { lat: 32.4399, lon: -97.760 }, tags: { bridge: 'yes', name: 'Pearl Street' } },
+        { type: 'node', id: 3, lat: 32.4405, lon: -97.790, tags: { leisure: 'marina', name: 'Harbor Marina' } },
+      ],
+      32.44, -97.775, null, shore
+    );
+    assert.ok(out.length >= 2, `digest offered ${out.length} stops`);
+    for (const f of out) {
+      assert.ok(inWater(f.lat, f.lon, stored), `${f.name} is off the water the lake row stores`);
+    }
+  });
+});
+
 describe('thinning the outline', () => {
   test('collinear points go, corners stay', () => {
     // A square with twenty points along each side. Only the four corners

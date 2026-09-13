@@ -70,8 +70,13 @@ export function kindOf(tags: Record<string, string>): FeatureKind | null {
  *    be worth naming by where they are
  */
 export function digest(raw: OverpassEl[], lakeLat: number, lakeLon: number, bbox: [number, number, number, number] | null, shore: Shoreline = []): LakeFeature[] {
-  // The outline has to be closed before "in the water" means anything.
-  const rings = closeRings(shore);
+  /* The outline has to be closed before "in the water" means anything — and
+     it has to be the SAME outline the stored one is, or the two disagree
+     about the bank. They did: a creek mouth placed 10 m off the edge of the
+     full polygon read as dry land against the thinned copy on the lake row,
+     because placeOnWater steps in 10 m and the thinning moves the edge by up
+     to 6. One geometry, one answer. */
+  const rings = simplifyRings(closeRings(shore));
   const inBox = (la: number, lo: number) =>
     bbox ? la >= bbox[1] - 0.02 && la <= bbox[3] + 0.02 && lo >= bbox[0] - 0.02 && lo <= bbox[2] + 0.02
          : milesBetween(lakeLat, lakeLon, la, lo) < 25;

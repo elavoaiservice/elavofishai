@@ -1,0 +1,13 @@
+-- Features and the stored outline have to come from the same geometry.
+--
+-- 0033 stored the outline thinned to 6 m, but digest() went on placing stops
+-- against the full polygon. placeOnWater steps in 10 m and the thinning can
+-- move the bank by 6, so a stop could be in the water by one outline and on
+-- dry land by the other — which is what Lake Granbury's Fall Branch was doing
+-- straight after 0033 shipped. digest() now thins first too.
+--
+-- Clearing the outline is enough to force the rebuild: featuresForLake treats
+-- a feature cache with no outline as stale. featuresAt is deliberately left
+-- alone so the serve-the-last-good-cache fallback still has something to serve
+-- when Overpass is busy, which it currently often is.
+UPDATE "Lake" SET "outlineJson" = NULL, "outlineAt" = NULL;
