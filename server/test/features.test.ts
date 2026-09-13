@@ -5,10 +5,17 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { buildQuery, digest, kindOf, metresToShore, snapStops, splitResponse } from '../src/services/features';
+import { buildQuery, digest, kindOf, metresToShore, snapStops, snapToShore, splitResponse } from '../src/services/features';
 
 const LAKE = { lat: 32.43, lon: -97.78 };
 const BBOX: [number, number, number, number] = [-97.90, 32.35, -97.65, 32.50];
+
+/* A crude Lake Granbury: a shoreline running north–south through the points
+   these fixtures use. digest() will not offer a stop it cannot place on the
+   water, so every case needs one. */
+const LAKE_SHORE = [[
+  [32.40, -97.77], [32.4394, -97.7626], [32.44, -97.78], [32.44, -97.80],
+]] as [number, number][][];
 
 describe('kindOf', () => {
   test('maps OSM tags to the kinds a plan talks about', () => {
@@ -27,10 +34,10 @@ describe('digest', () => {
       { type: 'way', id: 2, center: { lat: 32.44, lon: -97.80 }, tags: { waterway: 'stream', name: 'Rough Creek' } },
       { type: 'way', id: 3, center: { lat: 32.48, lon: -97.85 }, tags: { waterway: 'stream', name: 'Rough Creek' } },
     ];
-    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX);
+    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX, LAKE_SHORE);
     assert.equal(out.length, 1);
     assert.equal(out[0].kind, 'creek');
-    assert.equal(out[0].lat, 32.44);
+    assert.ok(Math.abs(out[0].lat - 32.44) < 0.01, `got ${out[0].lat}`);
   });
 
   test('a road bridge in town, outside the lake footprint, is not a fishing spot', () => {
@@ -38,7 +45,7 @@ describe('digest', () => {
       { type: 'way', id: 1, center: { lat: 32.70, lon: -97.30 }, tags: { bridge: 'yes', name: 'Main Street' } },
       { type: 'way', id: 2, center: { lat: 32.4394, lon: -97.7626 }, tags: { bridge: 'yes', name: 'East US Highway 377' } },
     ];
-    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX);
+    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX, LAKE_SHORE);
     assert.deepEqual(out.map((f) => f.name), ['East US Highway 377']);
   });
 
@@ -47,7 +54,7 @@ describe('digest', () => {
       { type: 'way', id: 1, center: { lat: 32.44, lon: -97.78 }, tags: { waterway: 'stream' } },
       { type: 'node', id: 2, lat: 32.40, lon: -97.77, tags: { waterway: 'dam' } },
     ];
-    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX);
+    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX, LAKE_SHORE);
     assert.equal(out.length, 1);
     assert.equal(out[0].kind, 'dam');
     assert.match(out[0].name, /^Dam — /);
@@ -55,7 +62,7 @@ describe('digest', () => {
 
   test('every feature carries a hint about why that kind of place holds fish', () => {
     const raw = [{ type: 'node', id: 1, lat: 32.44, lon: -97.78, tags: { natural: 'cape', name: 'Long Point' } }];
-    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX);
+    const out = digest(raw, LAKE.lat, LAKE.lon, BBOX, LAKE_SHORE);
     assert.match(out[0].hint, /point/i);
   });
 });
@@ -150,5 +157,71 @@ describe('the shoreline test', () => {
     const { cand, shore: sh } = splitResponse(raw);
     assert.equal(cand.length, 1);
     assert.equal(sh.length, 1);
+  });
+});
+
+describe('putting the pin on the water', () => {
+  // A shoreline running east–west along latitude 32.44.
+  const shore = [[[32.44, -97.80], [32.44, -97.70]]] as [number, number][][];
+
+  test('snaps a point inland to the nearest place on the lake edge', () => {
+    const s = snapToShore(32.47, -97.75, shore); // ~3.3 km north of the water
+    assert.equal(Math.round(s.lat * 1e6) / 1e6, 32.44);
+    assert.ok(Math.abs(s.lon - -97.75) < 1e-9);
+    assert.ok(s.m > 3000 && s.m < 3600, `got ${s.m} m`);
+  });
+
+  test('leaves a point already on the edge where it is', () => {
+    const s = snapToShore(32.44, -97.75, shore);
+    assert.ok(s.m < 0.001);
+  });
+
+  test('with no shoreline it cannot snap, and says so', () => {
+    const s = snapToShore(32.44, -97.75, []);
+    assert.equal(s.m, Infinity);
+    assert.equal(s.lat, 32.44);
+  });
+
+  /* This is the bug an angler actually saw. OSM gives a way's `center`, which
+     for a creek is somewhere up the valley — Fall Branch's was 1.4 miles from
+     Lake Granbury — and that coordinate was going straight onto the plan's
+     map. The stop must be the creek's MOUTH. */
+  test('a creek is offered at its mouth, not at the middle of its bounding box', () => {
+    const raw = [{
+      type: 'way', id: 1,
+      center: { lat: 32.4405, lon: -97.75 }, // 55 m up the valley from the water
+      tags: { waterway: 'stream', name: 'Fall Branch' },
+    }];
+    const out = digest(raw, 32.44, -97.75, null, shore);
+    assert.equal(out.length, 1);
+    assert.equal(Math.round(out[0].lat * 1e6) / 1e6, 32.44, 'the pin is on the lake edge');
+    assert.equal(snapToShore(out[0].lat, out[0].lon, shore).m < 0.001, true);
+  });
+
+  test('every stop offered sits on the water, whatever OSM said its centre was', () => {
+    const raw = [
+      // Each is inside its own limit: a bridge has to be within 40 m of the
+      // water to be over it, a marina 120 m, a point 300 m.
+      { type: 'way', id: 1, center: { lat: 32.4402, lon: -97.78 }, tags: { bridge: 'yes', name: 'Pearl Street' } },
+      { type: 'node', id: 2, lat: 32.4409, lon: -97.72, tags: { leisure: 'marina', name: 'Harbor Marina' } },
+      { type: 'way', id: 3, center: { lat: 32.4407, lon: -97.74 }, tags: { natural: 'cape', name: 'Long Point' } },
+    ];
+    const out = digest(raw, 32.44, -97.75, null, shore);
+    assert.equal(out.length, 3);
+    for (const f of out) {
+      assert.ok(snapToShore(f.lat, f.lon, shore).m < 0.001, `${f.name} is off the water`);
+    }
+  });
+
+  test('without a shoreline nothing is offered — a stop we cannot place is worse than no stop', () => {
+    const raw = [{ type: 'way', id: 1, center: { lat: 32.44, lon: -97.75 }, tags: { bridge: 'yes', name: 'Pearl Street' } }];
+    assert.deepEqual(digest(raw, 32.44, -97.75, null, []), []);
+  });
+
+  test('the query asks for the named lake’s outline, not every pond nearby', () => {
+    const named = buildQuery('Lake Granbury', 32.44, -97.75, 20000, null, 'named');
+    assert.match(named, /\(way\.byname; way\(r\.byname\);\)/);
+    const any = buildQuery('Lake Granbury', 32.44, -97.75, 20000, null, 'any');
+    assert.match(any, /\(way\.water; way\(r\.water\);\)/);
   });
 });

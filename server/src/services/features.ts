@@ -83,21 +83,25 @@ export function digest(raw: OverpassEl[], lakeLat: number, lakeLon: number, bbox
     if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
     const lat = Number(la), lon = Number(lo);
     if (!inBox(lat, lon)) continue;
-    // With a shoreline to hand, "on the lake" is a distance, not a guess: a
-    // road bridge in town is 2 km from the water and drops out here.
-    if (shore.length && metresToShore(lat, lon, shore) > SHORE_M[kind]) continue;
+    // "On the lake" is a distance, not a guess: a road bridge in town is 2 km
+    // from the water and drops out here. Without a shoreline there is no way
+    // to tell, and the honest answer is to offer nothing rather than a stop
+    // that might be a mile inland — the map is the part an angler acts on.
+    if (!shore.length) continue;
+    const snapped = snapToShore(lat, lon, shore);
+    if (snapped.m > SHORE_M[kind]) continue;
     let name = t.name || t['name:en'] || '';
     if (!name) {
       if (kind !== 'dam' && kind !== 'pier' && kind !== 'marina') continue;
-      const mi = milesBetween(lakeLat, lakeLon, lat, lon);
-      name = `${kind === 'dam' ? 'Dam' : kind === 'pier' ? 'Fishing pier' : 'Marina'} — ${mi.toFixed(1)} mi ${bearingFrom(lakeLat, lakeLon, lat, lon)}`;
+      const mi = milesBetween(lakeLat, lakeLon, snapped.lat, snapped.lon);
+      name = `${kind === 'dam' ? 'Dam' : kind === 'pier' ? 'Fishing pier' : 'Marina'} — ${mi.toFixed(1)} mi ${bearingFrom(lakeLat, lakeLon, snapped.lat, snapped.lon)}`;
     }
-    // Nearest segment wins: for a creek that is its mouth — nearest the water
-    // when we know where the water is, nearest the centre when we do not.
-    const d = shore.length ? metresToShore(lat, lon, shore) / 1609 : milesBetween(lakeLat, lakeLon, lat, lon);
+    // The stop is the point on the water, not the middle of the thing's
+    // bounding box — a creek's mouth rather than a spot a mile up the valley.
+    const d = snapped.m / 1609;
     const key = `${kind}:${name.toLowerCase()}`;
     const cur = best.get(key);
-    if (!cur || d < cur.d) best.set(key, { name, kind, lat, lon, hint: HINTS[kind], d });
+    if (!cur || d < cur.d) best.set(key, { name, kind, lat: snapped.lat, lon: snapped.lon, hint: HINTS[kind], d });
   }
   return [...best.values()]
     .sort((a, b) => milesBetween(lakeLat, lakeLon, a.lat, a.lon) - milesBetween(lakeLat, lakeLon, b.lat, b.lon))
@@ -136,7 +140,27 @@ function parseBbox(bbox: string | null): [number, number, number, number] | null
  * relations), falling back to any lake/reservoir polygon by the centre, since
  * small lakes are often unnamed in OSM. Exported for tests.
  */
-export function buildQuery(lakeName: string, lat: number, lon: number, radius: number, launch?: { lat: number; lon: number } | null): string {
+export function buildQuery(
+  lakeName: string,
+  lat: number,
+  lon: number,
+  radius: number,
+  launch?: { lat: number; lon: number } | null,
+  /**
+   * Whose outline to use as "the lake".
+   *
+   * 'named' takes the shoreline of the water that carries this lake's name,
+   * and nothing else. That matters because the candidate filter is "how far is
+   * this from the water" — and when every pond, the river below the dam and
+   * the neighbouring lake all contributed shoreline, a footbridge over a creek
+   * and a dam on somebody else's lake both passed it, and the planner offered
+   * them as stops.
+   *
+   * 'any' is the fallback for a lake OSM has not named, where the best we can
+   * do is every water body in the box.
+   */
+  shoreFrom: 'named' | 'any' = 'named'
+): string {
   // "Lake Granbury" → "Granbury"; "Possum Kingdom Lake" → "Possum Kingdom".
   // Keep the dots in "O.H. Ivie" — they are in the OSM name too — and escape
   // them; only brackets and quotes are stripped, since they cannot be in a name.
@@ -153,7 +177,7 @@ export function buildQuery(lakeName: string, lat: number, lon: number, radius: n
     `(way["natural"="water"]["name"~"${re}",i]${box};rel["natural"="water"]["name"~"${re}",i]${box};)->.byname;` +
     `(way["natural"="water"]["water"~"reservoir|lake"]${tight};rel["natural"="water"]["water"~"reservoir|lake"]${tight};)->.nearby;` +
     `(.byname; .nearby;)->.water;` +
-    `(way.water; way(r.water);)${launch ? `(around:15000,${launch.lat},${launch.lon})` : ''}->.shore;` +
+    `(way.${shoreFrom === 'named' ? 'byname' : 'water'}; way(r.${shoreFrom === 'named' ? 'byname' : 'water'});)${launch ? `(around:15000,${launch.lat},${launch.lon})` : ''}->.shore;` +
     `(` +
     `way["waterway"~"stream|river"]["name"]${box};` +
     `way["bridge"="yes"]["name"]${box};` +
@@ -190,19 +214,67 @@ export function metresToShore(lat: number, lon: number, shore: Shoreline): numbe
   return best;
 }
 
+/**
+ * The closest point on the lake's edge to somewhere — and how far that is.
+ *
+ * OSM gives a way's `center`, which is the middle of its bounding box. For a
+ * creek that is somewhere up the valley; for a long bridge it is mid-span; for
+ * a marina it is the car park. Those are the coordinates that were being
+ * dropped on the plan's map, which is why stops looked like they were off the
+ * lake — because they were. Snapping each one to the nearest point of the
+ * lake's own outline puts the pin where an angler would actually fish it: the
+ * creek MOUTH, the bank end of the bridge, the water's edge of the marina.
+ */
+export function snapToShore(
+  lat: number,
+  lon: number,
+  shore: Shoreline
+): { lat: number; lon: number; m: number } {
+  if (!shore.length) return { lat, lon, m: Infinity };
+  const kx = 111_000 * Math.cos((lat * Math.PI) / 180);
+  const ky = 111_000;
+  let best = Infinity;
+  let bLatOut = lat;
+  let bLonOut = lon;
+  for (const line of shore) {
+    for (let i = 1; i < line.length; i += 1) {
+      const [aLat, aLon] = line[i - 1];
+      const [bLat, bLon] = line[i];
+      const ax = (aLon - lon) * kx, ay = (aLat - lat) * ky;
+      const bx = (bLon - lon) * kx, by = (bLat - lat) * ky;
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+      const px = ax + t * dx, py = ay + t * dy;
+      const d = Math.sqrt(px * px + py * py);
+      if (d < best) {
+        best = d;
+        bLatOut = aLat + t * (bLat - aLat);
+        bLonOut = aLon + t * (bLon - aLon);
+      }
+    }
+  }
+  return { lat: bLatOut, lon: bLonOut, m: best };
+}
+
 /** How close to the water a thing has to be to count as being on the lake. */
 export const SHORE_M: Record<FeatureKind, number> = {
   creek: 150, river: 150, point: 300, bay: 300, island: 300, bridge: 40, dam: 150, pier: 80, marina: 120, beach: 200,
 };
 
-/** Split a raw Overpass response into candidates and shoreline polylines. */
+/**
+ * Split a raw Overpass response into candidates and shoreline polylines.
+ *
+ * Everything with geometry is shoreline — the query decides whose shoreline
+ * that is (see buildQuery's shoreFrom), which is the fix for stops landing on
+ * ponds and creeks near the lake rather than on the lake.
+ */
 export function splitResponse(raw: OverpassEl[]): { cand: OverpassEl[]; shore: Shoreline } {
   const cand: OverpassEl[] = [];
   const shore: Shoreline = [];
   for (const el of raw) {
     const geom = (el as { geometry?: Array<{ lat: number; lon: number }> }).geometry;
-    if (geom && geom.length > 1 && el.tags?.natural === 'water') shore.push(geom.map((g) => [g.lat, g.lon] as [number, number]));
-    else if (geom && geom.length > 1 && !el.tags) shore.push(geom.map((g) => [g.lat, g.lon] as [number, number]));
+    if (geom && geom.length > 1) shore.push(geom.map((g) => [g.lat, g.lon] as [number, number]));
     else cand.push(el);
   }
   return { cand, shore };
@@ -230,6 +302,26 @@ function isBigWater(bbox: [number, number, number, number] | null): boolean {
 }
 const launchMemo = new Map<string, { at: number; features: LakeFeature[] }>();
 
+/**
+ * Candidates plus the outline of THIS lake.
+ *
+ * Asks for the named water's shoreline first. Plenty of lakes are unnamed in
+ * OSM, and for those the only outline available is "every water body around
+ * here" — so that is the fallback, and it costs a second round trip on exactly
+ * the lakes that need it.
+ */
+async function shorelineFor(
+  name: string,
+  lat: number,
+  lon: number,
+  radius: number,
+  at: { lat: number; lon: number } | null
+): Promise<{ cand: OverpassEl[]; shore: Shoreline }> {
+  const first = splitResponse(await fetchFromOverpass(buildQuery(name, lat, lon, radius, at, 'named')));
+  if (first.shore.length) return first;
+  return splitResponse(await fetchFromOverpass(buildQuery(name, lat, lon, radius, at, 'any')));
+}
+
 /** Cached named features for a lake. Never throws — an empty list is a fine answer. */
 export async function featuresForLake(lakeId: string, launch?: { lat?: number; lon?: number } | null): Promise<LakeFeature[]> {
   const lake = await prisma.lake.findUnique({
@@ -252,7 +344,7 @@ export async function featuresForLake(lakeId: string, launch?: { lat?: number; l
     const memo = launchMemo.get(key);
     if (memo && Date.now() - memo.at < CACHE_DAYS * 86400000) return memo.features;
     try {
-      const { cand, shore } = splitResponse(await fetchFromOverpass(buildQuery(lake.name, lake.lat, lake.lon, radius, at)));
+      const { cand, shore } = await shorelineFor(lake.name, lake.lat, lake.lon, radius, at);
       // Ordered from the launch, not the lake centre — where the angler is.
       const out = digest(cand, at.lat, at.lon, null, shore);
       launchMemo.set(key, { at: Date.now(), features: out });
@@ -267,7 +359,7 @@ export async function featuresForLake(lakeId: string, launch?: { lat?: number; l
     try { return JSON.parse(lake.featuresJson) as LakeFeature[]; } catch { /* refetch */ }
   }
   try {
-    const { cand, shore } = splitResponse(await fetchFromOverpass(buildQuery(lake.name, lake.lat, lake.lon, radius, null)));
+    const { cand, shore } = await shorelineFor(lake.name, lake.lat, lake.lon, radius, null);
     const out = digest(cand, lake.lat, lake.lon, bbox, shore);
     await prisma.lake.update({ where: { id: lake.id }, data: { featuresJson: JSON.stringify(out), featuresAt: new Date() } }).catch(() => {});
     return out;

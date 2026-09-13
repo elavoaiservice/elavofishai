@@ -1,0 +1,11 @@
+-- Every cached feature list was built with OpenStreetMap's `center` for each
+-- way — the middle of its bounding box. For a creek that is somewhere up the
+-- valley (Fall Branch's was 1.4 miles from Lake Granbury), for a bridge it is
+-- mid-span, for a marina it is the car park. Those coordinates went straight
+-- onto the day plan's map, which is why stops looked like they were off the
+-- lake: they were.
+--
+-- Stops are now snapped to the lake's own shoreline, so clearing the stamp
+-- makes every lake rebuild its features on next use. The JSON is left in place
+-- so a lake still has something to show if Overpass is down when it is asked.
+UPDATE "Lake" SET "featuresAt" = NULL WHERE "featuresAt" IS NOT NULL;
