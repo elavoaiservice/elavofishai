@@ -16,7 +16,9 @@ describe('finding a playbook', () => {
     assert.ok(playbookFor('white crappie'));
   });
   test('returns nothing for a species we have not written up', () => {
-    assert.equal(playbookFor('Largemouth Bass'), null);
+    // Largemouth has its own book now; these genuinely do not.
+    assert.equal(playbookFor('Flathead Catfish'), null);
+    assert.equal(playbookFor('Walleye'), null);
     assert.equal(playbookFor(''), null);
     assert.equal(playbookForPrompt('Walleye', 5, 60), '');
   });
@@ -70,5 +72,48 @@ describe('what the planner is handed', () => {
   });
   test('the source is named, because someone should be able to check it', () => {
     assert.match(playbookForPrompt('crappie', 3, 58), /crappiemoment/i);
+  });
+});
+
+describe('the other two playbooks', () => {
+  test('largemouth has its own book, and the other bass do not borrow it', () => {
+    assert.equal(playbookFor('Largemouth Bass')!.species, 'largemouth bass');
+    // The app also carries "White Bass" and "Striped & Hybrid"; neither is a
+    // largemouth, and giving them largemouth advice would be worse than none.
+    assert.equal(playbookFor('White Bass'), null);
+    assert.equal(playbookFor('Striped & Hybrid'), null);
+  });
+
+  test('the sunfish book answers to what people actually call them', () => {
+    for (const name of ['Sunfish', 'bluegill', 'Shellcracker', 'redear', 'bream']) {
+      assert.ok(playbookFor(name), `${name} found no playbook`);
+    }
+  });
+
+  test('every phase of every playbook covers a real temperature band and some months', () => {
+    for (const name of ['crappie', 'largemouth bass', 'sunfish']) {
+      const book = playbookFor(name)!;
+      for (const p of book.phases) {
+        assert.ok(p.tempF[0] < p.tempF[1], `${name}/${p.name} has an inverted range`);
+        assert.ok(p.months.length > 0, `${name}/${p.name} has no months`);
+        assert.ok(p.where && p.depth && p.presentation && p.bait && p.key, `${name}/${p.name} is missing a field`);
+      }
+      for (let m = 1; m <= 12; m += 1) {
+        assert.ok(phaseFor(book, m, null), `${name} has no phase for month ${m}`);
+      }
+    }
+  });
+
+  test('bass in August is the late-summer grind, not the spawn', () => {
+    assert.match(phaseFor(playbookFor('Largemouth Bass')!, 8, 88)!.name, /late summer/i);
+  });
+
+  test('panfish in June is the bedding window', () => {
+    assert.match(phaseFor(playbookFor('Sunfish')!, 6, 78)!.name, /bedding/i);
+  });
+
+  test('each book names its source so it can be checked', () => {
+    assert.match(playbookForPrompt('Largemouth Bass', 3, 55), /TacticalBassin/i);
+    assert.match(playbookForPrompt('Sunfish', 6, 75), /RichardGene/i);
   });
 });
