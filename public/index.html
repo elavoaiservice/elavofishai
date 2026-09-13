@@ -3557,6 +3557,48 @@ function estWater(){
 // for every lake; surface water keeps warming into July in the south and
 // into August up north.
 function waterWarming(){ const lat=(ACTIVE&&isFinite(ACTIVE.lat))?ACTIVE.lat:32.4; return mi<(lat>40?7:6); }
+let CLARITY=null;
+/* ---- water clarity ----
+   From the EPA Water Quality Portal: state agencies, the USGS and volunteer
+   monitors, all in one place, for every state. It is the first thing every
+   playbook branches on and the one input this app never had.
+
+   It is NOT live. Agencies sample monthly to quarterly and publish months
+   later, so this is a seasonal profile of the lake — what the water usually
+   does in this month — and it is labelled that way everywhere it appears.
+   One reading from one station is an observation, not a season, so it says so
+   rather than calling it typical. */
+function clarityHtml(){
+  const c=CLARITY; if(!c||c.typicalFt==null)return '';
+  const band={clear:['Clear','Natural colours, longer casts, and fish that will look at a bait from a distance — they can see you too.'],
+              stained:['Stained','Brighter colours earn their keep, fish hold tighter to cover, and you can get closer than you think.'],
+              muddy:['Muddy','Loud and bright: vibration and contrast over subtlety. Fish will be tight to whatever cover there is, and shallow.']}[c.band]||['',''];
+  const months=['J','F','M','A','M','J','J','A','S','O','N','D'];
+  const vals=c.byMonth.filter(x=>x!=null);
+  const top=vals.length?Math.max.apply(null,vals):1;
+  const bars=c.byMonth.map((v,i)=>'<div style="flex:1;text-align:center">'
+    +'<div style="height:46px;display:flex;align-items:flex-end;justify-content:center">'
+      +(v==null?'<div style="width:70%;height:2px;background:var(--border)"></div>'
+        :'<div title="'+v+' ft" style="width:70%;height:'+Math.max(4,Math.round(v/top*46))+'px;background:'+(i===mi?'var(--primary)':'var(--sky)')+';border-radius:3px 3px 0 0"></div>')
+    +'</div><div class="snapx" style="font-size:10px;opacity:'+(i===mi?1:.55)+'">'+months[i]+'</div></div>').join('');
+  return '<div class="row" style="margin-top:18px"><div class="k">Water clarity '
+      +'<button class="hbtn" data-help="clarity" aria-label="About water clarity">ⓘ</button></div>'
+    +(c.enough
+      ? '<p style="margin:0 0 4px"><b>'+c.typicalFt+' ft</b> of visibility is typical for '+MONTH_NAMES[mi]+' here — <b>'+escHtml(band[0].toLowerCase())+'</b> water. '
+        +'<span class="snapx">Across the record it runs '+c.lowFt+'–'+c.highFt+' ft.</span></p>'
+        +'<p style="margin:0 0 8px">'+escHtml(band[1])+'</p>'
+      : '<p style="margin:0 0 8px">Only '+c.readings+' reading'+(c.readings===1?'':'s')+' on record for this water — not enough to call anything typical. '
+        +'The most recent was <b>'+(c.latest?c.latest.ft+' ft on '+c.latest.at:'—')+'</b>.</p>')
+    +(c.enough?'<div style="display:flex;gap:3px;align-items:flex-end;margin:10px 0 4px">'+bars+'</div>'
+      +'<p class="snapx" style="margin:0 0 8px">Typical visibility by month, in feet. This month is highlighted.</p>':'')
+    +'<p class="snapx" style="margin:0">'
+      +(c.latest?'Most recent agency reading '+c.latest.ft+' ft on '+c.latest.at+'. ':'')
+      +c.readings+' Secchi-disk reading'+(c.readings===1?'':'s')+(c.years?' between '+c.years[0]+' and '+c.years[1]:'')
+      +' from '+c.stations.length+' monitoring station'+(c.stations.length===1?'':'s')+' on this lake'
+      +(c.stations.length?' ('+c.stations.slice(0,3).map(x=>escHtml(x.name)+' — '+x.km+' km').join('; ')+')':'')
+      +'. Source: EPA Water Quality Portal. <b>These are agency samples, not today\u2019s water</b> — agencies measure every few weeks and publish months later.</p></div>';
+}
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function drawWater(){
   const warming=waterWarming();
   const t=waterTemp!=null?waterTemp:estWater();
@@ -3604,6 +3646,7 @@ function drawWater(){
     '<div class="row"><div class="k">Where the fish are</div><ul>'+st.where.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>'+
     '<div class="row" style="margin-top:16px"><div class="k">What to do about it</div><ul>'+st.todo.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>'+
     '<div class="row" style="margin-top:16px"><div class="k">Best targets now</div><p>'+st.best.map(clean).join(' \u00b7 ')+'</p></div>'+
+    clarityHtml()+
     chart;
 }
 async function setWater(){
@@ -3734,6 +3777,8 @@ function loadLevel(){
   apiFetch('/api/lakes/'+encodeURIComponent(ACTIVE.id)+'/water').then(r=>{ if(!r.ok)throw 0; return r.json(); })
    .then(d=>{
      WATER_SRC=d;
+     CLARITY=d.clarity||null;
+     if(CLARITY&&typeof drawWater==='function')drawWater();
      if(d.level&&isFinite(d.level.ft)){
        lakeLevel=d.level.ft; lakeManual=false;
        lakeWhen=new Date(d.level.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(d.level.stale?' (stale)':'');
@@ -6437,6 +6482,12 @@ const HELP={
     '<p>“Look for” is what to check <b>on arrival</b> at that exact spot: depth, cover, bait, where the shade or current is. '+
     'The dashed line is the order of the day, not a route to drive — use your own judgement on the water.</p>'+
     '<p>Places come from OpenStreetMap, which is thorough on some lakes and thin on others. Add your own spots under My water and they go straight into the list.</p>'},
+  clarity:{t:'Water clarity',b:
+    '<p>How far down you can see decides more than most anglers give it credit for: what colour to throw, how close you can get, how deep the fish sit, and how far they will move for a bait.</p>'+
+    '<p>The number is <b>Secchi depth</b> — a white disk lowered on a line until it disappears. It is the oldest and most widely collected water measurement there is, which is why it exists for lakes all over the country.</p>'+
+    '<p><b>Clear (4 ft or more):</b> natural colours, longer casts, lighter line. They can see your bait from a distance, and they can see you. <b>Stained (1½–4 ft):</b> brighter colours pay, fish hold tighter to cover, and you can get closer than you would think. <b>Muddy (under 1½ ft):</b> vibration and contrast over subtlety, and the fish will be tight against whatever cover there is, usually shallow.</p>'+
+    '<p><b>This is not today\u2019s water.</b> It comes from state agencies, the USGS and volunteer monitoring programmes through the EPA\u2019s Water Quality Portal, and they sample every few weeks and publish months later. So what you are seeing is what this lake <i>usually</i> does in this month — useful for planning, and no substitute for looking over the side of the boat. A hard rain changes it in a day.</p>'+
+    '<p>The stations the readings came from are named underneath, with how far each is from the middle of the lake, so you can judge whether they are anywhere near where you fish.</p>'},
   bank:{t:'Which bank the wind is loading',b:
     '<p>Plankton drifts. It cannot swim against wind-driven current, so a steady wind slowly pushes the lake’s plankton across to the far shore and piles it up there.</p>'+
     '<p>Shad eat plankton, so the shad go where it ends up. Crappie, bass, whites and stripers eat shad, so they go where the shad are. Two or three days of wind out of the same direction and the downwind bank is where the whole food chain has moved.</p>'+

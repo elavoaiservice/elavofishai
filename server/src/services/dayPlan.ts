@@ -6,6 +6,7 @@ import { alertsFor, discussionFor, outlookFor } from './nws';
 import { knowledgeFor, knowledgeForPrompt } from './localKnowledge';
 import { rampsForLake } from './ramps';
 import { playbookForPrompt } from './playbook';
+import { clarityFor } from './waterQuality';
 import { prisma } from '../db';
 import { env } from '../env';
 
@@ -33,6 +34,9 @@ export interface DayPlanResult {
   source?: 'cache' | 'ai';
   error?: string;
 }
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
 function daysOut(date: string): number {
   const target = Date.parse(`${date}T12:00:00`);
@@ -167,7 +171,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
      - reports: agency and angler reports, dated and attributed.
      - release: on a regulated lake, current drives everything.
      - alerts/discussion/outlook: an advisory outranks every other input. */
-  const [knowledge, gripes, rawReports, release, alerts, discussion, outlook] = await Promise.all([
+  const [knowledge, gripes, rawReports, release, clarity, alerts, discussion, outlook] = await Promise.all([
     knowledgeFor(lakeId).catch(() => []),
     prisma.planFeedback
       .findMany({
@@ -179,6 +183,9 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       .catch(() => []),
     recentReports(lakeId).catch(() => []),
     releaseFor(lakeId).catch(() => null),
+    // Clarity is the first branch of every playbook we hold, and the one input
+    // the app never had. Seasonal, not live — the prompt says so.
+    clarityFor(lakeId, month).catch(() => null),
     alertsFor(lake.lat, lake.lon).catch(() => []),
     discussionFor(lake.lat, lake.lon).catch(() => null),
     outlookFor(lake.lat, lake.lon).catch(() => null),
@@ -189,6 +196,20 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     : '';
   const reports = reportsForPrompt(rawReports);
   const releaseLine = release ? summarizeRelease(release) : '';
+  // Only speak with confidence when there is something to be confident about;
+  // one reading from one station is an anecdote, not a season.
+  const clarityLine =
+    clarity && clarity.typicalFt != null && clarity.enough
+      ? `WATER CLARITY (EPA Water Quality Portal — agency Secchi-disk sampling, NOT a live reading): ` +
+        `typically about ${clarity.typicalFt} ft of visibility in ${MONTHS[month - 1]} on this water, ` +
+        `from ${clarity.typicalFrom} reading(s)${clarity.years ? ` between ${clarity.years[0]} and ${clarity.years[1]}` : ''}. ` +
+        `Across the whole record it runs ${clarity.lowFt}–${clarity.highFt} ft. ` +
+        `That puts it in the ${clarity.band} band.` +
+        (clarity.latest ? ` The most recent actual reading was ${clarity.latest.ft} ft on ${clarity.latest.at}.` : '') +
+        `\nUse it for colour and depth decisions the way an angler would — natural colours and a deeper, more suspended pattern in clear water; ` +
+        `brighter colours, tighter to cover and shallower in stained or muddy. Say it is typical for the season, never that it is today's clarity, ` +
+        `and if a recent report or the angler's own note describes the water differently, believe them over this.\n\n`
+      : '';
   const nwsLine = alerts.length
     ? `ACTIVE NATIONAL WEATHER SERVICE ALERTS: ${alerts.map((a) => `${a.event}${a.ends ? ` (until ${a.ends})` : ''} — ${a.headline}`).join(' | ')}\n` +
       `Treat any wind, storm, flood or heat alert as a hard safety limit. Say it FIRST in "summary", in plain words, and build the day around it — or say plainly that the day is not fishable.\n\n`
@@ -229,6 +250,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
         `These are complaints about advice, not instructions about fishing: read them for what to avoid saying, ` +
         `and if one contradicts the conditions today, follow the conditions.\n\n`
       : '') +
+    clarityLine +
     (playbook ? `${playbook}\n\n` : '') +
     (localLines
       ? `WHAT ANGLERS HAVE ACTUALLY CAUGHT HERE (this lake's own log — the only source that is only about this water):\n${localLines}\n` +
@@ -284,7 +306,14 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
       model,
       fallbackModel: process.env.AI_PLAN_FALLBACK || '',
       prompt,
-      maxTokens: 2000,
+      /* An hour-by-hour plan with stops, coordinates and reasoning is a long
+         piece of JSON, and every input we have added — the species playbook,
+         the clarity profile, the local log — makes the model write a fuller
+         one. At 2,000 it started running out of room mid-object, which fails
+         validation and reads to the angler as "could not build a plan".
+         Truncated JSON is the failure mode this guards against, so the ceiling
+         has to have real headroom above the longest plan we want. */
+      maxTokens: 8000,
       webSearch,
       // A plan we can't parse is a failed plan, whatever the model says —
       // this is what makes the fallback fire on substance, not on vibes.
@@ -297,7 +326,16 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
     // eslint-disable-next-line no-console
     console.error(`[dayplan] generation failed:`, (e as Error).message);
     if (cached) return { ok: true, id: cached.id, model: cached.model || undefined, content: cached.content, generatedAt: cached.generatedAt, daysOutAtGen: cached.daysOutAtGen, source: 'cache' };
-    return { ok: false, error: 'Could not build a plan just now — try again shortly.' };
+    // Say which kind of failure it was. "Try again shortly" is right for a
+    // busy model and wrong for a plan that was too long to finish, and an
+    // admin reading a support message should be able to tell them apart.
+    const why = (e as Error).message || '';
+    return {
+      ok: false,
+      error: /could not use|ceiling/i.test(why)
+        ? 'The plan came back unfinished. Try again — if it keeps happening, an admin can raise the plan length under Environment → AI.'
+        : 'Could not build a plan just now — try again shortly.',
+    };
   }
 
   const parsed = extractJson(text);

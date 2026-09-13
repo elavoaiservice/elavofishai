@@ -9,6 +9,7 @@ import { axisLabel, resolveLakeAxis } from '../services/lakeGeometry';
 import { rampsForLake } from '../services/ramps';
 import { releaseFor, summarizeRelease } from '../services/corps';
 import { waterFor, waterHistory } from '../services/water';
+import { clarityFor } from '../services/waterQuality';
 import { regulationsFor } from '../services/regulations';
 import { knowledgeFor } from '../services/localKnowledge';
 import { alertsFor, discussionFor, outlookFor } from '../services/nws';
@@ -230,8 +231,16 @@ export async function lakeRoutes(app: FastifyInstance): Promise<void> {
     const user = await requireUser(req, reply);
     if (!user) return;
     const id = String((req.params as { id: string }).id);
-    const [now, history] = await Promise.all([waterFor(id), waterHistory(id).catch(() => [])]);
-    return reply.send({ ...now, history });
+    // Clarity comes from a different world to level and temperature: it is a
+    // seasonal profile built from agency sampling, not a reading from today.
+    // It is served alongside them because it answers the same question, and
+    // labelled with its dates so nobody mistakes it for live.
+    const [now, history, clarity] = await Promise.all([
+      waterFor(id),
+      waterHistory(id).catch(() => []),
+      clarityFor(id).catch(() => null),
+    ]);
+    return reply.send({ ...now, history, clarity });
   });
 
   /** What the rules are on this water — quoted from the agency, never summarised. */

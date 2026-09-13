@@ -217,6 +217,11 @@ model Lake {
   featuresJson String?     @db.Text // cached named features (creek mouths, points, bridges, dams…)
   featuresAt   DateTime?
   regsJson     String?     @db.Text // limits and exceptions for this water
+  // Secchi-disk clarity history from the EPA Water Quality Portal. Cached as
+  // the raw readings rather than a summary so it can answer for any month, and
+  // refreshed monthly because the upstream data moves quarterly at best.
+  clarityJson  String?     @db.Text
+  clarityAt    DateTime?
   regsAt       DateTime?
   corpsProject String? // "SWF:WTYT2" — nearest USACE project, "" = none nearby
   corpsAt      DateTime?
