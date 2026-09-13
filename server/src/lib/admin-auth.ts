@@ -132,7 +132,19 @@ export async function completeAdminLogin(username: string, code: string, reply: 
   return true;
 }
 
-export interface AdminUserView { id: string; username: string; email: string; expiresAt?: Date }
+export interface AdminUserView { id: string; username: string; email: string; role: string; expiresAt?: Date }
+
+/**
+ * Who may do the irreversible things.
+ *
+ * One admin holding every button was fine; three is not. An owner can do
+ * everything; support can read everything and make the day-to-day moderation
+ * calls, but cannot delete an angler, change the configuration, deploy, or
+ * create another admin. Existing admins are owners, so nobody loses access.
+ */
+export function isOwner(admin: { role?: string } | null): boolean {
+  return !!admin && admin.role !== 'support';
+}
 export { SESSION_HOURS as ADMIN_SESSION_HOURS, ADMIN_SESSION_MS };
 export async function currentAdmin(req: FastifyRequest): Promise<AdminUserView | null> {
   const token = (req.cookies as Record<string, string | undefined>)[ADMIN_COOKIE];
@@ -145,7 +157,7 @@ export async function currentAdmin(req: FastifyRequest): Promise<AdminUserView |
     await prisma.adminSession.delete({ where: { id: s.id } }).catch(() => {});
     return null;
   }
-  return { id: s.admin.id, username: s.admin.username, email: s.admin.email, expiresAt: s.expiresAt };
+  return { id: s.admin.id, username: s.admin.username, email: s.admin.email, role: s.admin.role || 'owner', expiresAt: s.expiresAt };
 }
 
 export async function endAdminSession(req: FastifyRequest, reply: FastifyReply): Promise<void> {

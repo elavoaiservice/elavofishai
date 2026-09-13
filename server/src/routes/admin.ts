@@ -5,9 +5,36 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db';
 import { clientIp } from '../lib/auth';
 import { overLimit } from '../lib/rateLimit';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   startAdminLogin, completeAdminLogin, endAdminSession, ADMIN_SESSION_HOURS, currentAdmin, requireAdmin, createAdminUser,
+  isOwner, type AdminUserView,
 } from '../lib/admin-auth';
+
+/**
+ * Owner-only guard. Read access is wide on purpose — support cannot help
+ * without seeing things — but anything irreversible or that changes how the
+ * server runs takes an owner.
+ */
+async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<AdminUserView | null> {
+  const admin = await requireAdmin(req, reply);
+  if (!admin) return null;
+  if (!isOwner(admin)) {
+    reply.code(403).send({ error: 'That needs an owner account. You are signed in as support.' });
+    return null;
+  }
+  return admin;
+}
+
+/** "Chrome on iPhone" rather than 180 characters of version numbers. */
+function shortDevice(ua: string): string {
+  if (!ua) return 'unknown device';
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+    : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'unknown';
+  const browser = /CriOS|Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox'
+    : /Edg\//.test(ua) ? 'Edge' : /Safari/.test(ua) ? 'Safari' : 'browser';
+  return `${browser} on ${os}`;
+}
 
 // Lightweight audit trail for admin actions (actor kept in meta.by; AuditLog.userId
 // is for end-users, so we leave it null for admin-initiated events).
@@ -24,7 +51,7 @@ import { fetchSource, refreshAllSources } from '../services/reports';
 import { buildIndex } from '../services/corps';
 import { attachOfficialSourcesForAll } from '../services/agencySources';
 import { attention, featureCounts, funnel, latestBackup } from '../services/adminInsight';
-import { storageConfigured } from '../services/storage';
+import { deleteObject, listObjects, storageConfigured } from '../services/storage';
 import { pushConfigured } from '../services/push';
 import { issueMagicLink } from '../services/magicLink';
 import { env } from '../env';
@@ -80,7 +107,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // expiresAt is sent so the console can warn before it drops you, and sign
     // you out on the dot rather than at the next failed click.
     return {
-      admin: admin ? { username: admin.username, email: admin.email, expiresAt: admin.expiresAt } : null,
+      admin: admin ? { username: admin.username, email: admin.email, role: admin.role || 'owner', owner: isOwner(admin), expiresAt: admin.expiresAt } : null,
       sessionHours: ADMIN_SESSION_HOURS,
     };
   });
@@ -313,7 +340,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put('/api/admin/config', async (req, reply) => {
-    const admin = await requireAdmin(req, reply);
+    const admin = await requireOwner(req, reply);
     if (!admin) return;
     const b = (req.body || {}) as { key?: string; value?: string };
     if (!b.key) return reply.code(400).send({ error: 'Missing key.' });
@@ -352,7 +379,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/admin/upgrade', async (req, reply) => {
-    const admin = await requireAdmin(req, reply);
+    const admin = await requireOwner(req, reply);
     if (!admin) return;
     if (!fs.existsSync(DEPLOY_DIR)) return reply.send({ ok: false, error: 'Upgrade agent not configured (the /deploy volume is not mounted).' });
     if (fs.existsSync(LOCK)) return reply.send({ ok: false, error: 'An upgrade is already running.' });
@@ -380,7 +407,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete('/api/admin/users/:id', async (req, reply) => {
-    const admin = await requireAdmin(req, reply);
+    const admin = await requireOwner(req, reply);
     if (!admin) return;
     const id = String((req.params as { id: string }).id);
     const u = await prisma.user.findUnique({ where: { id } });
@@ -406,6 +433,31 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true, scheduledFor: scheduled.toISOString() });
   });
 
+  /**
+   * The same action across a filtered set. Every action here was one row at a
+   * time, which is fine for three anglers and useless for three hundred.
+   * Deliberately narrow: suspend, reactivate and export. Bulk delete is not
+   * offered, because a mis-click at that scale is unrecoverable.
+   */
+  app.post('/api/admin/users/bulk', async (req, reply) => {
+    const admin = await requireOwner(req, reply);
+    if (!admin) return;
+    const b = (req.body || {}) as { ids?: string[]; action?: string };
+    const ids = Array.isArray(b.ids) ? b.ids.map(String).slice(0, 500) : [];
+    if (!ids.length) return reply.code(400).send({ error: 'Nobody selected.' });
+    if (b.action !== 'suspend' && b.action !== 'activate') {
+      return reply.code(400).send({ error: 'Only suspend and reactivate can be done in bulk.' });
+    }
+    const status = b.action === 'suspend' ? 'suspended' : 'active';
+    // Never let one click lock every admin out of their own accounts.
+    const targets = await prisma.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } });
+    const safe = targets.map((t) => t.id);
+    await prisma.user.updateMany({ where: { id: { in: safe } }, data: { status } });
+    if (status === 'suspended') await prisma.session.deleteMany({ where: { userId: { in: safe } } });
+    await audit(admin.username, `user.bulk.${b.action}`, `${safe.length} anglers`, { ids: safe.slice(0, 50) });
+    return reply.send({ ok: true, changed: safe.length });
+  });
+
   /** Changed your mind, or deleted the wrong row. */
   app.post('/api/admin/users/:id/restore', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
@@ -423,12 +475,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/admins', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
-    const admins = await prisma.adminUser.findMany({ select: { id: true, username: true, email: true, createdAt: true, lastLoginAt: true }, orderBy: { createdAt: 'asc' } });
-    return { admins, me: admin.username };
+    const admins = await prisma.adminUser.findMany({ select: { id: true, username: true, email: true, role: true, createdAt: true, lastLoginAt: true }, orderBy: { createdAt: 'asc' } });
+    return { admins, me: admin.username, owner: isOwner(admin) };
   });
 
   app.post('/api/admin/admins', async (req, reply) => {
-    const admin = await requireAdmin(req, reply);
+    const admin = await requireOwner(req, reply);
     if (!admin) return;
     const b = (req.body || {}) as { password?: string; email?: string };
     const email = String(b.email || '').trim().toLowerCase();
@@ -440,8 +492,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
+  /**
+   * Owner or support. Two rules keep this from locking everyone out: you cannot
+   * demote yourself, and the last owner cannot be demoted at all.
+   */
+  app.post('/api/admin/admins/:id/role', async (req, reply) => {
+    const admin = await requireOwner(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const role = String((req.body as { role?: string })?.role || '');
+    if (role !== 'owner' && role !== 'support') return reply.code(400).send({ error: 'Role must be owner or support.' });
+    const target = await prisma.adminUser.findUnique({ where: { id } });
+    if (!target) return reply.code(404).send({ error: 'No such admin.' });
+    if (target.username === admin.username) return reply.code(400).send({ error: "You can't change your own role — ask another owner." });
+    if (role === 'support' && isOwner(target) && (await prisma.adminUser.count({ where: { role: 'owner' } })) <= 1) {
+      return reply.code(400).send({ error: 'That is the last owner. Promote someone else first.' });
+    }
+    await prisma.adminUser.update({ where: { id }, data: { role } });
+    await audit(admin.username, 'admin.role', id, { username: target.username, role });
+    return reply.send({ ok: true });
+  });
+
   app.delete('/api/admin/admins/:id', async (req, reply) => {
-    const admin = await requireAdmin(req, reply);
+    const admin = await requireOwner(req, reply);
     if (!admin) return;
     const id = String((req.params as { id: string }).id);
     const target = await prisma.adminUser.findUnique({ where: { id } });
@@ -578,7 +651,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       take: 15,
       select: { source: true, sourceName: true, title: true, publishedAt: true, lake: { select: { name: true } } },
     });
-    return { sources, counts: counts.map((c) => ({ source: c.source, n: c._count._all })), recent };
+    // How many reports each source has actually produced, and when it last
+    // managed one. "Active" told you a box was ticked, not that it was working.
+    const perSource = await prisma.lakeReport.groupBy({
+      by: ['sourceName'],
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    const bySourceName = new Map(perSource.map((p) => [p.sourceName || '', { n: p._count._all, last: p._max.createdAt }]));
+    return {
+      sources: sources.map((src) => {
+        const hit = bySourceName.get(src.name);
+        return {
+          ...src,
+          storedItems: hit?.n || 0,
+          lastStoredAt: hit?.last || null,
+          // Fetched recently and stored nothing is its own kind of broken: no
+          // error, no output, and nothing on this page said so before.
+          quiet: !!src.lastFetchedAt && !hit?.n,
+        };
+      }),
+      counts: counts.map((c) => ({ source: c.source, n: c._count._all })),
+      recent,
+    };
   });
 
   app.post('/api/admin/report-sources', async (req, reply) => {
@@ -619,6 +714,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!admin) return;
     const r = await attachOfficialSourcesForAll().catch((e) => ({ checked: 0, added: 0, urls: [], error: (e as Error).message }));
     await audit(admin.username, 'admin.official_sources_attach', undefined, { added: r.added });
+    return reply.send(r);
+  });
+
+  /** Fetch one source now, and say what it did. Refreshing all of them to test
+   *  one is how a slow feed makes the whole page feel broken. */
+  app.post('/api/admin/report-sources/:id/fetch', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const r = await fetchSource(id);
     return reply.send(r);
   });
 
@@ -727,6 +832,45 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // Re-price stored usage from the current rate table. For correcting a wrong
   // table, not for re-pricing history after a vendor price change.
+  /**
+   * What this month will cost if nothing changes.
+   *
+   * Spend was reported for the last thirty days and nothing projected forward,
+   * which is how a bill surprises somebody. The projection is deliberately
+   * simple — today's daily average across the month — because a clever model
+   * of a number that swings with one busy weekend would be false precision.
+   */
+  app.get('/api/admin/ai-forecast', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const daysIn = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    const dayOfMonth = now.getUTCDate();
+
+    const [monthAgg, weekAgg] = await Promise.all([
+      prisma.aiUsage.aggregate({ where: { createdAt: { gte: monthStart } }, _sum: { costUsd: true }, _count: { _all: true } }),
+      prisma.aiUsage.aggregate({ where: { createdAt: { gte: new Date(Date.now() - 7 * 86400_000) } }, _sum: { costUsd: true } }),
+    ]);
+    const spent = monthAgg._sum.costUsd || 0;
+    const perDayThisMonth = dayOfMonth ? spent / dayOfMonth : 0;
+    const perDayThisWeek = (weekAgg._sum.costUsd || 0) / 7;
+    // The recent rate is the better predictor when usage is growing, so take
+    // whichever is higher and say which was used.
+    const rate = Math.max(perDayThisMonth, perDayThisWeek);
+    const budget = Number(process.env.AI_MONTHLY_BUDGET_USD || 0);
+    const projected = rate * daysIn;
+    return {
+      spent: Math.round(spent * 100) / 100,
+      calls: monthAgg._count._all,
+      perDay: Math.round(rate * 100) / 100,
+      basis: perDayThisWeek > perDayThisMonth ? 'the last 7 days' : 'this month so far',
+      projected: Math.round(projected * 100) / 100,
+      daysIn, dayOfMonth,
+      budget: budget || null,
+      overBudget: !!budget && projected > budget,
+    };
+  });
+
   app.post('/api/admin/ai-usage/recalculate', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
@@ -948,6 +1092,197 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // ---------- 1: the social half of the app, which had no tab at all ----------
+  /** Groups, tournaments, seasons, classifieds and invites, in one place. */
+  app.get('/api/admin/community', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const kind = String((req.query as { kind?: string }).kind || 'groups');
+    const take = 100;
+
+    if (kind === 'tournaments') {
+      const rows = await prisma.tournament.findMany({
+        orderBy: { startsAt: 'desc' }, take,
+        include: {
+          host: { select: { displayName: true } },
+          group: { select: { name: true } },
+          series: { select: { name: true, year: true } },
+          lake: { select: { name: true } },
+          _count: { select: { entries: true, catches: true } },
+        },
+      });
+      return { kind, rows: rows.map((t) => ({
+        id: t.id, name: t.name, status: t.status, startsAt: t.startsAt, host: t.host.displayName,
+        group: t.group.name, series: t.series ? `${t.series.name} ${t.series.year}` : null,
+        lake: t.lake?.name || null, entries: t._count.entries, catches: t._count.catches,
+      })) };
+    }
+    if (kind === 'listings') {
+      const rows = await prisma.listing.findMany({
+        orderBy: { bumpedAt: 'desc' }, take,
+        include: { seller: { select: { displayName: true, status: true } }, _count: { select: { photos: true } } },
+      });
+      return { kind, rows: rows.map((l) => ({
+        id: l.id, title: l.title, priceCents: l.priceCents, category: l.category, status: l.status,
+        seller: l.seller.displayName, sellerActive: l.seller.status === 'active',
+        photos: l._count.photos, createdAt: l.createdAt,
+      })) };
+    }
+    if (kind === 'invites') {
+      const rows = await prisma.invite.findMany({
+        orderBy: { createdAt: 'desc' }, take,
+        include: { inviter: { select: { displayName: true } }, acceptedBy: { select: { displayName: true } } },
+      });
+      return { kind, rows: rows.map((i) => ({
+        id: i.id, email: i.email, inviter: i.inviter.displayName, sent: !!i.sentAt,
+        accepted: !!i.acceptedAt, acceptedBy: i.acceptedBy?.displayName || null,
+        revoked: !!i.revokedAt, createdAt: i.createdAt,
+      })) };
+    }
+    // Groups, which is where most of the social activity actually lives.
+    const rows = await prisma.friendGroup.findMany({
+      orderBy: { createdAt: 'desc' }, take,
+      include: {
+        owner: { select: { displayName: true } },
+        _count: { select: { members: true, posts: true, tournaments: true, messages: true } },
+      },
+    });
+    return { kind: 'groups', rows: rows.map((g) => ({
+      id: g.id, name: g.name, owner: g.owner.displayName, dataSharing: g.dataSharing,
+      members: g._count.members, posts: g._count.posts, tournaments: g._count.tournaments,
+      messages: g._count.messages, createdAt: g.createdAt,
+    })) };
+  });
+
+  // ---------- 2: what is actually in the bucket ----------
+  /**
+   * The database knows which objects it MEANT to create; the bucket knows what
+   * is really there. The gap is what a cascade left behind, and it is the one
+   * thing here that quietly costs money every month.
+   */
+  app.get('/api/admin/storage', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    if (!storageConfigured()) return { configured: false };
+    const token = String((req.query as { token?: string }).token || '') || undefined;
+    const listed = await listObjects('', 1000, token);
+    if (!listed) return { configured: true, error: 'The bucket would not answer.' };
+    const keys = listed.objects.map((o) => o.key);
+    const known = keys.length
+      ? await prisma.photo.findMany({ where: { key: { in: keys } }, select: { key: true } })
+      : [];
+    const knownSet = new Set(known.map((k) => k.key));
+    const objects = listed.objects.map((o) => ({ ...o, orphan: !knownSet.has(o.key) && !/^backups\//.test(o.key) }));
+    return {
+      configured: true,
+      objects,
+      next: listed.next,
+      totals: {
+        shown: objects.length,
+        bytes: objects.reduce((a, o) => a + o.size, 0),
+        orphans: objects.filter((o) => o.orphan).length,
+        orphanBytes: objects.filter((o) => o.orphan).reduce((a, o) => a + o.size, 0),
+      },
+    };
+  });
+
+  /** Delete objects nothing points at any more. Owner only: it is permanent. */
+  app.post('/api/admin/storage/sweep', async (req, reply) => {
+    const admin = await requireOwner(req, reply);
+    if (!admin) return;
+    const keys = (req.body as { keys?: string[] })?.keys;
+    if (!Array.isArray(keys) || !keys.length) return reply.code(400).send({ error: 'Nothing to sweep.' });
+    // Never delete something the database still points at, whatever was asked.
+    const stillUsed = await prisma.photo.findMany({ where: { key: { in: keys.map(String) } }, select: { key: true } });
+    const used = new Set(stillUsed.map((k) => k.key));
+    let removed = 0;
+    for (const key of keys.map(String).slice(0, 500)) {
+      if (used.has(key) || /^backups\//.test(key)) continue;
+      await deleteObject(key).catch(() => {});
+      removed += 1;
+    }
+    await audit(admin.username, 'storage.sweep', String(removed), { requested: keys.length });
+    return reply.send({ ok: true, removed, kept: keys.length - removed });
+  });
+
+  /** One lake and everything we know about it. The lakes tab was a list. */
+  app.get('/api/admin/lakes/:id', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const id = String((req.params as { id: string }).id);
+    const lake = await prisma.lake.findUnique({
+      where: { id },
+      include: { profile: { select: { source: true, verified: true, generatedAt: true, model: true } } },
+    });
+    if (!lake) return reply.code(404).send({ error: 'No such lake.' });
+
+    const [anglers, trips, spots, waypoints, reports, plans, readings, recentReports, topAnglers] = await Promise.all([
+      prisma.userLake.count({ where: { lakeId: id } }),
+      prisma.trip.count({ where: { lakeId: id } }),
+      prisma.spot.count({ where: { lakeId: id } }),
+      prisma.waypoint.count({ where: { lakeId: id } }),
+      prisma.lakeReport.count({ where: { lakeId: id } }),
+      prisma.dayPlan.count({ where: { lakeId: id } }),
+      prisma.waterReading.count({ where: { lakeId: id } }),
+      prisma.lakeReport.findMany({ where: { lakeId: id }, orderBy: { createdAt: 'desc' }, take: 8, select: { source: true, sourceName: true, publishedAt: true, body: true } }),
+      prisma.trip.groupBy({ by: ['userId'], where: { lakeId: id }, _count: { _all: true }, orderBy: { _count: { userId: 'desc' } }, take: 5 }),
+    ]);
+    const names = topAnglers.length
+      ? await prisma.user.findMany({ where: { id: { in: topAnglers.map((t) => t.userId) } }, select: { id: true, displayName: true } })
+      : [];
+    const nameOf = new Map(names.map((n) => [n.id, n.displayName]));
+
+    let regs: unknown = null;
+    try { regs = lake.regsJson ? JSON.parse(lake.regsJson) : null; } catch { regs = null; }
+    let features: { kind: string }[] = [];
+    try { features = lake.featuresJson ? (JSON.parse(lake.featuresJson) as { kind: string }[]) : []; } catch { features = []; }
+    let ramps = 0;
+    try { ramps = lake.rampsJson ? (JSON.parse(lake.rampsJson) as unknown[]).length : 0; } catch { ramps = 0; }
+    const featureKinds: Record<string, number> = {};
+    for (const f of features) featureKinds[f.kind] = (featureKinds[f.kind] || 0) + 1;
+
+    return {
+      lake: {
+        id: lake.id, name: lake.name, region: lake.region, country: lake.country,
+        lat: lake.lat, lon: lake.lon, gaugeId: lake.gaugeId, fullPool: lake.fullPool,
+        corpsProject: lake.corpsProject, addedAt: lake.createdAt,
+        profile: lake.profile,
+      },
+      counts: { anglers, trips, spots, waypoints, reports, plans, readings, features: features.length, ramps },
+      featureKinds,
+      regulations: regs,
+      recentReports: recentReports.map((r) => ({ source: r.source, sourceName: r.sourceName, publishedAt: r.publishedAt, body: r.body.slice(0, 160) })),
+      topAnglers: topAnglers.map((t) => ({ name: nameOf.get(t.userId) || 'unknown', trips: t._count._all })),
+    };
+  });
+
+  // ---------- 10: sessions, so "someone else is in my account" has an answer ----------
+  app.get('/api/admin/users/:id/sessions', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const id = String((req.params as { id: string }).id);
+    const rows = await prisma.session.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: { id: true, createdAt: true, expiresAt: true, ip: true, userAgent: true },
+    });
+    return {
+      sessions: rows.map((r) => ({
+        id: r.id, createdAt: r.createdAt, expiresAt: r.expiresAt,
+        ip: r.ip, device: shortDevice(r.userAgent || ''),
+        expired: r.expiresAt.getTime() < Date.now(),
+      })),
+    };
+  });
+
+  /** Sign a device out. One, or all of them. */
+  app.delete('/api/admin/users/:id/sessions', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const id = String((req.params as { id: string }).id);
+    const one = String((req.query as { session?: string }).session || '');
+    const r = await prisma.session.deleteMany({ where: { userId: id, ...(one ? { id: one } : {}) } });
+    await audit(admin.username, one ? 'session.revoke' : 'session.revokeAll', id, { removed: r.count });
+    return reply.send({ ok: true, removed: r.count });
+  });
+
   // ---------- moderation queue ----------
   app.get('/api/admin/flags', async (req, reply) => {
     if (!(await requireAdmin(req, reply))) return;
@@ -984,6 +1319,70 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       })),
       openCount: await prisma.contentFlag.count({ where: { status: 'open' } }),
     };
+  });
+
+  /**
+   * The thing that was reported, with what is around it.
+   *
+   * The queue shows a snapshot taken when the report was raised, so a comment
+   * arrives with no thread and a post with no replies — you are judging a
+   * sentence without the conversation it sat in.
+   */
+  app.get('/api/admin/flags/:id/context', async (req, reply) => {
+    if (!(await requireAdmin(req, reply))) return;
+    const id = String((req.params as { id: string }).id);
+    const flag = await prisma.contentFlag.findUnique({ where: { id } });
+    if (!flag) return reply.code(404).send({ error: 'No such report.' });
+
+    const author = { displayName: '', id: '', status: '' };
+    let thread: { who: string; body: string; at: Date; isTarget: boolean }[] = [];
+    let gone = false;
+
+    if (flag.targetType === 'post' || flag.targetType === 'comment') {
+      const postId = flag.targetType === 'post'
+        ? flag.targetId
+        : (await prisma.postComment.findUnique({ where: { id: flag.targetId }, select: { postId: true } }))?.postId;
+      const post = postId
+        ? await prisma.post.findUnique({
+            where: { id: postId },
+            include: {
+              author: { select: { id: true, displayName: true, status: true } },
+              comments: { orderBy: { createdAt: 'asc' }, take: 30, include: { author: { select: { displayName: true } } } },
+            },
+          })
+        : null;
+      if (!post) gone = true;
+      else {
+        Object.assign(author, post.author);
+        thread = [
+          { who: post.author.displayName, body: post.body, at: post.createdAt, isTarget: flag.targetType === 'post' },
+          ...post.comments.map((c) => ({ who: c.author.displayName, body: c.body, at: c.createdAt, isTarget: c.id === flag.targetId })),
+        ];
+      }
+    } else if (flag.targetType === 'listing') {
+      const l = await prisma.listing.findUnique({ where: { id: flag.targetId }, include: { seller: { select: { id: true, displayName: true, status: true } } } });
+      if (!l) gone = true;
+      else {
+        Object.assign(author, l.seller);
+        thread = [{ who: l.seller.displayName, body: `${l.title}\n${l.body}`, at: l.createdAt, isTarget: true }];
+      }
+    } else if (flag.targetType === 'user') {
+      const u = await prisma.user.findUnique({ where: { id: flag.targetId }, select: { id: true, displayName: true, status: true, bio: true, createdAt: true } });
+      if (!u) gone = true;
+      else {
+        Object.assign(author, u);
+        thread = [{ who: u.displayName, body: u.bio || '(no bio)', at: u.createdAt, isTarget: true }];
+      }
+    }
+
+    // Has this angler been reported before? One complaint is a complaint;
+    // the fourth is a pattern, and the decision is different.
+    const history = author.id
+      ? await prisma.contentFlag.count({ where: { targetId: author.id, targetType: 'user' } }) +
+        await prisma.contentFlag.count({ where: { targetType: { in: ['post', 'comment', 'listing'] }, targetId: { not: flag.targetId }, snapshot: { contains: author.displayName } } })
+      : 0;
+
+    return { flag, author, thread, gone, priorReports: history, snapshot: flag.snapshot };
   });
 
   /**
@@ -1031,7 +1430,24 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/audit', async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
-    const log = await prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 80 });
-    return { log };
+    const q = req.query as { action?: string; target?: string; by?: string; page?: string };
+    const page = Math.max(Number(q.page) || 1, 1);
+    const size = 100;
+    // "Everything this admin did" and "everything done to this angler" are the
+    // two questions an audit log exists to answer, and neither could be asked.
+    const where = {
+      ...(q.action ? { action: { contains: String(q.action), mode: 'insensitive' as const } } : {}),
+      ...(q.target ? { target: String(q.target) } : {}),
+      ...(q.by ? { meta: { path: ['by'], equals: String(q.by) } } : {}),
+    };
+    const [total, log, actions] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
+      prisma.auditLog.groupBy({ by: ['action'], _count: { _all: true }, orderBy: { _count: { action: 'desc' } }, take: 25 }),
+    ]);
+    return {
+      log, total, page, pages: Math.max(1, Math.ceil(total / size)),
+      actions: actions.map((a) => ({ action: a.action, n: a._count._all })),
+    };
   });
 }

@@ -185,15 +185,18 @@ $('logoutBtn').onclick=async()=>{ await api('/api/admin/logout',{method:'POST'})
 const NAV=[
   {h:'Overview',items:[['dashboard','📊 Dashboard'],['activity','⚡ Activity feed']]},
   {h:'People',items:[['users','👤 Users'],['flags','⚑ Reports']]},
-  {h:'Content',items:[['lakes','🗺️ Lakes'],['sources','📣 Report sources']]},
+  {h:'Content',items:[['lakes','🗺️ Lakes'],['sources','📣 Report sources'],['community','👥 Community']]},
   {h:'Growth',items:[['analytics','📈 Analytics'],['aicost','🪙 AI usage & cost']]},
   {h:'Security',items:[['admins','🛡️ Admins'],['signin','🔑 Sign-in links'],['audit','📜 Audit log']]},
-  {h:'Operations',items:[['changelog','🧾 Changelog'],['errors','🐞 Client errors'],['health','💚 System health'],['upgrade','⬆️ Upgrade']]},
+  {h:'Operations',items:[['changelog','🧾 Changelog'],['errors','🐞 Client errors'],['health','💚 System health'],['storage','🪣 Storage'],['upgrade','⬆️ Upgrade']]},
   {h:'Settings',items:[['environment','⚙️ Environment']]},
 ];
-const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],flags:['Reported content','What anglers have flagged, and what to do about it.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],sources:['Report sources','Where fishing reports are fetched from.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.']};
-function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden');
-  $('whoami').textContent='Signed in as '+admin.username+(admin.expiresAt?' · session ends '+new Date(admin.expiresAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+const TITLES={dashboard:['Dashboard','Live platform metrics.'],activity:['Activity feed','What just happened.'],users:['Users','Create, search and manage anglers.'],flags:['Reported content','What anglers have flagged, and what to do about it.'],lakes:['Lakes','Every lake added, with AI profiles + usage.'],sources:['Report sources','Where fishing reports are fetched from.'],analytics:['Analytics','Growth and engagement.'],aicost:['AI usage & cost','What the model calls burn, and what they cost.'],admins:['Admins','Manage Command Center accounts.'],signin:['Sign-in links','Whether magic links are being delivered — and a way in when they are not.'],audit:['Audit log','Every admin action.'],changelog:['Changelog','Every update, fix and change that has shipped.'],errors:['Client errors','JavaScript failures reported by the app, newest first.'],health:['System health','Services + runtime.'],upgrade:['Upgrade','Pull, rebuild and restart from here.'],environment:['Environment','Runtime configuration — secrets encrypted, applied live.'],
+community:['Community','Groups, tournaments, classifieds and invites — the social side, in one place.'],
+storage:['Storage','What is actually in the bucket, and what is no longer pointed at.']};
+let ME={};
+function showDash(admin){ ME=admin||{}; $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden');
+  $('whoami').textContent='Signed in as '+admin.username+(admin.owner===false?' (support)':'')+(admin.expiresAt?' · session ends '+new Date(admin.expiresAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
   armSessionTimer(admin.expiresAt);
   $('nav').innerHTML=NAV.map(g=>'<div class="grp"><div class="grp-h">'+g.h+'</div>'+g.items.map(it=>'<button class="nav-i" data-tab="'+it[0]+'">'+it[1]+'</button>').join('')+'</div>').join('');
   $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)go(b.dataset.tab); });
@@ -202,7 +205,7 @@ function showDash(admin){ $('loginView').classList.add('hidden'); $('dashView').
 function go(tab){
   document.querySelectorAll('.nav-i[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $('pageTitle').textContent=(TITLES[tab]||[tab])[0]; $('pageSub').textContent=(TITLES[tab]||['',''])[1];
-  ({dashboard:tDashboard,activity:tActivity,users:tUsers,flags:tFlags,lakes:tLakes,sources:tSources,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
+  ({dashboard:tDashboard,activity:tActivity,users:tUsers,flags:tFlags,lakes:tLakes,sources:tSources,analytics:tAnalytics,aicost:tAiCost,admins:tAdmins,signin:tSignin,audit:tAudit,community:tCommunity,storage:tStorage,changelog:tChangelog,errors:tErrors,health:tHealth,upgrade:tUpgrade,environment:tEnv}[tab]||tDashboard)();
 }
 
 /* ---- panels ---- */
@@ -290,9 +293,12 @@ async function tFlags(){
         + (f.note?'<div class="snap" style="margin-top:8px"><b>Reporter said:</b> '+esc(f.note)+'</div>':'')
         + '<pre style="white-space:pre-wrap;background:#f8fbff;border:1px solid #dce7f5;border-radius:10px;padding:10px;margin-top:10px;font-size:13px">'
         + esc(f.snapshot||'(the original is gone, and no snapshot was taken)')+'</pre>'
+        + '<button class="btn btn-ghost btn-sm" data-flagctx="'+f.id+'">Show the whole thread</button>'
+        + '<div id="ctx-'+f.id+'"></div>'
         + '</div>').join('')
       :'<div class="card"><div class="muted">Nothing here. That is the good outcome.</div></div>');
 
+  $('content').querySelectorAll('[data-flagctx]').forEach(b=>b.onclick=()=>loadFlagContext(b.dataset.flagctx,b));
   $('content').querySelectorAll('[data-flagstatus]').forEach(b=>b.onclick=()=>{ FLAG_STATUS=b.dataset.flagstatus; tFlags(); });
   $('content').querySelectorAll('[data-flagact]').forEach(b=>b.onclick=async()=>{
     const act=b.dataset.flagact;
@@ -302,6 +308,32 @@ async function tFlags(){
       body:JSON.stringify({action:act})});
     tFlags();
   });
+}
+
+/* A snapshot out of context reads badly for almost anyone. The line before it
+   is usually what decides whether this was abuse or an argument — and whether
+   the same angler has been here before decides how hard the call is. */
+async function loadFlagContext(id,btn){
+  const box=$('ctx-'+id); if(!box)return;
+  if(box.innerHTML){ box.innerHTML=''; btn.textContent='Show the whole thread'; return; }
+  btn.textContent='Loading…';
+  const r=await api('/api/admin/flags/'+encodeURIComponent(id)+'/context');
+  const d=await r.json().catch(()=>null);
+  btn.textContent='Hide the thread';
+  if(!r.ok||!d){ box.innerHTML='<div class="snap" style="margin-top:10px">Could not load the context.</div>'; return; }
+  box.innerHTML='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
+    +'<div class="snap"><b>Posted by '+esc(d.author.displayName||'someone')+'</b>'
+      +(d.author.status&&d.author.status!=='active'?' <span class="pill down">'+esc(d.author.status)+'</span>':'')
+      +(d.priorReports?' · <b>'+d.priorReports+' earlier report'+(d.priorReports===1?'':'s')+' involving them</b>':' · no earlier reports')
+      +(d.author.id?' · <button class="btn btn-ghost btn-sm" data-ctxuser="'+esc(d.author.id)+'">Open their account</button>':'')+'</div>'
+    +(d.gone?'<div class="snap" style="margin-top:8px">The content has already been deleted. Only the snapshot above remains.</div>'
+      :(d.thread||[]).map(t=>'<div style="padding:7px 10px;margin-top:8px;border-radius:8px;border:1px solid '
+        +(t.isTarget?'#e5484d;background:#fff5f5':'var(--border);background:#fafcff')+'">'
+        +'<div class="snap"><b>'+esc(t.who)+'</b> · '+ago(t.at)+(t.isTarget?' · <b style="color:#e5484d">this is what was reported</b>':'')+'</div>'
+        +'<div style="white-space:pre-wrap;font-size:13px;margin-top:4px">'+esc(t.body||'')+'</div></div>').join(''))
+    +'</div>';
+  const ub=box.querySelector('[data-ctxuser]');
+  if(ub)ub.onclick=()=>{ go('users'); setTimeout(()=>openUser(ub.dataset.ctxuser),400); };
 }
 
 /* Report sources — operator-managed on purpose. We fetch what someone has
@@ -328,13 +360,20 @@ async function tSources(){
     + '<button class="btn btn-primary" id="rsAdd">Add &amp; fetch</button></div>'
     + '<div class="msg" id="rsMsg"></div></div>'
     + '<div class="card" style="padding:6px 10px;overflow:auto;margin-bottom:16px"><table><thead><tr>'
-    + '<th>Source</th><th>Scope</th><th>Last fetched</th><th>Status</th><th></th></tr></thead><tbody>'
+    + '<th>Source</th><th>Scope</th><th>Last fetched</th><th>Stored</th><th>Status</th><th></th></tr></thead><tbody>'
     + ((d.sources||[]).map(s=>'<tr><td><b>'+esc(s.name)+'</b><div class="snap">'+esc(s.url)+'</div></td>'
         +'<td class="muted">'+esc(s.lakeId?'one lake':(s.region||'all lakes'))+'</td>'
         +'<td class="muted">'+(s.lastFetchedAt?ago(s.lastFetchedAt):'never')+'</td>'
-        +'<td>'+(s.lastError?'<span class="pill down" title="'+esc(s.lastError)+'">failing</span>':'<span class="pill ok">ok</span>')+'</td>'
-        +'<td><button class="btn btn-ghost btn-sm" data-rsdel="'+s.id+'">Remove</button></td></tr>').join('')
-       || '<tr><td colspan="5" class="muted" style="padding:14px">No sources yet. Anglers can still post reports in the app.</td></tr>')
+        +'<td class="muted">'+(s.storedItems||0)+(s.lastStoredAt?'<div class="snap">last '+ago(s.lastStoredAt)+'</div>':'')+'</td>'
+        // Fetching fine and storing nothing is its own failure: no error, no
+        // output. It used to show a green tick.
+        +'<td>'+(s.lastError?'<span class="pill down" title="'+esc(s.lastError)+'">failing</span>'
+            :s.quiet?'<span class="pill down" title="Fetched, but has never stored a report — the page may have changed shape, or nothing it publishes names a lake we know.">quiet</span>'
+            :'<span class="pill ok">ok</span>')
+        +(s.lastError?'<div class="snap" style="max-width:260px">'+esc(String(s.lastError).slice(0,120))+'</div>':'')+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-rsfetch="'+s.id+'">Fetch now</button> '
+        +'<button class="btn btn-ghost btn-sm" data-rsdel="'+s.id+'">Remove</button></td></tr>').join('')
+       || '<tr><td colspan="6" class="muted" style="padding:14px">No sources yet. Anglers can still post reports in the app.</td></tr>')
     + '</tbody></table></div>'
     + '<div class="row" style="margin-bottom:14px"><button class="btn btn-ghost btn-sm" id="rsRefresh">Refresh all now</button><span class="msg" id="rsRefreshMsg"></span></div>'
     + '<div class="card" style="padding:6px 10px;overflow:auto"><h2 style="padding:10px 4px 0">Latest reports stored</h2><table><thead><tr>'
@@ -365,6 +404,16 @@ async function tSources(){
     $('rsRefreshMsg').textContent=(d2.stored||0)+' report(s) from '+(d2.sources||0)+' source(s).';
     setTimeout(tSources,1500);
   };
+  document.querySelectorAll('[data-rsfetch]').forEach(b=>b.onclick=async function(){
+    const was=b.textContent; b.disabled=true; b.textContent='Fetching…';
+    const r=await api('/api/admin/report-sources/'+b.dataset.rsfetch+'/fetch',{method:'POST'});
+    const j=await r.json().catch(()=>({}));
+    b.disabled=false; b.textContent=was;
+    alert(j.error?('That source failed: '+j.error)
+      :((j.stored||0)+' report(s) stored from '+(j.scanned||0)+' item(s) scanned.'
+        +((j.stored||0)===0?'\n\nIt answered, but nothing in it named a lake we know about.':'')));
+    tSources();
+  });
   document.querySelectorAll('[data-rsdel]').forEach(b=>b.onclick=async function(){
     if(!confirm('Remove this source? Reports already stored are kept.'))return;
     await api('/api/admin/report-sources/'+b.dataset.rsdel,{method:'DELETE'});
@@ -375,13 +424,35 @@ async function tSources(){
 /* AI usage & cost — cost is stored per call at the price in force then, so
    these totals don't drift when pricing changes. A model with no rate shows as
    unpriced rather than free. */
+/* Thirty days of spend, and nothing said what the month would come to. The
+   projection is deliberately plain arithmetic — today's rate across the whole
+   month — because a clever model of a number that swings with one busy weekend
+   would be false precision dressed up as a forecast. */
+function forecastHtml(f){
+  if(!f)return '';
+  if(!f.calls)return '<div class="card" style="margin-top:14px"><h2>This month</h2><div class="snap">No model calls yet this month, so there is nothing to project.</div></div>';
+  const over=f.overBudget;
+  return '<div class="card" style="margin-top:14px'+(over?';border-left:4px solid #e5484d':'')+'">'
+    +'<h2>This month</h2>'
+    +'<div class="snap"><b>'+money(f.spent)+'</b> spent over '+f.dayOfMonth+' day'+(f.dayOfMonth===1?'':'s')+' · running at <b>'+money(f.perDay)+'/day</b> based on '+esc(f.basis)+'.</div>'
+    +'<div style="font-size:24px;font-weight:800;margin:8px 0 2px">'+money(f.projected)+'</div>'
+    +'<div class="snap">projected for the full month if nothing changes'
+      +(f.budget?' · budget '+money(f.budget):'')+'</div>'
+    +(over?'<div class="snap" style="color:#e5484d;margin-top:8px"><b>That is over budget by '+money(f.projected-f.budget)+'.</b> Switch the day-plan model to a cheaper one under Environment → AI, or turn web search off — it is billed per search on top of tokens.</div>'
+      :f.budget?'<div class="snap" style="margin-top:8px;color:#16A34A">Inside the '+money(f.budget)+' budget with '+money(f.budget-f.projected)+' to spare.</div>'
+      :'<div class="snap" style="margin-top:8px">Set a monthly budget under Environment → AI and this will warn you before the bill does.</div>')
+    +'</div>';
+}
 const money=n=>'$'+(n<0.01&&n>0?n.toFixed(4):n.toFixed(2));
 const tok=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n||0);
 const FEAT={day_plan:'Day plans',lake_profile:'Lake guides',identify_catch:'Catch photos'};
 let AI_DAYS=30;
 async function tAiCost(){
   $('content').innerHTML='<div class="muted">Loading…</div>';
-  const d=await (await api('/api/admin/ai-usage?days='+AI_DAYS)).json();
+  const [d,fc]=await Promise.all([
+    (await api('/api/admin/ai-usage?days='+AI_DAYS)).json(),
+    (await api('/api/admin/ai-forecast')).json().catch(()=>null),
+  ]);
   const t=d.totals||{};
   const perDay=t.calls?(t.costUsd/Math.max(1,AI_DAYS)):0;
   const cards=[
@@ -396,6 +467,8 @@ async function tAiCost(){
     +'<button class="btn btn-ghost btn-sm" id="aiRecalc" style="margin-left:auto" title="Re-price stored usage from the current rate table">Recalculate costs</button>'
     +'<span class="snap" id="aiRecalcMsg"></span></div>'
     +'<div class="metrics">'+cards.map(c=>'<div class="metric"><div class="n">'+esc(c[0])+'</div><div class="k">'+esc(c[1])+'</div>'+(c[2]?'<div class="s">'+esc(c[2])+'</div>':'')+'</div>').join('')+'</div>';
+
+  h+=forecastHtml(fc);
 
   if((d.unpriced||[]).length) h+='<div class="card" style="margin-top:14px;border-color:#f0d9a8"><b style="color:#b7791f">No price on file for: '+d.unpriced.map(esc).join(', ')+'</b><div class="snap" style="margin-top:6px">Those calls are counted but costed at $0. Add the rate in server/src/services/aiUsage.ts.</div></div>';
 
@@ -649,12 +722,14 @@ async function tUsers(){
    '<div class="row" style="margin:0 0 14px"><input id="uSearch" placeholder="Search email or name…" style="max-width:280px">'+
    '<select id="uStatus" style="width:auto"><option value="">All</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="deleted">Deleted</option></select>'+
    '<button class="btn btn-ghost btn-sm" id="uReload">Refresh</button><span class="snap" id="uCount"></span></div>'+
-   '<div class="card" style="padding:6px 10px;overflow:auto"><table id="uTable"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Lakes</th><th>Trips</th><th>Joined</th><th>Last seen</th><th></th></tr></thead><tbody></tbody></table></div>'+
+   '<div id="uBulk" class="card" style="margin-bottom:12px;display:none"></div>'+
+   '<div class="card" style="padding:6px 10px;overflow:auto"><table id="uTable"><thead><tr><th style="width:24px"><input type="checkbox" id="uAll" title="Select every angler on this page"></th><th>User</th><th>Role</th><th>Status</th><th>Lakes</th><th>Trips</th><th>Joined</th><th>Last seen</th><th></th></tr></thead><tbody></tbody></table></div>'+
    '<div class="row" id="uPager" style="margin-top:12px"></div><div id="uDetail"></div>';
   $('nuAdd').onclick=createUser; $('uReload').onclick=()=>{U_PAGE=1;loadUsers();};
   $('uStatus').onchange=()=>{U_PAGE=1;loadUsers();};
   $('uSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){U_PAGE=1;loadUsers();}});
   $('uTable').addEventListener('click',onUserAction); $('uTable').addEventListener('change',onUserRole);
+  $('uTable').addEventListener('change',e=>{ if(e.target.classList.contains('ucb'))drawBulk(); });
   loadUsers();
 }
 let U_PAGE=1;
@@ -665,7 +740,9 @@ async function loadUsers(){
   const d=await (await api('/api/admin/users?'+qs)).json();
   $('uTable').querySelector('tbody').innerHTML=(d.users||[]).map(u=>{
     const gone=!!u.deletedAt;
-    return '<tr'+(gone?' style="opacity:.55"':'')+'><td><b class="ulink" data-uid="'+u.id+'" style="cursor:pointer;color:var(--primary)">'+esc(u.displayName||'(no name)')+'</b><br><span class="snap">'+esc(u.email)+'</span></td>'+
+    return '<tr'+(gone?' style="opacity:.55"':'')+'>'+
+    '<td>'+(gone?'':'<input type="checkbox" class="ucb" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">')+'</td>'+
+    '<td><b class="ulink" data-uid="'+u.id+'" style="cursor:pointer;color:var(--primary)">'+esc(u.displayName||'(no name)')+'</b><br><span class="snap">'+esc(u.email)+'</span></td>'+
     '<td><select class="role" data-id="'+u.id+'" style="width:auto;padding:4px 8px;font-size:12px">'+['user','pro','guide','admin'].map(r=>'<option'+(r===u.role?' selected':'')+'>'+r+'</option>').join('')+'</select></td>'+
     '<td><span class="pill '+esc(u.status)+'">'+esc(u.status)+'</span>'+(gone?'<br><span class="snap">purges '+dt(u.scheduledDeleteAt)+'</span>':'')+'</td>'+
     '<td>'+u.lakes+'</td><td>'+(u.trips||0)+'</td><td>'+dt(u.createdAt)+'</td><td>'+dt(u.lastLoginAt)+'</td>'+
@@ -676,7 +753,9 @@ async function loadUsers(){
         : '<button class="btn btn-ghost btn-sm us" data-id="'+u.id+'" data-s="'+(u.status==='active'?'suspended':'active')+'">'+(u.status==='active'?'Suspend':'Reactivate')+'</button> '+
           '<button class="btn btn-danger btn-sm ud" data-id="'+u.id+'" data-n="'+esc(u.displayName||u.email)+'">Delete</button>')+
     '</td></tr>';
-  }).join('')||'<tr><td colspan="8" class="muted">No users.</td></tr>';
+  }).join('')||'<tr><td colspan="9" class="muted">No users.</td></tr>';
+  if($('uAll'))$('uAll').onchange=()=>{ $('uTable').querySelectorAll('.ucb').forEach(c=>{c.checked=$('uAll').checked;}); drawBulk(); };
+  drawBulk();
   // A list that silently stops at 100 is not the list. Say how many there are.
   $('uCount').textContent=(d.total||0)+' angler'+(d.total===1?'':'s')+(d.pages>1?' · page '+d.page+' of '+d.pages:'');
   $('uPager').innerHTML=(d.pages>1)
@@ -685,6 +764,60 @@ async function loadUsers(){
     : '';
   if($('uPrev'))$('uPrev').onclick=()=>{U_PAGE=Math.max(1,U_PAGE-1);loadUsers();};
   if($('uNext'))$('uNext').onclick=()=>{U_PAGE=U_PAGE+1;loadUsers();};
+}
+
+/* Suspending forty spam signups one at a time is how they stop getting
+   suspended. Deliberately no bulk delete: a mis-click at that scale is not
+   recoverable, and the one-at-a-time delete already asks twice. */
+function drawBulk(){
+  const bar=$('uBulk'); if(!bar)return;
+  const picked=[...document.querySelectorAll('.ucb:checked')];
+  if(!picked.length){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.style.display='';
+  bar.innerHTML='<div class="row" style="align-items:center"><b>'+picked.length+' selected</b>'
+    +'<button class="btn btn-ghost btn-sm" id="bkSus">Suspend them</button>'
+    +'<button class="btn btn-ghost btn-sm" id="bkAct">Reactivate them</button>'
+    +'<button class="btn btn-ghost btn-sm" id="bkClr">Clear</button>'
+    +'<span class="snap">Deleting is one at a time on purpose.</span><span class="msg" id="bkMsg"></span></div>';
+  $('bkClr').onclick=()=>{ document.querySelectorAll('.ucb').forEach(c=>{c.checked=false;}); if($('uAll'))$('uAll').checked=false; drawBulk(); };
+  const run=async status=>{
+    const ids=picked.map(c=>c.dataset.id);
+    const names=picked.slice(0,5).map(c=>c.dataset.n).join(', ')+(ids.length>5?' and '+(ids.length-5)+' more':'');
+    if(!confirm((status==='suspended'?'Suspend ':'Reactivate ')+ids.length+' angler(s)?\n\n'+names))return;
+    $('bkMsg').className='msg'; $('bkMsg').textContent='Working…';
+    const r=await api('/api/admin/users/bulk',{method:'POST',body:JSON.stringify({ids,action:status==='suspended'?'suspend':'activate'})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ $('bkMsg').className='msg err'; $('bkMsg').textContent=j.error||'Failed.'; return; }
+    loadUsers();
+  };
+  $('bkSus').onclick=()=>run('suspended'); $('bkAct').onclick=()=>run('active');
+}
+
+/* "Someone else is in my account" had no answer before this. Every device that
+   holds a live session, and a way to end one — or all of them. */
+async function loadSessions(id){
+  const box=$('uSessions'); if(!box)return;
+  const d=await (await api('/api/admin/users/'+encodeURIComponent(id)+'/sessions')).json().catch(()=>null);
+  const rows=(d&&d.sessions||[]).filter(x=>!x.expired);
+  box.innerHTML='<h2 style="margin-top:16px">Signed-in devices</h2>'
+    +(rows.length?'<div class="snap" style="margin-bottom:6px">A session lasts 400 days and renews while they keep using the app, so this is every device they have ever signed in on and not signed out of.</div>'
+      +rows.map(x=>'<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0">'
+        +'<span class="snap">'+esc(x.device)+' · '+esc(x.ip||'no IP recorded')+' · since '+dt(x.createdAt)+'</span>'
+        +'<button class="btn btn-ghost btn-sm" data-sess="'+esc(x.id)+'">Sign out</button></div>').join('')
+      +'<div class="row" style="margin-top:10px"><button class="btn btn-danger btn-sm" data-sessall="1">Sign out everywhere</button>'
+      +'<span class="snap">They will have to request a new magic link.</span></div>'
+      :'<div class="muted">No live sessions — they are signed out everywhere.</div>');
+  box.querySelectorAll('[data-sess]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    await api('/api/admin/users/'+encodeURIComponent(id)+'/sessions?session='+encodeURIComponent(b.dataset.sess),{method:'DELETE'});
+    loadSessions(id);
+  });
+  const all=box.querySelector('[data-sessall]');
+  if(all)all.onclick=async()=>{
+    if(!confirm('Sign this angler out of every device?'))return;
+    await api('/api/admin/users/'+encodeURIComponent(id)+'/sessions',{method:'DELETE'});
+    loadSessions(id);
+  };
 }
 
 /* One angler, in full. "The app lost my trip" had nowhere to be looked into
@@ -720,7 +853,9 @@ async function openUser(id){
     +((d.recentTrips||[]).map(t=>'<div class="snap">'+dt(t.date)+' — '+esc(t.species||'(no species)')+(t.weight?' '+t.weight+' lb':'')
         +(t.lake?' · '+esc(t.lake):'')+' <span class="muted">'+esc(t.visibility)+'</span></div>').join('')||'<div class="muted">No catches logged.</div>')
     +(v?viewAsHtml(v):'')
+    +'<div id="uSessions"></div>'
     +'</div>';
+  loadSessions(id);
   if($('uClose'))$('uClose').onclick=()=>{ box.innerHTML=''; };
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
@@ -764,8 +899,142 @@ async function onUserRole(e){ const s=e.target.closest('.role'); if(s)await api(
 
 async function tLakes(){ const d=await (await api('/api/admin/lakes')).json();
   $('content').innerHTML='<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Lake</th><th>Region</th><th>AI profile</th><th>Saved by</th><th>Catches</th></tr></thead><tbody>'+
-   ((d.lakes||[]).map(l=>'<tr><td><b>'+esc(l.name)+'</b></td><td class="snap">'+esc(l.region||'—')+'</td><td>'+(l.profile?('<span class="pill '+(l.verified?'ok':'active')+'">'+(l.verified?'verified':l.profile)+'</span>'):'<span class="snap">none</span>')+'</td><td>'+l.savedBy+'</td><td>'+l.catches+'</td></tr>').join('')||'<tr><td colspan="5" class="muted">No lakes.</td></tr>')+'</tbody></table></div>';
+   ((d.lakes||[]).map(l=>'<tr><td><b class="llink" data-lid="'+esc(l.id)+'" style="cursor:pointer;color:var(--primary)">'+esc(l.name)+'</b></td><td class="snap">'+esc(l.region||'—')+'</td><td>'+(l.profile?('<span class="pill '+(l.verified?'ok':'active')+'">'+(l.verified?'verified':l.profile)+'</span>'):'<span class="snap">none</span>')+'</td><td>'+l.savedBy+'</td><td>'+l.catches+'</td></tr>').join('')||'<tr><td colspan="5" class="muted">No lakes.</td></tr>')+'</tbody></table></div>'+
+   '<div id="lDetail"></div>';
+  $('content').querySelectorAll('.llink').forEach(b=>b.onclick=()=>openLake(b.dataset.lid));
 }
+
+/* What we actually hold on one water. A row in a list could not tell you
+   whether the guide was any good, whether the gauge reads, or whether the
+   regulations were ever fetched — which is the whole question when someone
+   says the advice for their lake is wrong. */
+async function openLake(id){
+  const box=$('lDetail'); if(!box)return;
+  box.innerHTML='<div class="card" style="margin-top:16px"><div class="muted">Loading…</div></div>';
+  const r=await api('/api/admin/lakes/'+encodeURIComponent(id));
+  const d=await r.json().catch(()=>null);
+  if(!r.ok||!d){ box.innerHTML='<div class="card" style="margin-top:16px"><div class="muted">Could not open that lake.</div></div>'; return; }
+  const l=d.lake,c=d.counts||{},pr=l.profile;
+  const kinds=Object.entries(d.featureKinds||{}).sort((a,b)=>b[1]-a[1]);
+  const num=(v,k)=>'<div class="metric"><div class="n">'+(v||0)+'</div><div class="k">'+k+'</div></div>';
+  box.innerHTML='<div class="card" style="margin-top:16px">'
+    +'<div class="row" style="justify-content:space-between;align-items:flex-start"><div>'
+      +'<h2 style="margin:0">'+esc(l.name)+'</h2>'
+      +'<div class="snap">'+esc([l.region,l.country].filter(Boolean).join(', ')||'no region')
+      +(l.lat!=null?' · '+Number(l.lat).toFixed(4)+', '+Number(l.lon).toFixed(4):' · no coordinates')
+      +' · added '+dt(l.addedAt)+'</div>'
+      +'<div class="snap">Gauge: '+(l.gaugeId?esc(l.gaugeId)+(l.fullPool?' · full pool '+l.fullPool+' ft':''):'<b>none — no water level for this lake</b>')
+      +(l.corpsProject?' · Corps '+esc(l.corpsProject):'')+'</div>'
+      +'<div class="snap">AI guide: '+(pr?esc(pr.source||'written')+(pr.model?' · '+esc(pr.model):'')+' · '+dt(pr.generatedAt)+(pr.verified?' · <span class="pill ok">verified</span>':''):'<b>never written</b>')+'</div>'
+    +'</div><button class="btn btn-ghost btn-sm" id="lClose">Close</button></div>'
+    +'<div class="metrics" style="margin-top:12px">'+num(c.anglers,'Anglers')+num(c.trips,'Catches')+num(c.spots,'Spots')
+      +num(c.waypoints,'Waypoints')+num(c.plans,'Day plans')+num(c.reports,'Reports')+num(c.readings,'Water readings')+num(c.ramps,'Ramps')+'</div>'
+    +'<div class="snap" style="margin-top:10px">Map features held: '+(c.features||0)+(kinds.length?' — '+kinds.map(k=>esc(k[0])+' '+k[1]).join(', '):' (none fetched yet — the planner has no structure to point at)')+'</div>'
+    +'<div class="snap" style="margin-top:6px">Regulations: '+(d.regulations?'fetched':'<b>not fetched</b> — the app will show general advice only')+'</div>'
+    +(d.topAnglers&&d.topAnglers.length?'<h2 style="margin-top:16px">Who fishes it</h2>'+d.topAnglers.map(a=>'<div class="snap">'+esc(a.name)+' — '+a.trips+' catch'+(a.trips===1?'':'es')+'</div>').join(''):'')
+    +(d.recentReports&&d.recentReports.length?'<h2 style="margin-top:16px">Latest reports</h2>'+d.recentReports.map(x=>'<div class="snap">'+dt(x.publishedAt)+' · '+esc(x.sourceName||x.source)+' — '+esc(x.body)+'…</div>').join(''):'')
+    +'</div>';
+  $('lClose').onclick=()=>{ box.innerHTML=''; };
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* The social side had no window at all — groups, tournaments, classifieds and
+   invites existed only in the database. Read-only: moderation belongs in the
+   Reports queue, where a decision gets a reason and an audit entry. */
+let COM_KIND='groups';
+async function tCommunity(){
+  $('content').innerHTML='<div class="muted">Loading…</div>';
+  const d=await (await api('/api/admin/community?kind='+encodeURIComponent(COM_KIND))).json().catch(()=>({rows:[]}));
+  const rows=d.rows||[];
+  const tabs=[['groups','Groups'],['tournaments','Tournaments'],['listings','Classifieds'],['invites','Invites']];
+  let table;
+  if(COM_KIND==='tournaments'){
+    table='<table><thead><tr><th>Tournament</th><th>Group</th><th>Host</th><th>Starts</th><th>Anglers</th><th>Catches</th><th>Status</th></tr></thead><tbody>'
+      +(rows.map(t=>'<tr><td><b>'+esc(t.name)+'</b>'+(t.series?'<div class="snap">'+esc(t.series)+'</div>':'')+(t.lake?'<div class="snap">'+esc(t.lake)+'</div>':'')+'</td>'
+        +'<td class="snap">'+esc(t.group)+'</td><td class="snap">'+esc(t.host)+'</td><td class="snap">'+dt(t.startsAt)+'</td>'
+        +'<td>'+t.entries+'</td><td>'+t.catches+'</td><td><span class="pill '+(t.status==='open'?'ok':'active')+'">'+esc(t.status)+'</span></td></tr>').join('')
+        ||'<tr><td colspan="7" class="muted" style="padding:14px">No tournaments yet.</td></tr>')+'</tbody></table>';
+  } else if(COM_KIND==='listings'){
+    table='<table><thead><tr><th>Item</th><th>Price</th><th>Category</th><th>Seller</th><th>Photos</th><th>Listed</th><th>Status</th></tr></thead><tbody>'
+      +(rows.map(l=>'<tr><td><b>'+esc(l.title)+'</b></td><td>'+(l.priceCents?money(l.priceCents/100):'—')+'</td>'
+        +'<td class="snap">'+esc(l.category||'—')+'</td>'
+        +'<td class="snap">'+esc(l.seller)+(l.sellerActive?'':' <span class="pill down">seller suspended</span>')+'</td>'
+        +'<td>'+l.photos+'</td><td class="snap">'+dt(l.createdAt)+'</td>'
+        +'<td><span class="pill '+(l.status==='active'?'ok':'active')+'">'+esc(l.status)+'</span></td></tr>').join('')
+        ||'<tr><td colspan="7" class="muted" style="padding:14px">Nothing for sale.</td></tr>')+'</tbody></table>';
+  } else if(COM_KIND==='invites'){
+    const accepted=rows.filter(i=>i.accepted).length;
+    table='<div class="snap" style="padding:8px 4px">'+rows.length+' invite(s) · '+accepted+' accepted'
+      +(rows.length?' ('+Math.round(accepted/rows.length*100)+'%)':'')+'. An invite that was never sent means email is not configured.</div>'
+      +'<table><thead><tr><th>Invited</th><th>By</th><th>Sent</th><th>Outcome</th><th>When</th></tr></thead><tbody>'
+      +(rows.map(i=>'<tr><td>'+esc(i.email)+'</td><td class="snap">'+esc(i.inviter)+'</td>'
+        +'<td>'+(i.sent?'<span class="pill ok">sent</span>':'<span class="pill down">not sent</span>')+'</td>'
+        +'<td>'+(i.revoked?'<span class="snap">revoked</span>':i.accepted?'<span class="pill ok">joined'+(i.acceptedBy?' as '+esc(i.acceptedBy):'')+'</span>':'<span class="snap">waiting</span>')+'</td>'
+        +'<td class="snap">'+dt(i.createdAt)+'</td></tr>').join('')
+        ||'<tr><td colspan="5" class="muted" style="padding:14px">Nobody has invited anyone yet.</td></tr>')+'</tbody></table>';
+  } else {
+    table='<table><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Posts</th><th>Messages</th><th>Tournaments</th><th>Data sharing</th><th>Created</th></tr></thead><tbody>'
+      +(rows.map(g=>'<tr><td><b>'+esc(g.name)+'</b></td><td class="snap">'+esc(g.owner)+'</td><td>'+g.members+'</td>'
+        +'<td>'+g.posts+'</td><td>'+g.messages+'</td><td>'+g.tournaments+'</td>'
+        +'<td>'+(g.dataSharing?'<span class="pill ok">on</span>':'<span class="snap">off</span>')+'</td>'
+        +'<td class="snap">'+dt(g.createdAt)+'</td></tr>').join('')
+        ||'<tr><td colspan="8" class="muted" style="padding:14px">No groups yet.</td></tr>')+'</tbody></table>';
+  }
+  $('content').innerHTML='<div class="card" style="margin-bottom:16px"><div class="row">'
+    +tabs.map(t=>'<button class="btn '+(COM_KIND===t[0]?'btn-primary':'btn-ghost')+' btn-sm" data-comkind="'+t[0]+'">'+t[1]+'</button>').join('')
+    +'</div><div class="snap" style="margin-top:8px">Read-only. To remove something, use the report it came in on — that way the decision is recorded.</div></div>'
+    +'<div class="card" style="padding:6px 10px;overflow:auto">'+table+'</div>'
+    +(rows.length>=100?'<div class="snap" style="margin-top:8px">Showing the 100 most recent.</div>':'');
+  $('content').querySelectorAll('[data-comkind]').forEach(b=>b.onclick=()=>{ COM_KIND=b.dataset.comkind; tCommunity(); });
+}
+
+/* The database knows which objects it meant to create; the bucket knows what
+   is really there. The gap is what a cascade left behind, and it is the one
+   thing on this console that quietly costs money every month. */
+let STORE_TOKEN='';
+async function tStorage(){
+  $('content').innerHTML='<div class="muted">Reading the bucket…</div>';
+  const d=await (await api('/api/admin/storage'+(STORE_TOKEN?'?token='+encodeURIComponent(STORE_TOKEN):''))).json().catch(()=>null);
+  if(!d||d.configured===false){
+    $('content').innerHTML='<div class="card"><h2>No storage configured</h2><div class="snap">Photos are being kept in the database instead, which does not scale and bloats every backup. Add R2 credentials under Environment → Storage.</div></div>';
+    return;
+  }
+  if(d.error){ $('content').innerHTML='<div class="card"><h2>The bucket would not answer</h2><div class="snap">'+esc(d.error)+' Check the credentials under Environment → Storage.</div></div>'; return; }
+  const t=d.totals||{};
+  $('content').innerHTML=
+    '<div class="metrics" style="margin-bottom:16px">'
+    +metricCard(String(t.shown||0),'Objects listed','up to 1,000 per page')
+    +metricCard(fmtBytes(t.bytes||0),'Bytes shown','')
+    +metricCard(String(t.orphans||0),'Orphans','nothing points at these')
+    +metricCard(fmtBytes(t.orphanBytes||0),'Wasted','billed every month')
+    +'</div>'
+    +'<div class="card" style="margin-bottom:14px"><div class="row" style="align-items:center">'
+      +'<button class="btn btn-danger btn-sm" id="stSweep"'+(t.orphans?'':' disabled')+'>Delete the '+(t.orphans||0)+' orphan(s) on this page</button>'
+      +'<span class="snap">Backups are never touched, and anything the database still points at is refused even if it is asked for.</span>'
+      +'<span class="msg" id="stMsg"></span></div></div>'
+    +'<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Key</th><th>Size</th><th>Modified</th><th>Status</th></tr></thead><tbody>'
+    +((d.objects||[]).map(o=>'<tr'+(o.orphan?' style="background:#fff8f8"':'')+'><td class="snap" style="word-break:break-all">'+esc(o.key)+'</td>'
+      +'<td class="snap">'+fmtBytes(o.size)+'</td><td class="snap">'+(o.modified?ago(o.modified):'—')+'</td>'
+      +'<td>'+(/^backups\//.test(o.key)?'<span class="pill active">backup</span>':o.orphan?'<span class="pill down">orphan</span>':'<span class="pill ok">in use</span>')+'</td></tr>').join('')
+      ||'<tr><td colspan="4" class="muted" style="padding:14px">The bucket is empty.</td></tr>')
+    +'</tbody></table></div>'
+    +(d.next?'<div class="row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="stNext">Next 1,000 →</button></div>':'')
+    +(STORE_TOKEN?'<div class="row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="stFirst">← Back to the start</button></div>':'');
+  if($('stNext'))$('stNext').onclick=()=>{ STORE_TOKEN=d.next; tStorage(); };
+  if($('stFirst'))$('stFirst').onclick=()=>{ STORE_TOKEN=''; tStorage(); };
+  $('stSweep').onclick=async()=>{
+    const keys=(d.objects||[]).filter(o=>o.orphan).map(o=>o.key);
+    if(!keys.length)return;
+    if(!confirm('Permanently delete '+keys.length+' object(s) that nothing points at?\n\nThis cannot be undone.'))return;
+    $('stMsg').className='msg'; $('stMsg').textContent='Sweeping…';
+    const r=await api('/api/admin/storage/sweep',{method:'POST',body:JSON.stringify({keys})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ $('stMsg').className='msg err'; $('stMsg').textContent=j.error||'Failed.'; return; }
+    $('stMsg').className='msg ok'; $('stMsg').textContent='Removed '+j.removed+(j.kept?', kept '+j.kept+' still in use':'');
+    setTimeout(tStorage,1200);
+  };
+}
+
 async function tAnalytics(){ const m=await (await api('/api/admin/metrics')).json();
   const bars=[['New users (7d)',m.new7,Math.max(m.users,1)],['Active 7d',m.active7,Math.max(m.users,1)],['Active 30d',m.active30,Math.max(m.users,1)]];
   $('content').innerHTML='<div class="card"><h2>Engagement</h2>'+bars.map(b=>'<div style="margin-bottom:12px"><div class="snap" style="margin-bottom:4px">'+b[0]+' — <b>'+b[1]+'</b></div><div style="background:var(--sky);border-radius:6px;height:12px"><div style="background:var(--primary);height:12px;border-radius:6px;width:'+Math.round(b[1]/b[2]*100)+'%"></div></div></div>').join('')+
@@ -776,14 +1045,50 @@ async function tAdmins(){ const d=await (await api('/api/admin/admins')).json();
    '<p class="snap" style="margin:-6px 0 12px">Admins sign in with their email address — a 6-digit code is sent there at login.</p><div class="row">'+
    '<div style="flex:1;min-width:180px"><label>Email</label><input id="aaE" type="email" placeholder="admin@email.com"></div>'+
    '<div style="flex:1;min-width:140px"><label>Password</label><input id="aaP" type="password" placeholder="min 8 characters"></div><button class="btn btn-primary" id="aaAdd">Create admin</button><span class="msg" id="aaMsg"></span></div></div>'+
-   '<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Email</th><th>Created</th><th>Last login</th><th></th></tr></thead><tbody>'+
-   (d.admins||[]).map(a=>'<tr><td><b>'+esc(a.email)+'</b>'+(a.username===d.me?' <span class="snap">(you)</span>':'')+'</td><td>'+dt(a.createdAt)+'</td><td>'+ago(a.lastLoginAt)+'</td><td>'+(a.username===d.me?'':'<button class="btn btn-danger btn-sm ad" data-id="'+a.id+'" data-n="'+esc(a.email)+'">Delete</button>')+'</td></tr>').join('')+'</tbody></table></div>';
+   '<div class="snap" style="margin:-4px 0 10px"><b>Owner</b> can do everything, including deleting anglers, changing configuration, deploying, and managing admins. <b>Support</b> can read everything and make the day-to-day moderation calls, and nothing irreversible.</div>'+
+   '<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>Email</th><th>Role</th><th>Created</th><th>Last login</th><th></th></tr></thead><tbody>'+
+   (d.admins||[]).map(a=>'<tr><td><b>'+esc(a.email)+'</b>'+(a.username===d.me?' <span class="snap">(you)</span>':'')+'</td>'+
+    '<td>'+((d.owner&&a.username!==d.me)
+      ? '<select class="arole" data-id="'+a.id+'" style="width:auto;padding:4px 8px;font-size:12px">'+['owner','support'].map(r=>'<option'+(r===(a.role||'owner')?' selected':'')+'>'+r+'</option>').join('')+'</select>'
+      : '<span class="pill '+((a.role||'owner')==='owner'?'ok':'active')+'">'+esc(a.role||'owner')+'</span>')+'</td>'+
+    '<td>'+dt(a.createdAt)+'</td><td>'+ago(a.lastLoginAt)+'</td><td>'+((a.username===d.me||!d.owner)?'':'<button class="btn btn-danger btn-sm ad" data-id="'+a.id+'" data-n="'+esc(a.email)+'">Delete</button>')+'</td></tr>').join('')+'</tbody></table></div>'+
+   (d.owner?'':'<div class="snap" style="margin-top:10px">You are signed in as support, so you can see the admin list but not change it.</div>');
+  $('content').querySelectorAll('.arole').forEach(sel=>{ const before=sel.value; sel.onchange=async()=>{
+    const r=await api('/api/admin/admins/'+sel.dataset.id+'/role',{method:'POST',body:JSON.stringify({role:sel.value})});
+    if(!r.ok){ const j=await r.json().catch(()=>({})); alert(j.error||'Could not change that role.'); sel.value=before; }
+  }; });
   $('aaAdd').onclick=async()=>{ const r=await api('/api/admin/admins',{method:'POST',body:JSON.stringify({email:$('aaE').value.trim(),password:$('aaP').value})}); const j=await r.json(); $('aaMsg').className='msg '+(r.ok?'ok':'err'); $('aaMsg').textContent=r.ok?'Created ✓':(j.error||'Failed'); if(r.ok)tAdmins(); };
-  $('content').addEventListener('click',async e=>{ const b=e.target.closest('.ad'); if(!b)return; if(!confirm('Delete admin '+b.dataset.n+'?'))return; const r=await api('/api/admin/admins/'+b.dataset.id,{method:'DELETE'}); if(!r.ok){const j=await r.json();alert(j.error||'Failed');} tAdmins(); });
+  $('content').querySelectorAll('.ad').forEach(b=>b.onclick=async()=>{ if(!confirm('Delete admin '+b.dataset.n+'?'))return; const r=await api('/api/admin/admins/'+b.dataset.id,{method:'DELETE'}); if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'Failed');} tAdmins(); });
 }
-async function tAudit(){ const d=await (await api('/api/admin/audit')).json();
-  $('content').innerHTML='<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>When</th><th>Action</th><th>By</th><th>Details</th></tr></thead><tbody>'+
-   ((d.log||[]).map(l=>'<tr><td class="snap">'+ago(l.createdAt)+'</td><td><b>'+esc(l.action)+'</b></td><td>'+esc((l.meta&&l.meta.by)||'—')+'</td><td class="snap">'+esc(JSON.stringify(l.meta||{}))+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">No admin actions logged yet.</td></tr>')+'</tbody></table></div>';
+/* An audit log you can only scroll answers nothing. The two questions it
+   exists for are "what did this admin do" and "what was done to this angler",
+   and both need a filter. */
+let AUD={action:'',by:'',target:'',page:1};
+async function tAudit(){
+  const qs=['page='+AUD.page,AUD.action?'action='+encodeURIComponent(AUD.action):'',AUD.by?'by='+encodeURIComponent(AUD.by):'',AUD.target?'target='+encodeURIComponent(AUD.target):''].filter(Boolean).join('&');
+  const d=await (await api('/api/admin/audit?'+qs)).json();
+  $('content').innerHTML=
+   '<div class="card" style="margin-bottom:14px"><div class="row">'
+   +'<div style="flex:1;min-width:160px"><label>Action</label><input id="adAct" placeholder="user.delete" value="'+esc(AUD.action)+'"></div>'
+   +'<div style="flex:1;min-width:160px"><label>By admin</label><input id="adBy" placeholder="admin@email.com" value="'+esc(AUD.by)+'"></div>'
+   +'<div style="flex:1;min-width:160px"><label>Target ID</label><input id="adTgt" placeholder="user or record id" value="'+esc(AUD.target)+'"></div>'
+   +'<button class="btn btn-primary" id="adGo">Search</button>'
+   +(AUD.action||AUD.by||AUD.target?'<button class="btn btn-ghost" id="adClr">Clear</button>':'')+'</div>'
+   +'<div class="snap" style="margin-top:10px">'+((d.actions||[]).map(a=>'<button class="btn btn-ghost btn-sm" data-adfacet="'+esc(a.action)+'" style="margin:2px 4px 0 0">'+esc(a.action)+' <b>'+a.n+'</b></button>').join('')||'Nothing logged yet.')+'</div></div>'
+   +'<div class="snap" style="margin-bottom:8px">'+(d.total||0)+' entr'+(d.total===1?'y':'ies')+(d.pages>1?' · page '+d.page+' of '+d.pages:'')+'</div>'
+   +'<div class="card" style="padding:6px 10px;overflow:auto"><table><thead><tr><th>When</th><th>Action</th><th>By</th><th>Target</th><th>Details</th></tr></thead><tbody>'+
+   ((d.log||[]).map(l=>'<tr><td class="snap" title="'+esc(new Date(l.createdAt).toLocaleString())+'">'+ago(l.createdAt)+'</td><td><b>'+esc(l.action)+'</b></td><td>'+esc((l.meta&&l.meta.by)||'—')+'</td>'
+     +'<td class="snap">'+(l.target?'<button class="btn btn-ghost btn-sm" data-adtgt="'+esc(l.target)+'">'+esc(String(l.target).slice(0,12))+'…</button>':'—')+'</td>'
+     +'<td class="snap">'+esc(JSON.stringify(l.meta||{}))+'</td></tr>').join('')||'<tr><td colspan="5" class="muted">Nothing matches that.</td></tr>')+'</tbody></table></div>'
+   +(d.pages>1?'<div class="row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="adPrev"'+(d.page<=1?' disabled':'')+'>← Newer</button><button class="btn btn-ghost btn-sm" id="adNext"'+(d.page>=d.pages?' disabled':'')+'>Older →</button></div>':'');
+  const run=()=>{ AUD.action=$('adAct').value.trim(); AUD.by=$('adBy').value.trim(); AUD.target=$('adTgt').value.trim(); AUD.page=1; tAudit(); };
+  $('adGo').onclick=run;
+  ['adAct','adBy','adTgt'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter')run(); }));
+  if($('adClr'))$('adClr').onclick=()=>{ AUD={action:'',by:'',target:'',page:1}; tAudit(); };
+  $('content').querySelectorAll('[data-adfacet]').forEach(b=>b.onclick=()=>{ AUD.action=b.dataset.adfacet; AUD.page=1; tAudit(); });
+  $('content').querySelectorAll('[data-adtgt]').forEach(b=>b.onclick=()=>{ AUD.target=b.dataset.adtgt; AUD.page=1; tAudit(); });
+  if($('adPrev'))$('adPrev').onclick=()=>{ AUD.page=Math.max(1,AUD.page-1); tAudit(); };
+  if($('adNext'))$('adNext').onclick=()=>{ AUD.page=AUD.page+1; tAudit(); };
 }
 function fmtBytes(n){ if(!n||n<0)return '—'; const u=['B','KB','MB','GB','TB']; let i=0,x=n; while(x>=1024&&i<u.length-1){x/=1024;i++;} return x.toFixed(x<10&&i>0?1:0)+' '+u[i]; }
 function fmtUp(s){ if(!s)return '—'; const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?d+'d '+h+'h':(h?h+'h '+m+'m':m+'m'); }

@@ -46,9 +46,11 @@ export function signRequest(opts: {
   key: string;
   payloadHash: string;
   contentType?: string;
+  /** Already-encoded and sorted, e.g. "list-type=2&max-keys=100". */
+  query?: string;
   now?: Date;
 }): { url: string; headers: Record<string, string> } {
-  const { cfg, method, key, payloadHash, contentType } = opts;
+  const { cfg, method, key, payloadHash, contentType, query } = opts;
   const now = opts.now || new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, ''); // 20260909T221500Z
   const dateStamp = amzDate.slice(0, 8);
@@ -66,7 +68,10 @@ export function signRequest(opts: {
   const signedHeaderNames = Object.keys(headers).sort();
   const canonicalHeaders = signedHeaderNames.map((h) => `${h}:${headers[h].trim()}\n`).join('');
   const signedHeaders = signedHeaderNames.join(';');
-  const canonicalRequest = [method, canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  // The canonical query string is part of what is signed; listing a bucket is
+  // the first call here that has one, and a signature over the wrong string
+  // fails with a 403 that explains nothing.
+  const canonicalRequest = [method, canonicalUri, query || '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
 
   const scope = `${dateStamp}/${cfg.region}/s3/aws4_request`;
   const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256hex(canonicalRequest)].join('\n');
@@ -80,7 +85,7 @@ export function signRequest(opts: {
   headers.authorization =
     `AWS4-HMAC-SHA256 Credential=${cfg.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  return { url: `${cfg.endpoint}${canonicalUri}`, headers };
+  return { url: `${cfg.endpoint}${canonicalUri}${query ? `?${query}` : ''}`, headers };
 }
 
 /** Store an object. Returns the key it was stored under. */
@@ -90,6 +95,38 @@ export async function putObject(key: string, body: Buffer, contentType: string):
   const { url, headers } = signRequest({ cfg, method: 'PUT', key, payloadHash: sha256hex(body), contentType });
   const res = await fetch(url, { method: 'PUT', headers, body, signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`storage PUT ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+}
+
+export interface StoredObject { key: string; size: number; modified: string }
+
+/**
+ * What is actually in the bucket.
+ *
+ * Photos are the one thing that grows without bound and costs money, and until
+ * now nothing could see them: the database knows which objects it MEANT to
+ * create, and the bucket knows what is really there. The gap between those two
+ * lists is what a cascade left behind.
+ */
+export async function listObjects(prefix = '', max = 1000, token?: string): Promise<{ objects: StoredObject[]; next?: string } | null> {
+  const cfg = storageConfig();
+  if (!cfg) return null;
+  const params: Record<string, string> = { 'list-type': '2', 'max-keys': String(Math.min(max, 1000)) };
+  if (prefix) params.prefix = prefix;
+  if (token) params['continuation-token'] = token;
+  const query = Object.keys(params).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+  const { url, headers } = signRequest({ cfg, method: 'GET', key: '', query, payloadHash: 'UNSIGNED-PAYLOAD' });
+  const res = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) return null;
+  const xml = await res.text();
+  const objects: StoredObject[] = [];
+  for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+    const get = (tag: string) => new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(m[1])?.[1] || '';
+    const key = get('Key');
+    if (key) objects.push({ key, size: Number(get('Size')) || 0, modified: get('LastModified') });
+  }
+  const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
+  const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml)?.[1];
+  return { objects, next: truncated ? next : undefined };
 }
 
 /** Fetch an object's bytes. */

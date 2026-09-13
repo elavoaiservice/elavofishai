@@ -648,6 +648,8 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([target])
 }
 
 // ---- P3 admin Command Center ----
@@ -659,6 +661,12 @@ model AdminUser {
   username     String         @unique
   passwordHash String
   email        String
+  // owner   — everything, including other admins and the configuration
+  // support — read everything, and the day-to-day moderation calls; cannot
+  //           delete an angler, change configuration, deploy, or touch admins
+  // Every admin holding the delete button was fine with one admin and is not
+  // fine with three.
+  role         String         @default("owner")
   createdAt    DateTime       @default(now())
   lastLoginAt  DateTime?
   sessions     AdminSession[]

@@ -51,6 +51,7 @@ export const CATALOG: ConfigItem[] = [
   { key: 'AI_VISION_FALLBACK', label: 'Catch photos — fallback', group: 'AI', choices: VISION_FALLBACK_CHOICES, placeholder: '' },
   { key: 'OPENAI_API_KEY', label: 'OpenAI API key', group: 'AI', secret: true, test: true, placeholder: 'sk-...', help: 'Only needed if you pick a gpt-* model above.' },
   { key: 'AI_WEB_SEARCH', label: 'Web search in day plans', group: 'AI', choices: ['0', '1'], placeholder: '0', help: 'Let the planner search for recent fishing reports. Billed $10 per 1,000 searches on top of tokens (max 4 per plan).' },
+  { key: 'AI_MONTHLY_BUDGET_USD', label: 'Monthly AI budget', group: 'AI', placeholder: '50', help: 'What you are willing to spend on AI in a calendar month. The admin dashboard projects the month from the current rate and warns when the projection crosses this. Leave blank for no budget.' },
   { key: 'RESEND_API_KEY', label: 'Resend API key', group: 'Email', secret: true, test: true, placeholder: 're_...', help: 'Sends magic-link + admin MFA emails (replaces dev/console mode).' },
   { key: 'EMAIL_FROM', label: 'From address', group: 'Email', placeholder: 'ElavoFishAI <hello@elavoai.com>' },
   { key: 'PUBLIC_BASE_URL', label: 'Public base URL', group: 'App', test: true, placeholder: 'https://elavofishai.elavoai.com' },
