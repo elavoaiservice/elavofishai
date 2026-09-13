@@ -121,6 +121,18 @@ if grep -qE 'data-(goto|navto|view)=' "$TMP/today.html"; then
   echo "[smoke] FAIL today — button uses an attribute no handler reads: $(grep -oE 'data-(goto|navto|view)="[^"]*"' "$TMP/today.html" | head -1)"; FAIL=1
 fi
 
+# The crappie playbook must actually reach the page. It is keyed to water
+# temperature with the month as a fallback, so there is always a phase to show;
+# if this row is missing, the phase lookup returned nothing.
+# The page's own source is in the dumped DOM too, so strip the scripts first —
+# otherwise this passes on the template literal that builds the row.
+awk '/<script/{skip=1} !skip{print} /<\/script>/{skip=0}' "$TMP/species.html" > "$TMP/species.body.html"
+if ! grep -q '<div class="k">Right now' "$TMP/species.body.html"; then
+  echo "[smoke] FAIL species — the crappie playbook did not render a phase"; FAIL=1
+else
+  echo "[smoke] ok   species playbook"
+fi
+
 # ---- the admin console ----
 # It is a second single-file app with its own router, and nothing checked it.
 # A nav entry whose tab has no function in the router map silently falls back

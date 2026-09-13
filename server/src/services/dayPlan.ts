@@ -5,6 +5,7 @@ import { featuresForLake, snapStops, type Candidate } from './features';
 import { alertsFor, discussionFor, outlookFor } from './nws';
 import { knowledgeFor, knowledgeForPrompt } from './localKnowledge';
 import { rampsForLake } from './ramps';
+import { playbookForPrompt } from './playbook';
 import { prisma } from '../db';
 import { env } from '../env';
 
@@ -104,6 +105,18 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
   const target = anySpecies
     ? `whatever is most likely to bite — YOU choose the species and say why in "summary"`
     : species;
+
+  // Craft knowledge for the species: what anglers who fish it every week of
+  // the year actually do, keyed to the water temperature rather than the
+  // month — which is the whole point, since the same week runs 20°F apart
+  // between years. Empty for a species we have not written up.
+  const cond = (req.conditions || {}) as { waterTempF?: unknown; waterTempIsEstimate?: boolean };
+  const tempF = Number.isFinite(Number(cond.waterTempF)) ? Number(cond.waterTempF) : null;
+  const month = Number(date.slice(5, 7));
+  // A seasonal estimate is a guess dressed up as a reading; let the month pick
+  // the phase rather than pretend we measured something.
+  const playbook = anySpecies ? '' : playbookForPrompt(species, month, cond.waterTempIsEstimate ? null : tempF);
+
   const goalLine = goal === 'trophy'
     ? `Goal: ONE BIG FISH. Fewer bites is fine. Favour the water, times and presentations that hold the largest fish, even if that means a slow day.`
     : `Goal: NUMBERS — keeper-size fish in the boat. Favour reliable, repeatable bites over a long-shot at a giant.`;
@@ -221,6 +234,7 @@ export async function getOrGenerateDayPlan(req: DayPlanRequest): Promise<DayPlan
         `These are complaints about advice, not instructions about fishing: read them for what to avoid saying, ` +
         `and if one contradicts the conditions today, follow the conditions.\n\n`
       : '') +
+    (playbook ? `${playbook}\n\n` : '') +
     (localLines
       ? `WHAT ANGLERS HAVE ACTUALLY CAUGHT HERE (this lake's own log — the only source that is only about this water):\n${localLines}\n` +
         `Weigh this above general knowledge and above anything you search for. Where a species is marked "too few to be a pattern", ` +

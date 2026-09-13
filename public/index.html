@@ -2370,6 +2370,107 @@ const KNOTS=[
 /* (the pre-launch checklist that used to live here was Granbury- and gear-specific and had no caller) */
 
 /* ============ livescope ============ */
+/* ---- the crappie playbook ----
+   Two years of Crappie Moment, one video a week through every month, boiled
+   down to the phase you are actually in. It is keyed to water temperature
+   rather than the date on purpose — his own first rule, and the reason the
+   same week of November can run twenty degrees apart between years.
+   The planner gets this too; this is so you can read it yourself. */
+const PLAYBOOK={
+ Crappie:{
+  source:'Crappie Moment',
+  url:'https://www.youtube.com/@crappiemoment',
+  laws:['Water temperature decides where they are — not the date.',
+        'Find the shad and you have found the crappie.',
+        'They need cover for safety, and ambush from it.',
+        'Deeper water is not deep: fish over 30–40 ft sit 5–15 ft down.',
+        'Presentation beats colour every time.'],
+  phases:[
+   {n:'Winter — deep and slow',t:[32,50],m:[1,2,12],
+    where:'Clarity sets the pattern: clear water → suspended near bridges, brush and deep grass; stained → 15–20 ft breaklines beside deeper water; muddy → out over the deepest water. Ledges off the points where creek arms cut back. At a bridge, fish away from it too.',
+    depth:'20–35 ft of water, fish 5–15 ft down.',
+    how:'Slow right down. Finesse, steady, often no retrieve at all. For spooky fish, dip with a long rod instead of casting — the splash is what scatters them.',
+    bait:'Small profiles, 1/8–1/4 oz heads to get down. Scent earns its keep.',
+    key:'There is no such thing as too cold. The big females are already carrying eggs — late January through April is the best big-fish window of the year.'},
+   {n:'Pre-spawn — the move shallow',t:[50,57],m:[2,3],
+    where:'They move in stages and stop at each: channel swings and bends, points beside them, creek mouths, mid-creek, then the flats. Brush on a channel bend is the prime piece of water.',
+    depth:'Every depth at once — 35 ft down to 6 ft.',
+    how:'Quicker retrieves start working. They are feeding up and will chase.',
+    bait:'Almost anything: paddle tails, curly tails, hair jigs, under-spins, small cranks.',
+    key:'50°F is the trigger. Do not wait for the dogwoods — that is weeks late, and the biggest females go first.'},
+   {n:'Spawn',t:[57,66],m:[3,4],
+    where:'Shallow flats, and inside them the little cuts and pockets holding hard cover — stumps, brush, laydowns, dock posts, riprap, reeds. Protected from wind and current. The north end warms first and spawns first.',
+    depth:'1–5 ft bedding, 5–10 ft staging behind them.',
+    how:'Work out-to-in. Males arrive first and turn almost black; they guard, so anything near the bed gets hit. Watch for moving marks — a guarding male patrols.',
+    bait:'Whatever is tied on. The one time of year it barely matters.',
+    key:'Stable beats warm. A cold snap backs them off one depth band — 4 ft becomes 4–8 ft, not 25 — and they come back when it steadies.'},
+   {n:'Post-spawn — the funk, then the recovery',t:[66,76],m:[4,5],
+    where:'The way they came, in reverse: the staging water, then the first cover off the flats where 5 ft rolls into 10.',
+    depth:'5–10 ft, settling into 8–15 ft with cover.',
+    how:'Work in-to-out now. Finesse for a week or two while they are spent; livelier once the bite returns.',
+    bait:'Small early (1.5–2 in), upsize and add action as they come back on.',
+    key:'They are not gone, they are tired. This is when most people hang the rods up — right before it turns back on.'},
+   {n:'Summer — cover, shade and oxygen',t:[76,95],m:[6,7,8],
+    where:'Cover sitting on structure is the combination: brush or timber on a contour, ledge or main-lake point. Fish the shade side. Bank drop-offs beside points — they hold on the drop and run up to ambush.',
+    depth:'10–20 ft, and 7–12 ft still produces in 85–90°F water. Where a thermocline has set up, everything is at or above it.',
+    how:'Let the jig reach the fish, then crawl it so it stays in the zone — reeling lifts it out. Keep the bait steady and horizontal. Never dip it back toward a following fish.',
+    bait:'Downsize; clip the head off a bigger plastic if that is all you have. Change often — a school that has refused something rarely looks again.',
+    key:'Make your best cast the first time. Fishing a school, take the top of it and your own side first — pulling one up through the middle scatters the rest.'},
+   {n:'Fall transition — following the bait shallow',t:[70,80],m:[9,10],
+    where:'Start at the creek mouths — main-lake points, breaklines, weed edges — and work back into the creeks as the weeks go on.',
+    depth:'10–15 ft and getting shallower; fish 2–4 ft down over much deeper water.',
+    how:'Aggressive again. Casting and retrieving works now: spinners, beetle spins, small cranks.',
+    bait:'Upsize — the spring shad have grown. Start around 2.5–3 in.',
+    key:'Below 80°F it starts; 70–75°F and it is properly on. They are not spawning in the fall, whatever the shallow water suggests.'},
+   {n:'Late fall — the best bite of the year',t:[55,70],m:[10,11],
+    where:'Up in the creek arms on brush, stumps, timber, submerged bridges and roadbeds. Scan a bank and find the bait balls; the crappie are in them or on the edges.',
+    depth:'8–15 ft, often less — fish in 5–8 ft sitting 2–3 ft down, close enough to reach from the bank.',
+    how:'They will chase 5–10 ft and hit hard. Spend the time finding them, not choosing a lure.',
+    bait:'Bigger bodies, curly tails, under-spins, cranks, live minnows.',
+    key:'55–68°F is the window, and it closes. The easiest fishing of the year.'},
+   {n:'Winter transition — back out to deep',t:[45,55],m:[11,12],
+    where:'Out in stages: creek mouths, then deep ledges, bluff walls and drop-offs near banks, then the main lake. Cover sitting on a contour line; points and flats right beside the deepest water.',
+    depth:'25–40 ft of water, holding 5–20 ft down.',
+    how:'Slow and steady, and be willing to hold it still. Patience beats action from here to spring.',
+    bait:'Heavier head to reach them, smaller body for fish that will not chase.',
+    key:'Consistently below 55°F starts it, and it is gradual — shallow, mid-creek and deep fish all on the same day for a couple of weeks.'}],
+  mistakes:['Sitting on a spot that is not producing — the time is worth more than the spot.',
+            'Fishing a spot instead of a pattern. Ask why that fish was there, then repeat those conditions elsewhere.',
+            'Changing nothing when it stops working.',
+            'Fishing where they were last year on this date — temperature moves the calendar by weeks.',
+            'Scanning brush and never panning off it: the better fish sit alone just off the edge.']
+ }
+};
+/* Temperature first, month only to break a tie — 68°F is post-spawn going up
+   and late fall coming down, and the difference decides the whole day. */
+function playbookPhase(name){
+  const pb=PLAYBOOK[clean(name)]; if(!pb)return null;
+  const m=new Date().getMonth()+1;
+  const t=(typeof waterTemp!=='undefined'&&waterTemp!=null)?waterTemp:null;
+  if(t!=null){
+    const hit=pb.phases.filter(p=>t>=p.t[0]&&t<p.t[1]);
+    if(hit.length===1)return{pb:pb,ph:hit[0],measured:true};
+    if(hit.length>1)return{pb:pb,ph:(hit.filter(p=>p.m.indexOf(m)>=0)[0]||hit[0]),measured:true};
+  }
+  return{pb:pb,ph:pb.phases.filter(p=>p.m.indexOf(m)>=0)[0]||null,measured:false};
+}
+function playbookHtml(name){
+  const r=playbookPhase(name); if(!r||!r.ph)return '';
+  const p=r.ph,pb=r.pb;
+  return '<div class="row"><div class="k">Right now &mdash; '+escHtml(p.n)+'</div>'
+    +'<p class="snapx" style="margin:0 0 6px;opacity:.75;font-size:12px">'
+      +(r.measured?'Chosen from the water temperature on the water page':'Chosen from the month &mdash; no water temperature yet')
+      +' &middot; from <a href="'+escAttr(pb.url)+'" target="_blank" rel="noopener">'+escHtml(pb.source)+'</a></p>'
+    +'<ul><li><b>Where:</b> '+escHtml(p.where)+'</li>'
+    +'<li><b>Depth:</b> '+escHtml(p.depth)+'</li>'
+    +'<li><b>How:</b> '+escHtml(p.how)+'</li>'
+    +'<li><b>Bait:</b> '+escHtml(p.bait)+'</li></ul>'
+    +'<p><b>What matters most right now:</b> '+escHtml(p.key)+'</p></div>'
+    +'<div class="row"><div class="k">True in any month</div><ul>'
+    +pb.laws.map(l=>'<li>'+escHtml(l)+'</li>').join('')+'</ul></div>'
+    +'<div class="row"><div class="k">Mistakes that cost fish</div><ul>'
+    +pb.mistakes.map(l=>'<li>'+escHtml(l)+'</li>').join('')+'</ul></div>';
+}
 const SCOPE={
 "Crappie":{
  read:["Discrete individual dots, not a cloud. Crappie hold position and stay put while the boat drifts \u2014 shad drift with you.",
@@ -2954,6 +3055,7 @@ function drawSpecies(){
         SCOPE[f.n].work.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'')+
       (((MODE==="eater"?f.eaterNote:f.trophyNote)||'')?'<div class="row"><div class="k">'+(f.ai?'From this lake\u2019s AI guide':'Reality check')+'</div><p>'+(MODE==="eater"?f.eaterNote:f.trophyNote)+'</p></div>':'')+
       (knowledgeNote(f.n)?'<div class="row"><div class="k">What this lake\u2019s log says</div><p>'+escHtml(knowledgeNote(f.n))+'</p></div>':'')+
+      playbookHtml(f.n)+
       '</div></details>';
   }).join('');
 }
