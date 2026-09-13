@@ -173,7 +173,6 @@ async function main(): Promise<void> {
       /* the whole point is that a missed ping is the signal — never log noise */
     }
   };
-  await heartbeat();
   const beat = setInterval(heartbeat, 5 * 60_000);
   beat.unref?.();
 
@@ -200,15 +199,21 @@ async function main(): Promise<void> {
     await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
     await prisma.adminSession.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   };
-  await sweep();
   const timer = setInterval(sweep, 6 * hour);
   timer.unref();
 
   await app.listen({ port: env.port, host: env.host });
+
+  // The first sweep pulls every fishing source, which can take minutes on a
+  // slow feed. Running it before listen() held the port shut for that whole
+  // time — the deploy's health check was waiting on a weather page.
+  void heartbeat();
+  void sweep().catch((e) => app.log.error({ err: e }, 'first sweep failed'));
   app.log.info(`ElavoFishAI on http://${env.host}:${env.port} (mode=${env.nodeEnv}, magicLinkDev=${env.devShowMagicLink})`);
 
   const shutdown = async () => {
     clearInterval(timer);
+    clearInterval(beat);
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

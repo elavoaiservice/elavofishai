@@ -59,6 +59,11 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/friends/request', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
+    // Unlimited requests were both a notification firehose and a way to ask
+    // "is this address on here?" a thousand times — the answer differs.
+    if (await overLimit(`friendreq:${me.id}`, 30, 3600_000)) {
+      return reply.code(429).send({ error: 'That is a lot of friend requests — try again later.' });
+    }
     const b = (req.body || {}) as { email?: string; userId?: string };
     const email = String(b.email || '').trim().toLowerCase();
     const userId = String(b.userId || '').trim();
@@ -385,6 +390,9 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/groups', async (req, reply) => {
     const me = await requireUser(req, reply);
     if (!me) return;
+    if (await overLimit(`groupcreate:${me.id}`, 20, 86400_000)) {
+      return reply.code(429).send({ error: 'That is a lot of groups for one day.' });
+    }
     const name = String((req.body as { name?: string }).name || '').trim().slice(0, 60);
     if (!name) return reply.code(400).send({ error: 'Name your group.' });
     const g = await prisma.friendGroup.create({ data: { ownerId: me.id, name } });
@@ -408,6 +416,10 @@ export async function socialRoutes(app: FastifyInstance): Promise<void> {
     if (!role || !group) return reply.code(404).send({ error: 'No such group.' });
     if (!canManageMembers(role) || !canInvite(role, group.whoCanInvite)) {
       return reply.code(403).send({ error: 'The owner has kept invitations to themselves.' });
+    }
+    // A declined invite can be sent again, which is right — but not on a loop.
+    if (await overLimit(`groupinvite:${me.id}`, 60, 86400_000)) {
+      return reply.code(429).send({ error: 'That is a lot of invitations today — try again tomorrow.' });
     }
     if (!(await friendIds(me.id)).includes(userId)) return reply.code(400).send({ error: 'You can only add friends.' });
     if ((await blockState(me.id, userId)) !== 'none') return reply.code(403).send({ error: 'You cannot add this angler.' });

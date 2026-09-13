@@ -121,5 +121,28 @@ if grep -qE 'data-(goto|navto|view)=' "$TMP/today.html"; then
   echo "[smoke] FAIL today — button uses an attribute no handler reads: $(grep -oE 'data-(goto|navto|view)="[^"]*"' "$TMP/today.html" | head -1)"; FAIL=1
 fi
 
+# ---- the admin console ----
+# It is a second single-file app with its own router, and nothing checked it.
+# A nav entry whose tab has no function in the router map silently falls back
+# to the dashboard: the menu item works, it just shows the wrong page.
+ADMIN="$REPO_DIR/public/admin.html"
+ROUTES="$(grep -o '({dashboard:tDashboard[^}]*}' "$ADMIN" | head -1)"
+if [ -z "$ROUTES" ]; then
+  echo "[smoke] FAIL admin — could not find the router map"; FAIL=1
+else
+  NAVBLOCK="$(sed -n '/^const NAV=\[/,/^\];/p' "$ADMIN")"
+  for tab in $(printf '%s' "$NAVBLOCK" | grep -oE "\['[a-z]+'," | sed -E "s/\['([a-z]+)',/\1/" | sort -u); do
+    case "$ROUTES" in
+      *"$tab:t"*) ;;
+      *) echo "[smoke] FAIL admin — nav tab '$tab' has no panel in the router"; FAIL=1 ;;
+    esac
+  done
+  echo "[smoke] ok   admin router"
+fi
+# Every panel the router names must actually exist as a function.
+for fn in $(printf '%s' "$ROUTES" | grep -oE '[a-z]+:t[A-Za-z]+' | sed 's/.*://' | sort -u); do
+  grep -q "function $fn(" "$ADMIN" || { echo "[smoke] FAIL admin — the router points at $fn(), which is not defined"; FAIL=1; }
+done
+
 [ "$FAIL" = "0" ] && echo "[smoke] all views ok" || echo "[smoke] FAILURES above" >&2
 exit "$FAIL"

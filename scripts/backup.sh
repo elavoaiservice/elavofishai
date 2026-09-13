@@ -63,12 +63,20 @@ echo "[backup] ok (${SIZE} bytes), kept ${KEEP_DAYS} days"
 # every day of its life — and a warning that is always wrong is worse than no
 # warning at all. /deploy is the volume both sides already share.
 STATUS_DIR="${DEPLOY_DIR:-$HOME/efa-deploy}"
-if [ -d "$STATUS_DIR" ]; then
-  printf '{"at":"%s","bytes":%s,"name":"%s"}\n' "$(date -Iseconds)" "$SIZE" "$(basename "$OUT")" > "$STATUS_DIR/backup-status.json"
-fi
 
 # Offsite copy. A backup that lives on the machine it is backing up survives
 # nothing worth surviving — a dead disk takes both. Uploaded through the app
 # container, which holds the credentials and the signing code.
-docker compose exec -T app node tools/upload-backup.js "$(basename "$OUT")" < "$OUT" || \
+OFFSITE=true
+if ! docker compose exec -T app node tools/upload-backup.js "$(basename "$OUT")" < "$OUT"; then
+  OFFSITE=false
   echo "[backup] WARNING: offsite copy failed — the local dump is still good"
+fi
+
+# Written last, and now recording whether the copy actually left the building.
+# An offsite step that fails every night in silence is the same as not having
+# one, and the dashboard had no way to know.
+if [ -d "$STATUS_DIR" ]; then
+  printf '{"at":"%s","bytes":%s,"name":"%s","offsite":%s}\n' \
+    "$(date -Iseconds)" "$SIZE" "$(basename "$OUT")" "$OFFSITE" > "$STATUS_DIR/backup-status.json"
+fi

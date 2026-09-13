@@ -38,19 +38,43 @@ STATE="${STATE_DIR:-$HOME/efa-deploy}"
 LOG="$STATE/watchdog.log"
 FAILS="$STATE/watchdog.fails"
 DOWN="$STATE/watchdog.down"
+ALERTED="$STATE/watchdog.alerted"
 
 mkdir -p "$STATE"
 log() { echo "[$(date -Iseconds)] $*" >> "$LOG"; }
 
+# The body carries the tail of the deploy log, which is full of quotes and
+# newlines — pasted raw it produced invalid JSON and the alert failed to send
+# at the one moment it mattered.
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk 'BEGIN{ORS=""} NR>1{print "\\n"} {print}'
+}
+
 alert() {
   subject="$1"; body="$2"
   log "ALERT: $subject"
+  # Stamped before we try to send: an unconfigured or failing mailer must not
+  # turn the throttle off and fill the log every two minutes instead.
+  date +%s > "$ALERTED"
   [ -n "$ALERT_RESEND_KEY" ] && [ -n "$ALERT_EMAIL_TO" ] || { log "  (no ALERT_RESEND_KEY/ALERT_EMAIL_TO — nobody was told)"; return 0; }
   curl -sS -m 20 -X POST https://api.resend.com/emails \
     -H "Authorization: Bearer $ALERT_RESEND_KEY" \
     -H 'Content-Type: application/json' \
-    -d "{\"from\":\"${ALERT_EMAIL_FROM:-alerts@elavoai.com}\",\"to\":[\"$ALERT_EMAIL_TO\"],\"subject\":\"$subject\",\"text\":\"$body\"}" \
+    -d "{\"from\":\"${ALERT_EMAIL_FROM:-alerts@elavoai.com}\",\"to\":[\"$ALERT_EMAIL_TO\"],\"subject\":\"$(json_escape "$subject")\",\"text\":\"$(json_escape "$body")\"}" \
     >> "$LOG" 2>&1 || log "  (the alert email itself failed to send)"
+}
+
+# An outage that emails every two minutes is an outage nobody reads about
+# twice. Tell someone straight away, then at most every half hour until it is
+# fixed — the recovery message is always sent.
+alert_throttled() {
+  last="$(cat "$ALERTED" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  if [ "$(( now - last ))" -lt 1800 ]; then
+    log "  (still down; last alert $(( (now - last) / 60 ))m ago — not sending another yet)"
+    return 0
+  fi
+  alert "$1" "$2"
 }
 
 if curl -fsS -m 10 "$URL" >/dev/null 2>&1; then
@@ -59,7 +83,7 @@ if curl -fsS -m 10 "$URL" >/dev/null 2>&1; then
     since="$(cat "$DOWN" 2>/dev/null || echo unknown)"
     log "recovered (was down since $since)"
     alert "ElavoFishAI is back up" "The site started answering again at $(date -Iseconds). It had been down since $since."
-    rm -f "$DOWN"
+    rm -f "$DOWN" "$ALERTED"
   fi
   rm -f "$FAILS"
   exit 0
@@ -84,13 +108,13 @@ if [ ! -f "$DOWN" ]; then
   if curl -fsS -m 10 "$URL" >/dev/null 2>&1; then
     log "recovered after a restart"
     alert "ElavoFishAI recovered after a restart" "The app stopped answering and a restart brought it back at $(date -Iseconds). Worth a look at why."
-    rm -f "$DOWN" "$FAILS"
+    rm -f "$DOWN" "$FAILS" "$ALERTED"
     exit 0
   fi
 fi
 
 # Still down after a restart. This one needs a person.
-alert "ElavoFishAI is DOWN" "The app has failed $COUNT health checks and a restart did not fix it.
+alert_throttled "ElavoFishAI is DOWN" "The app has failed $COUNT health checks and a restart did not fix it.
 Health URL: $URL
 Host: $(hostname)
 Last lines of the deploy log:

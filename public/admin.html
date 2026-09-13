@@ -1140,7 +1140,10 @@ async function tHealth(){ $('content').innerHTML='<div class="muted">Loading sys
       + '<tr><td class="muted">Last backup</td><td style="text-align:right">'
         +(h.backup
           ? ((h.backup.ageHours<48?'<span class="pill ok">'+h.backup.ageHours+'h ago</span>':'<span class="pill down">'+Math.round(h.backup.ageHours/24)+'d ago</span>')
-             +' <span class="snap">'+fmtBytes(h.backup.bytes)+'</span>')
+             +' <span class="snap">'+fmtBytes(h.backup.bytes)+'</span>'
+             // A dump sitting on the machine it backs up is half a backup.
+             +(h.backup.offsite===false?' <span class="pill down" title="The copy to object storage failed — the only copy is on this machine.">not offsite</span>'
+               :h.backup.offsite===true?' <span class="pill ok">offsite</span>':''))
           : '<span class="pill down">none found</span>')+'</td></tr>'
       + '<tr><td class="muted">Report feeds</td><td style="text-align:right">'
         +((h.feeds&&h.feeds.failing)

@@ -613,7 +613,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         bytes: photoAgg?._sum.bytes || 0,
       },
       push: { configured: pushConfigured(), devices: pushCount },
-      backup: backup ? { name: backup.name, at: new Date(backup.at).toISOString(), bytes: backup.bytes, ageHours: Math.round((Date.now() - backup.at) / 3600_000) } : null,
+      backup: backup ? { name: backup.name, at: new Date(backup.at).toISOString(), bytes: backup.bytes, ageHours: Math.round((Date.now() - backup.at) / 3600_000), offsite: backup.offsite ?? null } : null,
       feeds: { active: sourcesTotal, failing: sourcesFailing },
       water: { lastReadingAt: lastReading?.at || null },
       heartbeat: { configured: !!process.env.HEARTBEAT_URL },

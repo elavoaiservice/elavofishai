@@ -49,6 +49,9 @@ export async function attention(): Promise<Attention[]> {
     // We cannot see them rather than there being none. Say which, because
     // "no backup" and "cannot check" need completely different responses.
     out.push({ level: 'warn', title: 'Cannot see the backups', detail: 'Nothing reports backup status here yet. Run scripts/backup.sh once so it writes its status where the app can read it.', tab: 'health' });
+  } else if (backup.offsite === false) {
+    // The dump is good and it is sitting on the machine it is a backup of.
+    out.push({ level: 'bad', title: 'Backups are not leaving the machine', detail: 'The nightly dump is being written, but the copy to storage failed. A dead disk would take both.', tab: 'health' });
   } else if (Date.now() - backup.at > 2 * day) {
     out.push({ level: 'bad', title: `Last backup is ${Math.round((Date.now() - backup.at) / day)} days old`, detail: 'The nightly job may have stopped. A backup nobody checks is a backup nobody has.', tab: 'health' });
   }
@@ -80,11 +83,17 @@ const BACKUP_DIRS = ['/app/backups', path.resolve(process.cwd(), '../backups'), 
 const STATUS_FILE = path.join(process.env.DEPLOY_DIR || '/deploy', 'backup-status.json');
 
 /** When a backup last actually succeeded — not when one was attempted. */
-export function latestBackup(): { name: string; at: number; bytes: number } | null {
+export function latestBackup(): { name: string; at: number; bytes: number; offsite?: boolean } | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')) as { at?: string; bytes?: number; name?: string };
+    const raw = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')) as { at?: string; bytes?: number; name?: string; offsite?: boolean };
     const at = Date.parse(String(raw.at || ''));
-    if (Number.isFinite(at)) return { name: String(raw.name || 'backup'), at, bytes: Number(raw.bytes) || 0 };
+    if (Number.isFinite(at)) {
+      return {
+        name: String(raw.name || 'backup'), at, bytes: Number(raw.bytes) || 0,
+        // Older status files predate this field; unknown is not "failed".
+        offsite: typeof raw.offsite === 'boolean' ? raw.offsite : undefined,
+      };
+    }
   } catch { /* fall through to looking for the files themselves */ }
 
   for (const dir of BACKUP_DIRS) {
